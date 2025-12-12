@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup Label="Globals">
+    <SccProjectName>%24/HCMS-v4.5/HCMS-Api/HCMS-Api</SccProjectName>
+    <SccProvider>{4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}</SccProvider>
+    <SccAuxPath>http://tfs2017:8080/tfs/defaultcollection</SccAuxPath>
+    <SccLocalPath>.</SccLocalPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HCMS_Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Components\HCMS\Common\Service\LogHelper.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="EntityFramework" Version="6.5.1" />
+    <PackageReference Include="MailKit" Version="4.10.0" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Core" Version="5.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.15" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="MimeKit" Version="4.10.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="NReco.VideoConverter" Version="1.2.1" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.24" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+    <PackageReference Include="System.Data.OleDb" Version="9.0.2" />
+    <PackageReference Include="WindowsAzure.Storage" Version="9.3.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Components\HCMS\Common\Dapper\" />
+  </ItemGroup>
+
+</Project>

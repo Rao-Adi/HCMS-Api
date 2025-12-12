@@ -1,0 +1,195 @@
+using HCMS_Api.Common;
+using HCMS_Api.Components.HCMS.Common;
+using HCMS_Api.Components.HCMS.Common.Dapper;
+using HCMS_Api.Components.HCMS.Common.DataAccess;
+using HCMS_Api.Components.HCMS.Common.Models;
+using HCMS_Api.Components.HCMS.Common.Security;
+using HCMS_Api.Components.HCMS.ESS;
+using HCMS_Api.Components.HCMS.HR;
+using HCMS_Api.Components.HCMS.Payroll;
+using HCMS_Api.Models;
+using HCMS_Api.Services;
+using HCMS_Api.Services.Authorization;
+using HCMS_Api.Services.EmployeeAuthority;
+using HCMS_Api.Services.HodService;
+using HCMS_Api.Services.LookupService;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using StackExchange.Redis;
+using System.Text;
+using Microsoft.AspNetCore.Http;
+var builder = WebApplication.CreateBuilder(args);
+
+// Configuring SeriLog for logging 
+
+// Correctly configure the log path
+var logPath = Path.Combine(AppContext.BaseDirectory, builder.Configuration.GetSection("CorsSettings:LogPath").Value);
+
+// Ensure directory exists
+var logDirectory = Path.GetDirectoryName(logPath);
+if (!Directory.Exists(logDirectory))
+{
+    Directory.CreateDirectory(logDirectory);
+}
+
+if (string.IsNullOrEmpty(logPath))
+{
+    throw new ArgumentNullException("CorsSettings:LogPath", "Log path cannot be null or empty.");
+}
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.File(
+        path: logPath,
+        rollingInterval: RollingInterval.Day
+     )
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+builder.Logging.ClearProviders();
+builder.Logging.AddSerilog();
+
+string redisConnectionString = builder.Configuration.GetConnectionString("RedisConnectionString");
+
+
+// Configure Redis
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+{
+    return ConnectionMultiplexer.Connect(redisConnectionString);
+});
+
+// Add Antiforgery
+builder.Services.AddAntiforgery();
+//builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+/*
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = false;
+        options.JsonSerializerOptions.PropertyNamingPolicy = null;
+    });
+*/
+
+builder.Services.AddControllers()
+    .AddNewtonsoftJson(options =>
+    {
+        options.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver();
+        options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+    });
+
+
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddHttpContextAccessor();
+
+// Add configuration for connection string
+builder.Services.AddSingleton(builder.Configuration.GetConnectionString("DefaultConnection"));
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddScoped<SessionHelper>();
+builder.Services.AddScoped<IHodService, HodService>();
+builder.Services.AddScoped<ILookupService, LookupService>();
+builder.Services.AddScoped<IAuthorization, Authorization>();
+builder.Services.AddScoped<IEmployeeAuthorityService, EmployeeAuthorityService>();
+builder.Services.AddScoped<Common>();
+builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<Utilities>();
+builder.Services.AddScoped<ClientContextService>();
+builder.Services.AddScoped<LeaveComponent>();
+builder.Services.AddScoped<ValidateAntiForgeryTokenFilter>();
+builder.Services.AddScoped<EmployeeDashboardComponent>();
+builder.Services.AddScoped<EmployeeInformation>();
+builder.Services.AddScoped<DataServices>();
+builder.Services.AddScoped<LoginComponent>();
+builder.Services.AddScoped<UserPermission>();
+builder.Services.AddScoped<EmployeeJobInformationComponent>();
+builder.Services.AddScoped<EmployeePersonalInformationComponent>();
+builder.Services.AddScoped<MedicalReimbursementComponent>();
+builder.Services.AddScoped<EmployeeExitClearanceComponent>();
+builder.Services.AddScoped<IDapperDataService, DapperDataService>();
+builder.Services.AddScoped<PFSlipViaEmailComponent>();
+builder.Services.AddScoped<PerformanceJournalPolicyComponent>();
+builder.Services.AddScoped<PerformanceJournalComponent>();
+builder.Services.AddScoped<AttendanceSheetComponent>();
+var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowSpecificOrigin", policy =>
+    {
+        policy.WithOrigins(allowedOrigins) // Add the allowed origin(s)
+              .AllowAnyMethod() // Allow all HTTP methods (GET, POST, etc.)
+              .AllowAnyHeader().AllowCredentials(); // ? this line is required; // Allow all headers
+
+    });
+});
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key))
+        };
+    });
+// In-memory IDistributedCache for Session (no extra NuGet needed)
+builder.Services.AddDistributedMemoryCache();
+
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.Name = ".HCMS.Session";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+
+    // If your Angular app is on a different origin and you need cross-site cookies, uncomment:
+    // options.Cookie.SameSite = SameSiteMode.None;
+    // options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
+builder.Services.AddAuthorization();
+var app = builder.Build();
+var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads"); // example outside wwwroot
+Directory.CreateDirectory(uploadsPath);
+
+app.UseStaticFiles();
+app.UseRouting();
+HCMS_Api.Common.ServiceLocator.Initialize(app.Services);
+
+// Use CORS middleware
+app.UseCors("AllowSpecificOrigin");
+
+// Configure the HTTP request pipeline.
+//if (app.Environment.IsDevelopment())
+//{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+//}
+
+
+
+
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseSession();
+app.UseAuthorization();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(Path.Combine(app.Environment.ContentRootPath, "uploads")),
+    RequestPath = "/uploads"
+});
+
+app.MapControllers();
+
+app.Run();
