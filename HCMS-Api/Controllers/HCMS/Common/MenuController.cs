@@ -50,7 +50,7 @@ namespace HCMS_Api.Controllers.HCMS.Common
                 return StatusCode(417, ex.Message); // 417 Expectation Failed
             }
         }
-
+        [HttpGet]
         public List<MenuCounts> GetModuleWisePendingRecordCount(string AppCode)
         {
             DataServices _dataService = new DataServices(_configuration);

@@ -1,7 +1,7 @@
 using HCMS_Api.Common;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Components.HCMS.Common.Dapper;
-using HCMS_Api.Components.HCMS.Common.DataAccess;
+using HCMS_Api.Components.HCMS.Common.DataAccess; 
 using HCMS_Api.Components.HCMS.Common.Models;
 using HCMS_Api.Components.HCMS.Common.Security;
 using HCMS_Api.Components.HCMS.ESS;
@@ -21,6 +21,12 @@ using Serilog;
 using StackExchange.Redis;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using HCMS_Api.Components.DMS.ESS;
+using HCMS_Api.Components.DMS.Common.Dapper;
+using HCMS_Api.Components.DMS.Common.DataAccess;
+using HCMS_Api.Components.DMS.Common;
+using HCMS_Api.Services.DMS.Divisions;
+using HCMS_Api.Common.DMS;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuring SeriLog for logging 
@@ -85,7 +91,11 @@ builder.Services.AddControllers()
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+//builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+});
 builder.Services.AddHttpContextAccessor();
 
 // Add configuration for connection string
@@ -99,6 +109,7 @@ builder.Services.AddScoped<IEmployeeAuthorityService, EmployeeAuthorityService>(
 builder.Services.AddScoped<Common>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<Utilities>();
+builder.Services.AddScoped<DMSUtilities>();
 builder.Services.AddScoped<ClientContextService>();
 builder.Services.AddScoped<LeaveComponent>();
 builder.Services.AddScoped<ValidateAntiForgeryTokenFilter>();
@@ -116,6 +127,16 @@ builder.Services.AddScoped<PFSlipViaEmailComponent>();
 builder.Services.AddScoped<PerformanceJournalPolicyComponent>();
 builder.Services.AddScoped<PerformanceJournalComponent>();
 builder.Services.AddScoped<AttendanceSheetComponent>();
+
+
+builder.Services.AddScoped<DMSCommon>();
+builder.Services.AddScoped<DMSDataServices>();
+builder.Services.AddScoped<IDMSDapperDataService, DMSDapperDataService>();
+builder.Services.AddScoped<DivisionComponent>();
+builder.Services.AddScoped<DepartmentComponent>();
+builder.Services.AddScoped<IDivisionService, DivisionService>();
+
+
 var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
 
 builder.Services.AddCors(options =>
