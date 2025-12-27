@@ -3,10 +3,7 @@ using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
-using HCMS_Api.Components.DMS.Common.Models.Divisions;
-using Org.BouncyCastle.Crypto;
 using System.Data;
-using static Azure.Core.HttpHeader;
 
 namespace HCMS_Api.Services.DMS.Divisions;
 

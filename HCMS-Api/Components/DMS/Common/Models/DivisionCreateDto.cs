@@ -1,4 +1,4 @@
-﻿namespace HCMS_Api.Components.DMS.Common.Models.Divisions;
+﻿namespace HCMS_Api.Components.DMS.Common.Models;
 
 public class DivisionCreateDto
 { 

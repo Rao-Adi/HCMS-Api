@@ -4,7 +4,7 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models.Divisions; 
+using HCMS_Api.Components.DMS.Common.Models; 
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -48,9 +48,9 @@ public class SubDepartmentComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("SubDepartment code is required.", 200);
 
@@ -161,8 +161,8 @@ public class SubDepartmentComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE subd.IsDeleted = False 
+                  AND subd.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -170,18 +170,18 @@ public class SubDepartmentComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    UPPER(subd.Name) LIKE '%{search}%'
+                    OR UPPER(subd.Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Code",
+                "NAME" => "subd.Name",
+                "CODE" => "subd.Code",
                 "ISACTIVE" => "IsActive",
-                _ => "Name"
+                _ => "subd.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -190,13 +190,15 @@ public class SubDepartmentComponent
 
             string query = $@"
                         SELECT *
-                        FROM SubDepartments
+                        FROM SubDepartments subd
+                        LEFT JOIN Departments dep
+                        ON subd.Code = dep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM SubDepartments
+                        FROM SubDepartments subd
                         {whereClause};
                     ";
 
@@ -218,7 +220,8 @@ public class SubDepartmentComponent
                 {
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+                    Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -311,14 +314,46 @@ public class SubDepartmentComponent
         }
     }
 
+    public async Task<SubDepartmentReadDto> GetByDepartmentCodeAsync(string departmentCode)
+    {
+        try
+        {
+            string query = $@"
+                SELECT Id, Name, Code,DepartmentCode, IsActive
+                FROM SubDepartments
+                WHERE DepartmentCode = {departmentCode}
+                  AND IsActive = True
+                  AND IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("SubDepartment not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new SubDepartmentReadDto
+            {
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+                IsActive = row.Field<bool>("IsActive")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 
     public async Task<SubDepartmentReadDto> UpdateAsync(SubDepartmentUpdateDto input)
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid division code.", 200);
 

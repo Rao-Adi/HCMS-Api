@@ -6,11 +6,10 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
-using static Azure.Core.HttpHeader;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class DivisionComponent
+public class CabinetStructureTabsConfigComponent
 {
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
@@ -20,7 +19,7 @@ public class DivisionComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public DivisionComponent(
+    public CabinetStructureTabsConfigComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -45,36 +44,33 @@ public class DivisionComponent
     }
 
 
-
-
-    public async Task<DivisionReadDto> CreateAsync(DivisionCreateDto input)
+    public async Task<CabinetStructureTabsConfigReadDto> CreateAsync(CabinetStructureTabsConfigCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Division code is required.", 200);
+            //if (input.Id > 0)
+            //    throw new CustomException("CabinetStructureTabsConfig code is required.", 200);
 
-            // Check duplicate by Code OR Name
+            // Check duplicate by ID OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Divisions
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
+            FROM CabinetStructureTabsConfig
+            WHERE (ID = '{input.Id}'
                    OR Name = '{input.Name.Replace("'", "''")}')
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("Division already exists", 200);
+                throw new CustomException("CabinetStructureTabsConfig already exists", 200);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO Divisions
+            INSERT INTO CabinetStructureTabsConfig
             (
-                Code,
                 Name,
                 IsActive,
                 IsDeleted,
@@ -84,8 +80,7 @@ public class DivisionComponent
                 LastModifiedBy
             )
             VALUES
-            (
-                '{input.Code.Replace("'", "''")}',
+            ( 
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
@@ -100,20 +95,20 @@ public class DivisionComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive
-            FROM Divisions
+            SELECT Id, Name, IsActive
+            FROM CabinetStructureTabsConfig
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created Id");
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new CabinetStructureTabsConfigReadDto
             {
-                Code = row.Field<string>("Code"),
+                Id = row.Field<int>("Id"),
                 Name = row.Field<string>("Name"),
                 IsActive = row.Field<bool>("IsActive")
             };
@@ -125,27 +120,27 @@ public class DivisionComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM Divisions
-                WHERE Code = {code}
+                FROM CabinetStructureTabsConfig
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("CabinetStructureTabsConfig not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE Divisions
+                UPDATE CabinetStructureTabsConfig
                 SET IsDeleted = False
-                WHERE Code = {code}";
+                WHERE ID = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -156,7 +151,7 @@ public class DivisionComponent
     }
 
 
-    public async Task<PaginationResult<DivisionReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<CabinetStructureTabsConfigReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -171,7 +166,7 @@ public class DivisionComponent
                 whereClause += $@"
                 AND (
                     UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    OR UPPER(ID) LIKE '%{search}%'
                 )";
             }
 
@@ -179,9 +174,9 @@ public class DivisionComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "Name",
-                "CODE" => "Code",
+                "CODE" => "ID",
                 "ISACTIVE" => "IsActive",
-                _ => "Name"
+                _ => "ID"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -190,33 +185,33 @@ public class DivisionComponent
 
             string query = $@"
                         SELECT *
-                        FROM Divisions
+                        FROM CabinetStructureTabsConfig
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Divisions
+                        FROM CabinetStructureTabsConfig dep
                         {whereClause};
                     ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
             DataTable countTable = ds.Tables[1];      // second result set (count)
-            // ✅ SAFETY CHECKS
+                                                      // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DivisionReadDto>
+                return new PaginationResult<CabinetStructureTabsConfigReadDto>
                 {
-                    Items = new List<DivisionReadDto>(),
+                    Items = new List<CabinetStructureTabsConfigReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DivisionReadDto
+                .Select(row => new CabinetStructureTabsConfigReadDto
                 {
-                    Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                    Id = row.Table.Columns.Contains("ID") ? row.Field<int>("ID") : 0,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -235,7 +230,7 @@ public class DivisionComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DivisionReadDto>
+            return new PaginationResult<CabinetStructureTabsConfigReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -248,23 +243,23 @@ public class DivisionComponent
     }
 
 
-    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
+    public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
     {
         try
         {
             string query = @"
-            SELECT Code, Name
-            FROM Divisions
+            SELECT ID, Name
+            FROM CabinetStructureTabsConfig
             WHERE IsActive = True
               AND IsDeleted = False
-            ORDER BY Name";
+            ORDER BY Id";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             var list = dt.AsEnumerable()
-                .Select(row => new SelectListDto
+                .Select(row => new SelectList2Dto
                 {
-                    Code = row.Field<string>("Code"),
+                    Id = row.Field<int>("ID"),
                     Value = row.Field<string>("Name")
                 })
                 .ToList();
@@ -278,27 +273,27 @@ public class DivisionComponent
     }
 
 
-    public async Task<DivisionReadDto> GetByCodeAsync(string code)
+    public async Task<CabinetStructureTabsConfigReadDto> GetByIDAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT Id, Name, Code, IsActive
-                FROM Divisions
-                WHERE Code = {code}
+                SELECT Id, Name, IsActive
+                FROM CabinetStructureTabsConfig
+                WHERE ID = {id}
                   AND IsActive = True
                   AND IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("CabinetStructureTabsConfig not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new CabinetStructureTabsConfigReadDto
             {
-                Code = row.Field<string>("Code"),
+                Id = row.Field<int>("ID"),
                 Name = row.Field<string>("Name"),
                 IsActive = row.Field<bool>("IsActive")
             };
@@ -309,38 +304,37 @@ public class DivisionComponent
         }
     }
 
-
-    public async Task<DivisionReadDto> UpdateAsync(DivisionUpdateDto input)
+    public async Task<CabinetStructureTabsConfigReadDto> UpdateAsync(CabinetStructureTabsConfigUpdateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid division code.", 200);
+            if (input.Id < 0)
+                throw new CustomException("Invalid Id.", 200);
 
-            // Check existence (Code is VARCHAR → must be quoted)
+            // Check existence (ID is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Divisions
-            WHERE Code = '{input.Code.Replace("'", "''")}'
+            FROM CabinetStructureTabsConfig
+            WHERE ID = '{input.Id}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("CabinetStructureTabsConfig not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE Divisions
+            UPDATE CabinetStructureTabsConfig
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE ID = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -349,20 +343,20 @@ public class DivisionComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Code, Name, IsActive
-            FROM Divisions
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            SELECT ID, Name, IsActive
+            FROM CabinetStructureTabsConfig
+            WHERE ID = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
+                throw new Exception("Failed to fetch updated Id");
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new CabinetStructureTabsConfigReadDto
             {
-                Code = row.Field<string>("Code"),
+                Id = row.Field<int>("ID"),
                 Name = row.Field<string>("Name"),
                 IsActive = row.Field<bool>("IsActive")
             };
@@ -372,5 +366,5 @@ public class DivisionComponent
             throw;
         }
     }
-     
+
 }

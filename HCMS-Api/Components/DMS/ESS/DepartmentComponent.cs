@@ -48,9 +48,9 @@ public class DepartmentComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Department code is required.", 200);
 
@@ -161,8 +161,8 @@ public class DepartmentComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dep.IsDeleted = False 
+                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -170,18 +170,18 @@ public class DepartmentComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    UPPER(dep.Name) LIKE '%{search}%'
+                    OR UPPER(dep.Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Code",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "dep.Name",
+                "CODE" => "dep.Code",
+                "ISACTIVE" => "dep.IsActive",
+                _ => "dep.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -190,13 +190,15 @@ public class DepartmentComponent
 
             string query = $@"
                         SELECT *
-                        FROM Departments
+                        FROM Departments dep
+                        LEFT JOIN Divisions div
+						ON dep.DivisionCode = div.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Departments
+                        FROM Departments dep
                         {whereClause};
                     ";
 
@@ -218,7 +220,8 @@ public class DepartmentComponent
                 {
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+                    Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -312,13 +315,46 @@ public class DepartmentComponent
     }
 
 
+    public async Task<DepartmentReadDto> GetByDivisionCodeAsync(string dCode)
+    {
+        try
+        {
+            string query = $@"
+                SELECT Id, Name, Code,DivisionCode, IsActive
+                FROM Departments
+                WHERE Division = {dCode}
+                  AND IsActive = True
+                  AND IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("Department not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new DepartmentReadDto
+            {
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+                IsActive = row.Field<bool>("IsActive")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
     public async Task<DepartmentReadDto> UpdateAsync(DepartmentUpdateDto input)
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid division code.", 200);
 
@@ -374,4 +410,6 @@ public class DepartmentComponent
             throw;
         }
     }
+
+
 }

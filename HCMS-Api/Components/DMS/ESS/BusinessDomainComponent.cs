@@ -6,11 +6,10 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
-using static Azure.Core.HttpHeader;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class DivisionComponent
+public class BusinessDomainComponent
 {
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
@@ -20,7 +19,7 @@ public class DivisionComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public DivisionComponent(
+    public BusinessDomainComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -45,9 +44,7 @@ public class DivisionComponent
     }
 
 
-
-
-    public async Task<DivisionReadDto> CreateAsync(DivisionCreateDto input)
+    public async Task<BusinessDomainReadDto> CreateAsync(BusinessDomainCreateDto input)
     {
         try
         {
@@ -55,12 +52,12 @@ public class DivisionComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Division code is required.", 200);
+                throw new CustomException("BusinessDomain code is required.", 200);
 
             // Check duplicate by Code OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Divisions
+            FROM BusinessDomains
             WHERE (Code = '{input.Code.Replace("'", "''")}'
                    OR Name = '{input.Name.Replace("'", "''")}')
               AND IsDeleted = FALSE";
@@ -68,14 +65,15 @@ public class DivisionComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("Division already exists", 200);
+                throw new CustomException("BusinessDomain already exists", 200);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO Divisions
+            INSERT INTO BusinessDomains
             (
                 Code,
                 Name,
+                subdepartmentcode,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -87,6 +85,7 @@ public class DivisionComponent
             (
                 '{input.Code.Replace("'", "''")}',
                 '{input.Name.Replace("'", "''")}',
+                '{input.SubDepartmentCode}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -100,21 +99,22 @@ public class DivisionComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive
-            FROM Divisions
+            SELECT Id, Code, Name,SubDepartmentCode, IsActive
+            FROM BusinessDomains
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created Business Domain");
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new BusinessDomainReadDto
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }
@@ -132,18 +132,18 @@ public class DivisionComponent
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM Divisions
+                FROM BusinessDomains
                 WHERE Code = {code}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("BusinessDomain not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE Divisions
+                UPDATE BusinessDomains
                 SET IsDeleted = False
                 WHERE Code = {code}";
 
@@ -156,13 +156,13 @@ public class DivisionComponent
     }
 
 
-    public async Task<PaginationResult<DivisionReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<BusinessDomainReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE bd.IsDeleted = False 
+                  AND bd.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -178,10 +178,10 @@ public class DivisionComponent
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Code",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "bd.Name",
+                "CODE" => "db.Code",
+                "ISACTIVE" => "bd.IsActive",
+                _ => "bd.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -190,34 +190,38 @@ public class DivisionComponent
 
             string query = $@"
                         SELECT *
-                        FROM Divisions
+                        FROM BusinessDomains bd
+                        LEFT JOIN SubDepartments dep
+                        ON bd.subdepartmentcode = dep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Divisions
+                        FROM BusinessDomains bd
                         {whereClause};
                     ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
-            DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
+            DataTable businessDomainTable = ds.Tables[0];  // your first result set (paged data)
             DataTable countTable = ds.Tables[1];      // second result set (count)
-            // ✅ SAFETY CHECKS
-            if (divisionsTable == null || divisionsTable.Rows.Count == 0)
+                                                      // ✅ SAFETY CHECKS
+            if (businessDomainTable == null || businessDomainTable.Rows.Count == 0)
             {
-                return new PaginationResult<DivisionReadDto>
+                return new PaginationResult<BusinessDomainReadDto>
                 {
-                    Items = new List<DivisionReadDto>(),
+                    Items = new List<BusinessDomainReadDto>(),
                     TotalCount = 0
                 };
             }
 
-            var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DivisionReadDto
+            var businessDomain = businessDomainTable.AsEnumerable()
+                .Select(row => new BusinessDomainReadDto
                 {
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                    SubDepartment = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                    SubDepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -235,9 +239,9 @@ public class DivisionComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DivisionReadDto>
+            return new PaginationResult<BusinessDomainReadDto>
             {
-                Items = divisions,
+                Items = businessDomain,
                 TotalCount = totalCount
             };
         }
@@ -254,7 +258,7 @@ public class DivisionComponent
         {
             string query = @"
             SELECT Code, Name
-            FROM Divisions
+            FROM BusinessDomains
             WHERE IsActive = True
               AND IsDeleted = False
             ORDER BY Name";
@@ -278,13 +282,13 @@ public class DivisionComponent
     }
 
 
-    public async Task<DivisionReadDto> GetByCodeAsync(string code)
+    public async Task<BusinessDomainReadDto> GetByCodeAsync(string code)
     {
         try
         {
             string query = $@"
-                SELECT Id, Name, Code, IsActive
-                FROM Divisions
+                SELECT Id, Name, Code,SubDepartmentCode, IsActive
+                FROM BusinessDomains
                 WHERE Code = {code}
                   AND IsActive = True
                   AND IsDeleted = False";
@@ -292,14 +296,15 @@ public class DivisionComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("BusinessDomain not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new BusinessDomainReadDto
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }
@@ -310,7 +315,40 @@ public class DivisionComponent
     }
 
 
-    public async Task<DivisionReadDto> UpdateAsync(DivisionUpdateDto input)
+    public async Task<BusinessDomainReadDto> GetBySubDepartmentCodeAsync(string dCode)
+    {
+        try
+        {
+            string query = $@"
+                SELECT Id, Name, Code,SubDepartmentCode, IsActive
+                FROM BusinessDomains
+                WHERE Division = {dCode}
+                  AND IsActive = True
+                  AND IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("BusinessDomain not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new BusinessDomainReadDto
+            {
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                IsActive = row.Field<bool>("IsActive")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<BusinessDomainReadDto> UpdateAsync(BusinessDomainUpdateDto input)
     {
         try
         {
@@ -318,23 +356,23 @@ public class DivisionComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Invalid Business Domain code.", 200);
 
             // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Divisions
+            FROM BusinessDomains
             WHERE Code = '{input.Code.Replace("'", "''")}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("BusinessDomain not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE Divisions
+            UPDATE BusinessDomains
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -350,17 +388,17 @@ public class DivisionComponent
             // Return updated record
             string selectQuery = $@"
             SELECT Code, Name, IsActive
-            FROM Divisions
+            FROM BusinessDomains
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
+                throw new Exception("Failed to fetch updated Business Domain");
 
             DataRow row = dt.Rows[0];
 
-            return new DivisionReadDto
+            return new BusinessDomainReadDto
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -372,5 +410,4 @@ public class DivisionComponent
             throw;
         }
     }
-     
 }

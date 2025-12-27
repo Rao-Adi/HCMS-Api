@@ -1,7 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models.Departments;
-using HCMS_Api.Components.DMS.Common.Models.Divisions;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
@@ -10,37 +9,37 @@ using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
-public class SubDepartmentController : Controller
+public class DMSDepartmentController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly SubDepartmentComponent _subDepartmentComponent;
+    private readonly DepartmentComponent _departmentComponent;
 
-    public SubDepartmentController(
+    public DMSDepartmentController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     SubDepartmentComponent subDepartmentComponent)
+     DepartmentComponent departmentComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _subDepartmentComponent = subDepartmentComponent;
+        _departmentComponent = departmentComponent;
     }
 
-    [HttpPost("get-all-subdepartment")]
-    public async Task<IActionResult> GetAllSubDepartments(TableFiltersDto input)
+    [HttpPost("get-all-departments")]
+    public async Task<IActionResult> GetAllDepartments(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<SubDepartmentReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DepartmentReadDto>>()
             {
                 Success = true,
-                Data = await _subDepartmentComponent.GetAllAsync(input),
+                Data = await _departmentComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -60,12 +59,12 @@ public class SubDepartmentController : Controller
     }
 
 
-    [HttpGet("get-all-subdepartment-list")]
+    [HttpGet("get-all-department-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            var selectList = await _subDepartmentComponent.GetAllSelectList();
+            var selectList = await _departmentComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
                 Success = true,
@@ -89,15 +88,15 @@ public class SubDepartmentController : Controller
     }
 
 
-    [HttpGet("get-subdepartment-by-code/{code}")]
+    [HttpGet("get-department-by-code/{code}")]
     public async Task<IActionResult> GetById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<SubDepartmentReadDto>()
+            return Ok(new HttpApiResponse<DepartmentReadDto>()
             {
                 Success = true,
-                Data = await _subDepartmentComponent.GetByCodeAsync(code),
+                Data = await _departmentComponent.GetByCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -116,8 +115,38 @@ public class SubDepartmentController : Controller
         }
     }
 
-    [HttpPost("create-subdepartment")]
-    public async Task<IActionResult> Create([FromBody] SubDepartmentCreateDto input)
+
+    [HttpGet("get-departments-by-division-code/{dCode}")]
+    public async Task<IActionResult> GetDepartmentsByDivisionCode(string dCode)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            {
+                Success = true,
+                Data = await _departmentComponent.GetByDivisionCodeAsync(dCode),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+
+    [HttpPost("create-department")]
+    public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -131,11 +160,11 @@ public class SubDepartmentController : Controller
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
             //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
-            return Ok(new HttpApiResponse<SubDepartmentReadDto>()
+            return Ok(new HttpApiResponse<DepartmentReadDto>()
             {
                 Success = true,
-                Data = await _subDepartmentComponent.CreateAsync(input),
-                Message = "SubDepartment created successfully.",
+                Data = await _departmentComponent.CreateAsync(input),
+                Message = "Department created successfully.",
                 Code = 200
             });
         }
@@ -153,16 +182,16 @@ public class SubDepartmentController : Controller
         }
     }
 
-    [HttpPut("update-subdepartment")]
-    public async Task<IActionResult> Update([FromBody] SubDepartmentUpdateDto input)
+    [HttpPut("update-department")]
+    public async Task<IActionResult> Update([FromBody] DepartmentUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<SubDepartmentReadDto>()
+            return Ok(new HttpApiResponse<DepartmentReadDto>()
             {
                 Success = true,
-                Data = await _subDepartmentComponent.UpdateAsync(input),
-                Message = "SubDepartment updated successfully.",
+                Data = await _departmentComponent.UpdateAsync(input),
+                Message = "Department updated successfully.",
                 Code = 200
             });
         }
@@ -180,19 +209,19 @@ public class SubDepartmentController : Controller
         }
     }
 
-    [HttpDelete("delete-subdepartment/{code}")]
+    [HttpDelete("delete-department/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _subDepartmentComponent.GetByCodeAsync(code);
+            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "SubDepartment not found",
+                    Message = "Department not found",
                     Code = 404
                 });
             }
@@ -200,8 +229,8 @@ public class SubDepartmentController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _subDepartmentComponent.DeleteAsync(code),
-                Message = "SubDepartment deleted successfully.",
+                Data = await _departmentComponent.DeleteAsync(code),
+                Message = "Department deleted successfully.",
                 Code = 200
             });
         }

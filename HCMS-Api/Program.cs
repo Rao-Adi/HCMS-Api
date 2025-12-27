@@ -134,6 +134,10 @@ builder.Services.AddScoped<DMSDataServices>();
 builder.Services.AddScoped<IDMSDapperDataService, DMSDapperDataService>();
 builder.Services.AddScoped<DivisionComponent>();
 builder.Services.AddScoped<DepartmentComponent>();
+builder.Services.AddScoped<SubDepartmentComponent>();
+builder.Services.AddScoped<DocumentTypeComponent>();
+builder.Services.AddScoped<BusinessDomainComponent>();
+builder.Services.AddScoped<CabinetStructureTabsConfigComponent>();
 builder.Services.AddScoped<IDivisionService, DivisionService>();
 
 

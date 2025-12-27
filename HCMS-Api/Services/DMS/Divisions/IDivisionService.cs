@@ -1,6 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
-using HCMS_Api.Components.DMS.Common.Models.Divisions;
+using HCMS_Api.Components.DMS.Common.Models;
 
 namespace HCMS_Api.Services.DMS.Divisions;
 

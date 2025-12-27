@@ -1,6 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
-using HCMS_Api.Components.DMS.Common.Models.Departments;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
@@ -9,37 +9,37 @@ using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
-public class DepartmentController : Controller
+public class DMSBusinessDomainController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DepartmentComponent _departmentComponent;
+    private readonly BusinessDomainComponent _businessDomainComponent;
 
-    public DepartmentController(
+    public DMSBusinessDomainController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DepartmentComponent departmentComponent)
+     BusinessDomainComponent businessDomainComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _departmentComponent = departmentComponent;
+        _businessDomainComponent = businessDomainComponent;
     }
 
-    [HttpPost("get-all-departments")]
-    public async Task<IActionResult> GetAllDepartments(TableFiltersDto input)
+    [HttpPost("get-all-business-domain")]
+    public async Task<IActionResult> GetAllBusinessDomains(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DepartmentReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<BusinessDomainReadDto>>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetAllAsync(input),
+                Data = await _businessDomainComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -59,12 +59,12 @@ public class DepartmentController : Controller
     }
 
 
-    [HttpGet("get-all-department-list")]
+    [HttpGet("get-all-business-domain-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            var selectList = await _departmentComponent.GetAllSelectList();
+            var selectList = await _businessDomainComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
                 Success = true,
@@ -88,15 +88,15 @@ public class DepartmentController : Controller
     }
 
 
-    [HttpGet("get-department-by-code/{code}")]
+    [HttpGet("get-business-domain-by-code/{code}")]
     public async Task<IActionResult> GetById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<BusinessDomainReadDto>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetByCodeAsync(code),
+                Data = await _businessDomainComponent.GetByCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -115,8 +115,9 @@ public class DepartmentController : Controller
         }
     }
 
-    [HttpPost("create-department")]
-    public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
+
+    [HttpPost("create-business-domain")]
+    public async Task<IActionResult> Create([FromBody] BusinessDomainCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,11 +131,11 @@ public class DepartmentController : Controller
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
             //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<BusinessDomainReadDto>()
             {
                 Success = true,
-                Data = await _departmentComponent.CreateAsync(input),
-                Message = "Department created successfully.",
+                Data = await _businessDomainComponent.CreateAsync(input),
+                Message = "Business Domain created successfully.",
                 Code = 200
             });
         }
@@ -152,16 +153,16 @@ public class DepartmentController : Controller
         }
     }
 
-    [HttpPut("update-department")]
-    public async Task<IActionResult> Update([FromBody] DepartmentUpdateDto input)
+    [HttpPut("update-business-domain")]
+    public async Task<IActionResult> Update([FromBody] BusinessDomainUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<BusinessDomainReadDto>()
             {
                 Success = true,
-                Data = await _departmentComponent.UpdateAsync(input),
-                Message = "Department updated successfully.",
+                Data = await _businessDomainComponent.UpdateAsync(input),
+                Message = "Business Domain updated successfully.",
                 Code = 200
             });
         }
@@ -179,19 +180,19 @@ public class DepartmentController : Controller
         }
     }
 
-    [HttpDelete("delete-department/{code}")]
+    [HttpDelete("delete-business-domain/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
+            var existingRecord = await _businessDomainComponent.GetByCodeAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Department not found",
+                    Message = "Business Domain not found",
                     Code = 404
                 });
             }
@@ -199,8 +200,8 @@ public class DepartmentController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _departmentComponent.DeleteAsync(code),
-                Message = "Department deleted successfully.",
+                Data = await _businessDomainComponent.DeleteAsync(code),
+                Message = "Business Domain deleted successfully.",
                 Code = 200
             });
         }

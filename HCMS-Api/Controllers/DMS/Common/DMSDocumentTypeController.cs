@@ -1,49 +1,45 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
-using HCMS_Api.Components.DMS.Common.Models.Divisions;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
-using HCMS_Api.Components.HCMS.ESS;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
-using System.Data;
 using System.Net;
-using static Org.BouncyCastle.Crypto.Engines.SM2Engine;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
-public class DivisionController : Controller
+public class DMSDocumentTypeController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DivisionComponent _divisionComponent;
+    private readonly DocumentTypeComponent _documentTypeComponent;
 
-    public DivisionController(
+    public DMSDocumentTypeController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DivisionComponent divisionComponent)
+     DocumentTypeComponent divisionComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _divisionComponent = divisionComponent;
+        _documentTypeComponent = divisionComponent;
     }
 
-    [HttpPost("get-all-divisions")]
-    public async Task<IActionResult> GetAllDivisions(TableFiltersDto input)
+    [HttpPost("get-all-document-types")]
+    public async Task<IActionResult> GetAllDocumentTypes(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DivisionReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentTypeReadDto>>()
             {
                 Success = true,
-                Data = await _divisionComponent.GetAllAsync(input),
+                Data = await _documentTypeComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,12 +59,12 @@ public class DivisionController : Controller
     }
 
 
-    [HttpGet("get-all-division-list")]
+    [HttpGet("get-all-document-type-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            var selectList = await _divisionComponent.GetAllSelectList();
+            var selectList = await _documentTypeComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
                 Success = true,
@@ -92,15 +88,15 @@ public class DivisionController : Controller
     }
 
 
-    [HttpGet("get-division-by-code/{code}")]
+    [HttpGet("get-document-type-by-code/{code}")]
     public async Task<IActionResult> GetById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<DivisionReadDto>()
+            return Ok(new HttpApiResponse<DocumentTypeReadDto>()
             {
                 Success = true,
-                Data = await _divisionComponent.GetByCodeAsync(code),
+                Data = await _documentTypeComponent.GetByCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -119,8 +115,8 @@ public class DivisionController : Controller
         }
     }
 
-    [HttpPost("create-division")]
-    public async Task<IActionResult> Create([FromBody] DivisionCreateDto input)
+    [HttpPost("create-document-type")]
+    public async Task<IActionResult> Create([FromBody] DocumentTypeCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -134,11 +130,11 @@ public class DivisionController : Controller
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
             //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
-            return Ok(new HttpApiResponse<DivisionReadDto>()
+            return Ok(new HttpApiResponse<DocumentTypeReadDto>()
             {
                 Success = true,
-                Data = await _divisionComponent.CreateAsync(input),
-                Message = "Division created successfully.",
+                Data = await _documentTypeComponent.CreateAsync(input),
+                Message = "DocumentType created successfully.",
                 Code = 200
             });
         }
@@ -156,16 +152,16 @@ public class DivisionController : Controller
         }
     }
 
-    [HttpPut("update-division")]
-    public async Task<IActionResult> Update([FromBody] DivisionUpdateDto input)
+    [HttpPut("update-document-type")]
+    public async Task<IActionResult> Update([FromBody] DocumentTypeUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DivisionReadDto>()
+            return Ok(new HttpApiResponse<DocumentTypeReadDto>()
             {
                 Success = true,
-                Data = await _divisionComponent.UpdateAsync(input),
-                Message = "Division updated successfully.",
+                Data = await _documentTypeComponent.UpdateAsync(input),
+                Message = "DocumentType updated successfully.",
                 Code = 200
             });
         }
@@ -183,19 +179,19 @@ public class DivisionController : Controller
         }
     }
 
-    [HttpDelete("delete-division/{code}")]
+    [HttpDelete("delete-document-type/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _divisionComponent.GetByCodeAsync(code);
+            var existingRecord = await _documentTypeComponent.GetByCodeAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Division not found",
+                    Message = "DocumentType not found",
                     Code = 404
                 });
             }
@@ -203,8 +199,8 @@ public class DivisionController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _divisionComponent.DeleteAsync(code),
-                Message = "Division deleted successfully.",
+                Data = await _documentTypeComponent.DeleteAsync(code),
+                Message = "DocumentType deleted successfully.",
                 Code = 200
             });
         }

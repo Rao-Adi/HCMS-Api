@@ -1,34 +1,34 @@
-﻿namespace HCMS_Api.Components.DMS.Common.Models.Divisions;
+﻿namespace HCMS_Api.Components.DMS.Common.Models;
 
-public class SubDepartmentDto
+public class BusinessDomainDto
 {
 }
 
 
-public class SubDepartmentCreateDto
+public class BusinessDomainCreateDto
 {
     public string Code { get; set; }
-    public string DepartmentCode { get; set; }
 
     public string Name { get; set; }
+    public string SubDepartmentCode { get; set; }
 }
 
-public class SubDepartmentUpdateDto
+public class BusinessDomainUpdateDto
 {
     public string Code { get; set; }
     public string Name { get; set; }
 
-    public string DepartmentCode { get; set; }
+    public string SubDepartmentCode { get; set; }
 
     public bool IsActive { get; set; }
 }
 
-public class SubDepartmentReadDto
+public class BusinessDomainReadDto
 {
     public string Code { get; set; }
     public string Name { get; set; }
-
-    public string DepartmentCode { get; set; }
+    public string SubDepartment { get; set; }
+    public string SubDepartmentCode { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
     public string? CreatedAt { get; set; }
