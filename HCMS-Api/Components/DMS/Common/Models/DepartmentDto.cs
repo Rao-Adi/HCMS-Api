@@ -1,4 +1,6 @@
-﻿using System.Reflection.Metadata;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Reflection.Metadata;
 using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 
 namespace HCMS_Api.Components.DMS.Common.Models.Departments;
@@ -6,6 +8,36 @@ namespace HCMS_Api.Components.DMS.Common.Models.Departments;
 public class DepartmentDto
 {
 }
+
+[Table("Departments")]
+public class Department
+{
+    [Key]
+    public int Id { get; set; }
+
+    [MaxLength(10)]
+    public string DivisionCode { get; set; } = null!;
+
+    [MaxLength(10)]
+    public string Code { get; set; } = null!;
+
+    [MaxLength(100)]
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = null!;
+    public DateTime LastModifiedAt { get; set; }
+    public string LastModifiedBy { get; set; } = null!;
+
+    //[ForeignKey(nameof(DivisionCode))]
+    public Division? Division { get; set; }
+
+    public ICollection<SubDepartment> SubDepartments { get; set; } = new List<SubDepartment>();
+}
+
 
 
 public class DepartmentCreateDto
@@ -66,17 +98,17 @@ public class Division : BaseEntity
     public ICollection<User> Users { get; set; } = new HashSet<User>();
 }
 
-public class Department : BaseEntity
-{
-    public int Id { get; set; }
+//public class Department : BaseEntity
+//{
+//    public int Id { get; set; }
 
-    public string DivisionCode { get; set; } = null!;
-    public string Code { get; set; } = null!;
-    public string Name { get; set; } = null!;
+//    public string DivisionCode { get; set; } = null!;
+//    public string Code { get; set; } = null!;
+//    public string Name { get; set; } = null!;
 
-    public Division Division { get; set; } = null!;
-    public ICollection<SubDepartment> SubDepartments { get; set; } = new HashSet<SubDepartment>();
-}
+//    public Division Division { get; set; } = null!;
+//    public ICollection<SubDepartment> SubDepartments { get; set; } = new HashSet<SubDepartment>();
+//}
 
 public class SubDepartment : BaseEntity
 {

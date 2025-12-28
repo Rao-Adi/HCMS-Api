@@ -4,25 +4,25 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
-[Table("Divisions")]
-public class Division
+[Table("Roles")]
+public class Role
 {
     [Key]
     public int Id { get; set; }
 
-    [MaxLength(10)]
-    public string Code { get; set; } = null!;
-
-    [MaxLength(100)]
+    [MaxLength(50)]
     public string Name { get; set; } = null!;
+
+    [MaxLength(200)]
+    public string Description { get; set; } = null!;
 
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 
+    public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
-    public string CreatedBy { get; set; } = null!;
+    public Guid LastModifiedBy { get; set; }
     public DateTime LastModifiedAt { get; set; }
-    public string LastModifiedBy { get; set; } = null!;
 
-    public ICollection<Department> Departments { get; set; } = new List<Department>();
+    public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }
