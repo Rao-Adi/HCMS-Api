@@ -9,6 +9,9 @@ using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
+[ApiController]
+[ApiVersion("1.0")]
+[Route("api/[controller]")]
 public class DMSDivisionController : Controller
 {
     private readonly Utilities _utilities;
@@ -89,7 +92,7 @@ public class DMSDivisionController : Controller
 
 
     [HttpGet("get-division-by-code/{code}")]
-    public async Task<IActionResult> GetById(string code)
+    public async Task<IActionResult> GetDivisionById(string code)
     {
         try
         {
@@ -125,11 +128,7 @@ public class DMSDivisionController : Controller
         }
 
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
+        { 
             return Ok(new HttpApiResponse<DivisionReadDto>()
             {
                 Success = true,

@@ -4,7 +4,15 @@ public class DocumentTypeDto
 {
 }
 
+public class DocumentType : BaseEntity
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string Description { get; set; } = null!;
 
+    public ICollection<Document> Documents { get; set; } = new HashSet<Document>();
+}
 
 public class DocumentTypeCreateDto
 {

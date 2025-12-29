@@ -9,6 +9,9 @@ using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
+[ApiController]
+[ApiVersion("1.0")]
+[Route("api/[controller]")]
 public class DMSCabinetStructureTabsConfigController : Controller
 {
 
@@ -90,7 +93,7 @@ public class DMSCabinetStructureTabsConfigController : Controller
 
 
     [HttpGet("get-cabinet-tab-by-id/{id}")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetCabinetTabById(int id)
     {
         try
         {
@@ -126,11 +129,7 @@ public class DMSCabinetStructureTabsConfigController : Controller
         }
 
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
+        { 
             return Ok(new HttpApiResponse<CabinetStructureTabsConfigReadDto>()
             {
                 Success = true,

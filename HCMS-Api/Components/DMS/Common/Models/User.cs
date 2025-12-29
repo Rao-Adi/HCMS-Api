@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace HCMS_Api.Components.DMS.Common.Models;
 
 [Table("Users")]
-public class User
+public class User : AuditableEntity
 {
     [Key]
     public Guid Id { get; set; }
@@ -22,15 +22,7 @@ public class User
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
-
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
-
-    public DateTime CreatedAt { get; set; }
-    public string CreatedBy { get; set; } = null!;
-    public DateTime LastModifiedAt { get; set; }
-    public string LastModifiedBy { get; set; } = null!;
-
+     
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }
 

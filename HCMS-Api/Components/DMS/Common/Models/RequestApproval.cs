@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace HCMS_Api.Components.DMS.Common.Models;
 
 [Table("RequestApprovals")]
-public class RequestApproval
+public class RequestApproval : AuditableEntity
 {
     [Key]
     public Guid Id { get; set; }
@@ -19,15 +19,7 @@ public class RequestApproval
     public string Observation { get; set; } = null!;
 
     public DateTime? ActionDate { get; set; }
-
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
-
-    public Guid CreatedBy { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public Guid LastModifiedBy { get; set; }
-    public DateTime LastModifiedAt { get; set; }
-
+     
     public DocumentRequest DocumentRequest { get; set; } = null!;
 }
 

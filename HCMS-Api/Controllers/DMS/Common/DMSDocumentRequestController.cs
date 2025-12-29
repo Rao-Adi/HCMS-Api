@@ -1,6 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
-using HCMS_Api.Components.DMS.Common.Models.Departments;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
@@ -10,40 +10,39 @@ using System.Net;
 namespace HCMS_Api.Controllers.DMS.Common;
 
 [ApiController]
-[Route("api/[controller]")]
 [ApiVersion("1.0")]
-[ApiVersion("2.0")]
-public class DMSDepartmentController : Controller
+[Route("api/[controller]")]
+public class DMSDocumentRequestController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DepartmentComponent _departmentComponent;
+    private readonly DocumentRequestComponent _distributionListComponent;
 
-    public DMSDepartmentController(
+    public DMSDocumentRequestController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DepartmentComponent departmentComponent)
+     DocumentRequestComponent distributionListComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _departmentComponent = departmentComponent;
+        _distributionListComponent = distributionListComponent;
     }
 
-    [HttpPost("get-all-departments")]
-    public async Task<IActionResult> GetAllDepartments(TableFiltersDto input)
+    [HttpPost("get-all-document-request")]
+    public async Task<IActionResult> GetAllDocumentRequest(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DepartmentReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequest>>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetAllAsync(input),
+                Data = await _distributionListComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,12 +62,12 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-all-department-list")]
+    [HttpGet("get-all-document-request-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            var selectList = await _departmentComponent.GetAllSelectList();
+            var selectList = await _distributionListComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
                 Success = true,
@@ -92,15 +91,15 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-department-by-code/{code}")]
-    public async Task<IActionResult> GetDepartmentById(string code)
+    [HttpGet("get-document-request-by-code/{code}")]
+    public async Task<IActionResult> GetDocumentRequestById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<DocumentRequest>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetByCodeAsync(code),
+                Data = await _distributionListComponent.GetByCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -120,37 +119,8 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-departments-by-division-code/{dCode}")]
-    public async Task<IActionResult> GetDepartmentsByDivisionCode(string dCode)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
-            {
-                Success = true,
-                Data = await _departmentComponent.GetByDivisionCodeAsync(dCode),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
-
-    [HttpPost("create-department")]
-    public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
+    [HttpPost("create-document-request")]
+    public async Task<IActionResult> Create([FromBody] DocumentRequest input)
     {
         if (!ModelState.IsValid)
         {
@@ -160,11 +130,11 @@ public class DMSDepartmentController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<DocumentRequest>()
             {
                 Success = true,
-                Data = await _departmentComponent.CreateAsync(input),
-                Message = "Department created successfully.",
+                Data = await _distributionListComponent.CreateAsync(input),
+                Message = "Document Request created successfully.",
                 Code = 200
             });
         }
@@ -182,16 +152,16 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpPut("update-department")]
-    public async Task<IActionResult> Update([FromBody] DepartmentUpdateDto input)
+    [HttpPut("update-document-request")]
+    public async Task<IActionResult> Update([FromBody] DocumentRequest input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<DocumentRequest>()
             {
                 Success = true,
-                Data = await _departmentComponent.UpdateAsync(input),
-                Message = "Department updated successfully.",
+                Data = await _distributionListComponent.UpdateAsync(input),
+                Message = "Document Request updated successfully.",
                 Code = 200
             });
         }
@@ -209,19 +179,19 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpDelete("delete-department/{code}")]
+    [HttpDelete("delete-document-request/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
+            var existingRecord = await _distributionListComponent.GetByCodeAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Department not found",
+                    Message = "Document Request not found",
                     Code = 404
                 });
             }
@@ -229,8 +199,8 @@ public class DMSDepartmentController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _departmentComponent.DeleteAsync(code),
-                Message = "Department deleted successfully.",
+                Data = await _distributionListComponent.DeleteAsync(code),
+                Message = "Document Request deleted successfully.",
                 Code = 200
             });
         }

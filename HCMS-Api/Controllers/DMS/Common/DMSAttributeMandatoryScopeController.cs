@@ -1,6 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
-using HCMS_Api.Components.DMS.Common.Models.Departments;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
@@ -13,37 +13,37 @@ namespace HCMS_Api.Controllers.DMS.Common;
 [Route("api/[controller]")]
 [ApiVersion("1.0")]
 [ApiVersion("2.0")]
-public class DMSDepartmentController : Controller
+public class DMSAttributeMandatoryScopeController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DepartmentComponent _departmentComponent;
+    private readonly AttributeMandatoryScopeComponent _attributeMandatoryScopeComponent;
 
-    public DMSDepartmentController(
+    public DMSAttributeMandatoryScopeController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DepartmentComponent departmentComponent)
+     AttributeMandatoryScopeComponent attributeMandatoryScopeComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _departmentComponent = departmentComponent;
+        _attributeMandatoryScopeComponent = attributeMandatoryScopeComponent;
     }
 
-    [HttpPost("get-all-departments")]
-    public async Task<IActionResult> GetAllDepartments(TableFiltersDto input)
+    [HttpPost("get-all-attribute-mandatory-scopes")]
+    public async Task<IActionResult> GetAllAttributeMandatoryScopes(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DepartmentReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScope>>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetAllAsync(input),
+                Data = await _attributeMandatoryScopeComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,12 +63,12 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-all-department-list")]
+    [HttpGet("get-all-attribute-mandatory-scopes-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            var selectList = await _departmentComponent.GetAllSelectList();
+            var selectList = await _attributeMandatoryScopeComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
                 Success = true,
@@ -92,15 +92,15 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-department-by-code/{code}")]
-    public async Task<IActionResult> GetDepartmentById(string code)
+    [HttpGet("get-attribute-mandatory-scopes-by-code/{code}")]
+    public async Task<IActionResult> GetAttributeMandatoryScopeById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetByCodeAsync(code),
+                Data = await _attributeMandatoryScopeComponent.GetByCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -120,37 +120,10 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-departments-by-division-code/{dCode}")]
-    public async Task<IActionResult> GetDepartmentsByDivisionCode(string dCode)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
-            {
-                Success = true,
-                Data = await _departmentComponent.GetByDivisionCodeAsync(dCode),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
-
-    [HttpPost("create-department")]
-    public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
+    [HttpPost("create-attribute-mandatory-scopes")]
+  
+    [MapToApiVersion("1.0")]
+    public async Task<IActionResult> Create([FromBody] AttributeMandatoryScope input)
     {
         if (!ModelState.IsValid)
         {
@@ -159,12 +132,12 @@ public class DMSDepartmentController : Controller
         }
 
         try
-        { 
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+        {
+            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
             {
                 Success = true,
-                Data = await _departmentComponent.CreateAsync(input),
-                Message = "Department created successfully.",
+                Data = await _attributeMandatoryScopeComponent.CreateAsync(input),
+                Message = "Attribute Mandatory Scope created successfully.",
                 Code = 200
             });
         }
@@ -182,16 +155,23 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpPut("update-department")]
-    public async Task<IActionResult> Update([FromBody] DepartmentUpdateDto input)
+    [HttpPost("create")]
+    [MapToApiVersion("2.0")]
+    public IActionResult CreateV2(AttributeMandatoryScope request)
+    {
+        return Ok("Created using v2");
+    }
+
+    [HttpPut("update-attribute-mandatory-scopes")]
+    public async Task<IActionResult> Update([FromBody] AttributeMandatoryScope input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
             {
                 Success = true,
-                Data = await _departmentComponent.UpdateAsync(input),
-                Message = "Department updated successfully.",
+                Data = await _attributeMandatoryScopeComponent.UpdateAsync(input),
+                Message = "Attribute Mandatory Scope updated successfully.",
                 Code = 200
             });
         }
@@ -209,19 +189,19 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpDelete("delete-department/{code}")]
+    [HttpDelete("delete-attribute-mandatory-scopes/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
+            var existingRecord = await _attributeMandatoryScopeComponent.GetByCodeAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Department not found",
+                    Message = "Attribute Mandatory Scope not found",
                     Code = 404
                 });
             }
@@ -229,8 +209,8 @@ public class DMSDepartmentController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _departmentComponent.DeleteAsync(code),
-                Message = "Department deleted successfully.",
+                Data = await _attributeMandatoryScopeComponent.DeleteAsync(code),
+                Message = "Attribute Mandatory Scope deleted successfully.",
                 Code = 200
             });
         }

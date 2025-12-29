@@ -9,6 +9,10 @@ using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
+
+[ApiController]
+[ApiVersion("1.0")]
+[Route("api/[controller]")]
 public class DMSSubDepartmentController : Controller
 {
     private readonly Utilities _utilities;
@@ -89,7 +93,7 @@ public class DMSSubDepartmentController : Controller
 
 
     [HttpGet("get-subdepartment-by-code/{code}")]
-    public async Task<IActionResult> GetById(string code)
+    public async Task<IActionResult> GetSubDepartmentById(string code)
     {
         try
         {
@@ -153,11 +157,7 @@ public class DMSSubDepartmentController : Controller
         }
 
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            //var empIdStr = _utilities.GetEmployeeId(HttpContext, userId);
+        { 
             return Ok(new HttpApiResponse<SubDepartmentReadDto>()
             {
                 Success = true,

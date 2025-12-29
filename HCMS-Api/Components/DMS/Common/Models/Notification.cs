@@ -25,5 +25,5 @@ public class Notification
     public Guid? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public string CreatedAt { get; set; }
 }

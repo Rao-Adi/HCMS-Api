@@ -482,5 +482,4 @@ public class DocumentTrainingComponent
         }
     }
 
-
 }

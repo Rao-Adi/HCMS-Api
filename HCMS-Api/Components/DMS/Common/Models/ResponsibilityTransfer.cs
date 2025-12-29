@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace HCMS_Api.Components.DMS.Common.Models;
 
 [Table("ResponsibilityTransfers")]
-public class ResponsibilityTransfer
+public class ResponsibilityTransfer : AuditableEntity
 {
     [Key]
     public Guid Id { get; set; }
@@ -27,11 +27,4 @@ public class ResponsibilityTransfer
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
-
-    public Guid CreatedBy { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public Guid LastModifiedBy { get; set; }
-    public DateTime LastModifiedAt { get; set; }
 }

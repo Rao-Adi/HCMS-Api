@@ -1,6 +1,6 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
-using HCMS_Api.Components.DMS.Common.Models.Departments;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
@@ -10,40 +10,39 @@ using System.Net;
 namespace HCMS_Api.Controllers.DMS.Common;
 
 [ApiController]
-[Route("api/[controller]")]
 [ApiVersion("1.0")]
-[ApiVersion("2.0")]
-public class DMSDepartmentController : Controller
+[Route("api/[controller]")]
+public class DMSESignatureController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DepartmentComponent _departmentComponent;
+    private readonly ESignatureComponent _eSignatureComponent;
 
-    public DMSDepartmentController(
+    public DMSESignatureController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DepartmentComponent departmentComponent)
+     ESignatureComponent eSignatureComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _departmentComponent = departmentComponent;
+        _eSignatureComponent = eSignatureComponent;
     }
 
-    [HttpPost("get-all-departments")]
-    public async Task<IActionResult> GetAllDepartments(TableFiltersDto input)
+    [HttpPost("get-all-esignatures")]
+    public async Task<IActionResult> GetAllDocumentTypes(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DepartmentReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<ESignature>>()
             {
                 Success = true,
-                Data = await _departmentComponent.GetAllAsync(input),
+                Data = await _eSignatureComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,44 +62,15 @@ public class DMSDepartmentController : Controller
     }
 
 
-    [HttpGet("get-all-department-list")]
-    public async Task<IActionResult> GetAllSelectList()
+    [HttpGet("get-esignature-by-code/{code}")]
+    public async Task<IActionResult> GetESignatureById(string code)
     {
         try
         {
-            var selectList = await _departmentComponent.GetAllSelectList();
-            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            return Ok(new HttpApiResponse<ESignature>()
             {
                 Success = true,
-                Data = selectList.ToList(),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
-    [HttpGet("get-department-by-code/{code}")]
-    public async Task<IActionResult> GetDepartmentById(string code)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
-            {
-                Success = true,
-                Data = await _departmentComponent.GetByCodeAsync(code),
+                Data = await _eSignatureComponent.GetByIdAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -119,38 +89,8 @@ public class DMSDepartmentController : Controller
         }
     }
 
-
-    [HttpGet("get-departments-by-division-code/{dCode}")]
-    public async Task<IActionResult> GetDepartmentsByDivisionCode(string dCode)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
-            {
-                Success = true,
-                Data = await _departmentComponent.GetByDivisionCodeAsync(dCode),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
-
-    [HttpPost("create-department")]
-    public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
+    [HttpPost("create-esignature")]
+    public async Task<IActionResult> Create([FromBody] ESignature input)
     {
         if (!ModelState.IsValid)
         {
@@ -160,11 +100,11 @@ public class DMSDepartmentController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<ESignature>()
             {
                 Success = true,
-                Data = await _departmentComponent.CreateAsync(input),
-                Message = "Department created successfully.",
+                Data = await _eSignatureComponent.CreateAsync(input),
+                Message = "DocumentType created successfully.",
                 Code = 200
             });
         }
@@ -182,16 +122,16 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpPut("update-department")]
-    public async Task<IActionResult> Update([FromBody] DepartmentUpdateDto input)
+    [HttpPut("update-esignature")]
+    public async Task<IActionResult> Update([FromBody] ESignature input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<ESignature>()
             {
                 Success = true,
-                Data = await _departmentComponent.UpdateAsync(input),
-                Message = "Department updated successfully.",
+                Data = await _eSignatureComponent.UpdateAsync(input),
+                Message = "DocumentType updated successfully.",
                 Code = 200
             });
         }
@@ -209,19 +149,19 @@ public class DMSDepartmentController : Controller
         }
     }
 
-    [HttpDelete("delete-department/{code}")]
+    [HttpDelete("delete-esignature/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
+            var existingRecord = await _eSignatureComponent.GetByIdAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Department not found",
+                    Message = "DocumentType not found",
                     Code = 404
                 });
             }
@@ -229,8 +169,8 @@ public class DMSDepartmentController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _departmentComponent.DeleteAsync(code),
-                Message = "Department deleted successfully.",
+                Data = await _eSignatureComponent.DeleteAsync(code),
+                Message = "DocumentType deleted successfully.",
                 Code = 200
             });
         }

@@ -4,32 +4,25 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace HCMS_Api.Components.DMS.Common.Models;
 
 [Table("Templates")]
-public class Template
+public class Template : AuditableEntity
 {
     [Key]
     public Guid Id { get; set; }
 
-    public int DocumentTypeId { get; set; }
+    public string DocumentTypeCode { get; set; }
 
     [MaxLength(200)]
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileUrl { get; set; } = null!;
+    public string TemplateFileURL { get; set; } = null!;
 
     public int TemplateType { get; set; }
 
-    public int? DivisionId { get; set; }
-    public int? DepartmentId { get; set; }
-    public int? SubDepartmentId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
 
     public bool IsDefault { get; set; }
 
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
-
-    public Guid CreatedBy { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public Guid LastModifiedBy { get; set; }
-    public DateTime LastModifiedAt { get; set; }
 }

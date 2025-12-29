@@ -295,7 +295,7 @@ public class ESignatureComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (input.Id != Guid.Empty)
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Invalid Id.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
