@@ -41,7 +41,7 @@ public class DMSWorkflowPolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<WorkflowPolicy>>()
+            return Ok(new HttpApiResponse<PaginationResult<WorkflowPolicyReadDto>>()
             {
                 Success = true,
                 Data = await _workflowPolicyComponent.GetAllAsync(input),
@@ -70,7 +70,7 @@ public class DMSWorkflowPolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<WorkflowPolicy>()
+            return Ok(new HttpApiResponse<WorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _workflowPolicyComponent.GetByCodeAsync(code),
@@ -94,7 +94,7 @@ public class DMSWorkflowPolicyController : Controller
 
 
     [HttpPost("create-workflow-policy")]
-    public async Task<IActionResult> Create([FromBody] WorkflowPolicy input)
+    public async Task<IActionResult> Create([FromBody] WorkflowPolicyCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -104,7 +104,7 @@ public class DMSWorkflowPolicyController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<WorkflowPolicy>()
+            return Ok(new HttpApiResponse<WorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _workflowPolicyComponent.CreateAsync(input),
@@ -127,11 +127,11 @@ public class DMSWorkflowPolicyController : Controller
     }
 
     [HttpPut("update-workflow-policy")]
-    public async Task<IActionResult> Update([FromBody] WorkflowPolicy input)
+    public async Task<IActionResult> Update([FromBody] WorkflowPolicyUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<WorkflowPolicy>()
+            return Ok(new HttpApiResponse<WorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _workflowPolicyComponent.UpdateAsync(input),

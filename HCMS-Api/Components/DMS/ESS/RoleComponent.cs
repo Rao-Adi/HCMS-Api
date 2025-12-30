@@ -44,7 +44,7 @@ public class RoleComponent
     }
 
 
-    public async Task<Role> CreateAsync(Role input)
+    public async Task<RoleReadDto> CreateAsync(RoleCreateDto input)
     {
         try
         {
@@ -107,7 +107,7 @@ public class RoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Role
+            return new RoleReadDto
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -152,7 +152,7 @@ public class RoleComponent
     }
 
 
-    public async Task<PaginationResult<Role>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<RoleReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -182,14 +182,14 @@ public class RoleComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM Roles
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Roles
@@ -202,15 +202,15 @@ public class RoleComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<Role>
+                return new PaginationResult<RoleReadDto>
                 {
-                    Items = new List<Role>(),
+                    Items = new List<RoleReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new Role
+                .Select(row => new RoleReadDto
                 {
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty, 
                     Description = row.Table.Columns.Contains("Description") ? row.Field<string>("Description") : string.Empty,
@@ -231,7 +231,7 @@ public class RoleComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<Role>
+            return new PaginationResult<RoleReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -243,7 +243,7 @@ public class RoleComponent
         }
     }
 
-    public async Task<Role> GetByCodeAsync(string code)
+    public async Task<RoleReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -261,7 +261,7 @@ public class RoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Role
+            return new RoleReadDto
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -275,7 +275,7 @@ public class RoleComponent
     }
 
      
-    public async Task<Role> UpdateAsync(Role input)
+    public async Task<RoleReadDto> UpdateAsync(RoleUpdateDto input)
     {
         try
         {
@@ -326,7 +326,7 @@ public class RoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Role
+            return new RoleReadDto
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),

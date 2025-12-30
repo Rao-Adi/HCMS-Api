@@ -39,7 +39,7 @@ public class DMSDocumentVersionController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DocumentVersion>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentVersionReadDto>>()
             {
                 Success = true,
                 Data = await _documentTypeComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentVersionController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentVersion>()
+            return Ok(new HttpApiResponse<DocumentVersionReadDto>()
             {
                 Success = true,
                 Data = await _documentTypeComponent.GetByCodeAsync(code),
@@ -119,7 +119,7 @@ public class DMSDocumentVersionController : Controller
     }
 
     [HttpPost("create-document-version")]
-    public async Task<IActionResult> Create([FromBody] DocumentVersion input)
+    public async Task<IActionResult> Create([FromBody] DocumentVersionCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -129,7 +129,7 @@ public class DMSDocumentVersionController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DocumentVersion>()
+            return Ok(new HttpApiResponse<DocumentVersionReadDto>()
             {
                 Success = true,
                 Data = await _documentTypeComponent.CreateAsync(input),
@@ -152,11 +152,11 @@ public class DMSDocumentVersionController : Controller
     }
 
     [HttpPut("update-document-version")]
-    public async Task<IActionResult> Update([FromBody] DocumentVersion input)
+    public async Task<IActionResult> Update([FromBody] DocumentVersionUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentVersion>()
+            return Ok(new HttpApiResponse<DocumentVersionReadDto>()
             {
                 Success = true,
                 Data = await _documentTypeComponent.UpdateAsync(input),

@@ -44,7 +44,7 @@ public class TemplateComponent
     }
 
 
-    public async Task<Template> CreateAsync(Template input)
+    public async Task<TemplateReadDto> CreateAsync(TemplateCreateDto input)
     {
         try
         {
@@ -132,7 +132,7 @@ public class TemplateComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Template
+            return new TemplateReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -184,7 +184,7 @@ public class TemplateComponent
     }
 
 
-    public async Task<PaginationResult<Template>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<TemplateReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -214,14 +214,14 @@ public class TemplateComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM Templates
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Templates
@@ -234,15 +234,15 @@ public class TemplateComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<Template>
+                return new PaginationResult<TemplateReadDto>
                 {
-                    Items = new List<Template>(),
+                    Items = new List<TemplateReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new Template
+                .Select(row => new TemplateReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
@@ -270,7 +270,7 @@ public class TemplateComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<Template>
+            return new PaginationResult<TemplateReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -282,7 +282,7 @@ public class TemplateComponent
         }
     }
 
-    public async Task<Template> GetByCodeAsync(string code)
+    public async Task<TemplateReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -311,7 +311,7 @@ public class TemplateComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Template
+            return new TemplateReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -332,7 +332,7 @@ public class TemplateComponent
     }
 
 
-    public async Task<Template> GetByDivisionCodeAsync(string dCode)
+    public async Task<TemplateReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -361,7 +361,7 @@ public class TemplateComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Template
+            return new TemplateReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -382,7 +382,7 @@ public class TemplateComponent
     }
 
 
-    public async Task<Template> UpdateAsync(Template input)
+    public async Task<TemplateReadDto> UpdateAsync(TemplateUpdateDto input)
     {
         try
         {
@@ -439,7 +439,7 @@ public class TemplateComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Template
+            return new TemplateReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),

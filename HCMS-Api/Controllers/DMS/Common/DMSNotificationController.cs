@@ -39,7 +39,7 @@ public class DMSNotificationController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<Notification>>()
+            return Ok(new HttpApiResponse<PaginationResult<NotificationReadDto>>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.GetAllAsync(input),
@@ -67,7 +67,7 @@ public class DMSNotificationController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<Notification>()
+            return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.GetByIdAsync(code),
@@ -90,7 +90,7 @@ public class DMSNotificationController : Controller
     }
 
     [HttpPost("create-notification")]
-    public async Task<IActionResult> Create([FromBody] Notification input)
+    public async Task<IActionResult> Create([FromBody] NotificationCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -100,7 +100,7 @@ public class DMSNotificationController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<Notification>()
+            return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.CreateAsync(input),
@@ -123,11 +123,11 @@ public class DMSNotificationController : Controller
     }
 
     [HttpPut("update-notification")]
-    public async Task<IActionResult> Update([FromBody] Notification input)
+    public async Task<IActionResult> Update([FromBody] NotificationUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<Notification>()
+            return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.UpdateAsync(input),

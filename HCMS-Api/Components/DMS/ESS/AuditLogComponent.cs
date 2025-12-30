@@ -44,7 +44,7 @@ public class AuditLogComponent
     }
 
 
-    public async Task<AuditLog> CreateAsync(AuditLog input)
+    public async Task<AuditLogReadDto> CreateAsync(AuditLogCreateDto input)
     {
         try
         {
@@ -121,7 +121,7 @@ public class AuditLogComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AuditLog
+            return new AuditLogReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 Action = row.Field<string>("Action"),
@@ -172,7 +172,7 @@ public class AuditLogComponent
     }
 
 
-    public async Task<PaginationResult<AuditLog>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<AuditLogReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -202,7 +202,7 @@ public class AuditLogComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -210,7 +210,7 @@ public class AuditLogComponent
 						ON EntityType = div.UserId
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM AuditLogs
@@ -223,15 +223,15 @@ public class AuditLogComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<AuditLog>
+                return new PaginationResult<AuditLogReadDto>
                 {
-                    Items = new List<AuditLog>(),
+                    Items = new List<AuditLogReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new AuditLog
+                .Select(row => new AuditLogReadDto
                 {
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
                     Action = row.Table.Columns.Contains("Action") ? row.Field<string>("Action") : string.Empty,
@@ -258,7 +258,7 @@ public class AuditLogComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<AuditLog>
+            return new PaginationResult<AuditLogReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -301,7 +301,7 @@ public class AuditLogComponent
     }
 
 
-    public async Task<AuditLog> GetByUserIdAsync(string code)
+    public async Task<AuditLogReadDto> GetByUserIdAsync(string code)
     {
         try
         {
@@ -319,7 +319,7 @@ public class AuditLogComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AuditLog
+            return new AuditLogReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 Action = row.Field<string>("Action"),
@@ -339,7 +339,7 @@ public class AuditLogComponent
     }
 
 
-    public async Task<AuditLog> GetByEntityTypeAsync(string dUserId)
+    public async Task<AuditLogReadDto> GetByEntityTypeAsync(string dUserId)
     {
         try
         {
@@ -357,7 +357,7 @@ public class AuditLogComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AuditLog
+            return new AuditLogReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 Action = row.Field<string>("Action"),
@@ -377,7 +377,7 @@ public class AuditLogComponent
     }
 
 
-    public async Task<AuditLog> UpdateAsync(AuditLog input)
+    public async Task<AuditLogReadDto> UpdateAsync(AuditLogUpdateDto input)
     {
         try
         {
@@ -427,7 +427,7 @@ public class AuditLogComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AuditLog
+            return new AuditLogReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 Action = row.Field<string>("Action"),

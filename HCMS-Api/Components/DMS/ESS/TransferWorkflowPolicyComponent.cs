@@ -44,7 +44,7 @@ public class TransferWorkflowPolicyComponent
     }
 
 
-    public async Task<TransferWorkflowPolicy> CreateAsync(TransferWorkflowPolicy input)
+    public async Task<TransferWorkflowPolicyReadDto> CreateAsync(TransferWorkflowPolicyCreateDto input)
     {
         try
         {
@@ -109,7 +109,7 @@ public class TransferWorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicy
+            return new TransferWorkflowPolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
@@ -154,7 +154,7 @@ public class TransferWorkflowPolicyComponent
     }
 
 
-    public async Task<PaginationResult<TransferWorkflowPolicy>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<TransferWorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -184,14 +184,14 @@ public class TransferWorkflowPolicyComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM TransferWorkflowPolicies
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM TransferWorkflowPolicies
@@ -204,15 +204,15 @@ public class TransferWorkflowPolicyComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<TransferWorkflowPolicy>
+                return new PaginationResult<TransferWorkflowPolicyReadDto>
                 {
-                    Items = new List<TransferWorkflowPolicy>(),
+                    Items = new List<TransferWorkflowPolicyReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new TransferWorkflowPolicy
+                .Select(row => new TransferWorkflowPolicyReadDto
                 {
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
@@ -234,7 +234,7 @@ public class TransferWorkflowPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<TransferWorkflowPolicy>
+            return new PaginationResult<TransferWorkflowPolicyReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -246,7 +246,7 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
-    public async Task<TransferWorkflowPolicy> GetByTransferWorkflowPolicyCodeAsync(string code)
+    public async Task<TransferWorkflowPolicyReadDto> GetByTransferWorkflowPolicyCodeAsync(string code)
     {
         try
         {
@@ -267,7 +267,7 @@ public class TransferWorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicy
+            return new TransferWorkflowPolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
@@ -281,7 +281,7 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
-    public async Task<TransferWorkflowPolicy> UpdateAsync(TransferWorkflowPolicy input)
+    public async Task<TransferWorkflowPolicyReadDto> UpdateAsync(TransferWorkflowPolicyUpdateDto input)
     {
         try
         {
@@ -332,7 +332,7 @@ public class TransferWorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicy
+            return new TransferWorkflowPolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),

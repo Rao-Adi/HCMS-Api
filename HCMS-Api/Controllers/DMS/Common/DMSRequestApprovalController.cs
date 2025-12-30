@@ -37,7 +37,7 @@ public class DMSRequestApprovalController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<RequestApproval>>()
+            return Ok(new HttpApiResponse<PaginationResult<RequestApprovalReadDto>>()
             {
                 Success = true,
                 Data = await _requestApprovalComponent.GetAllAsync(input),
@@ -65,7 +65,7 @@ public class DMSRequestApprovalController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<RequestApproval>()
+            return Ok(new HttpApiResponse<RequestApprovalReadDto>()
             {
                 Success = true,
                 Data = await _requestApprovalComponent.GetByIdAsync(code),
@@ -88,7 +88,7 @@ public class DMSRequestApprovalController : Controller
     }
 
     [HttpPost("create-request-approval")]
-    public async Task<IActionResult> Create([FromBody] RequestApproval input)
+    public async Task<IActionResult> Create([FromBody] RequestApprovalCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -98,7 +98,7 @@ public class DMSRequestApprovalController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<RequestApproval>()
+            return Ok(new HttpApiResponse<RequestApprovalReadDto>()
             {
                 Success = true,
                 Data = await _requestApprovalComponent.CreateAsync(input),
@@ -121,11 +121,11 @@ public class DMSRequestApprovalController : Controller
     }
 
     [HttpPut("update-request-approval")]
-    public async Task<IActionResult> Update([FromBody] RequestApproval input)
+    public async Task<IActionResult> Update([FromBody] RequestApprovalUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<RequestApproval>()
+            return Ok(new HttpApiResponse<RequestApprovalReadDto>()
             {
                 Success = true,
                 Data = await _requestApprovalComponent.UpdateAsync(input),

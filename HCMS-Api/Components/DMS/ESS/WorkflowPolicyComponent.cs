@@ -45,7 +45,7 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<WorkflowPolicy> CreateAsync(WorkflowPolicy input)
+    public async Task<WorkflowPolicyReadDto> CreateAsync(WorkflowPolicyCreateDto input)
     {
         try
         {
@@ -126,7 +126,7 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicy
+            return new WorkflowPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
@@ -176,7 +176,7 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<PaginationResult<WorkflowPolicy>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<WorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -206,14 +206,14 @@ public class WorkflowPolicyComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM WorkflowPolicies
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM WorkflowPolicies
@@ -226,15 +226,15 @@ public class WorkflowPolicyComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<WorkflowPolicy>
+                return new PaginationResult<WorkflowPolicyReadDto>
                 {
-                    Items = new List<WorkflowPolicy>(),
+                    Items = new List<WorkflowPolicyReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new WorkflowPolicy
+                .Select(row => new WorkflowPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     PolicyType = row.Table.Columns.Contains("PolicyType") ? row.Field<int>("PolicyType") : 0,
@@ -260,7 +260,7 @@ public class WorkflowPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<WorkflowPolicy>
+            return new PaginationResult<WorkflowPolicyReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -272,7 +272,7 @@ public class WorkflowPolicyComponent
         }
     }
 
-    public async Task<WorkflowPolicy> GetByCodeAsync(string code)
+    public async Task<WorkflowPolicyReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -297,7 +297,7 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicy
+            return new WorkflowPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
@@ -316,7 +316,7 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<WorkflowPolicy> GetByDivisionCodeAsync(string dCode)
+    public async Task<WorkflowPolicyReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -341,7 +341,7 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicy
+            return new WorkflowPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
@@ -360,7 +360,7 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<WorkflowPolicy> UpdateAsync(WorkflowPolicy input)
+    public async Task<WorkflowPolicyReadDto> UpdateAsync(WorkflowPolicyUpdateDto input)
     {
         try
         {
@@ -415,7 +415,7 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicy
+            return new WorkflowPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),

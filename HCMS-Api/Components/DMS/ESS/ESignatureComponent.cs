@@ -46,7 +46,7 @@ public class ESignatureComponent
 
 
 
-    public async Task<ESignature> CreateAsync(ESignature input)
+    public async Task<ESignatureReadDto> CreateAsync(ESignatureCreateDto input)
     {
         try
         {
@@ -113,7 +113,7 @@ public class ESignatureComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ESignature
+            return new ESignatureReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),
@@ -161,7 +161,7 @@ public class ESignatureComponent
     }
 
 
-    public async Task<PaginationResult<ESignature>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<ESignatureReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -191,14 +191,14 @@ public class ESignatureComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM ESignatures
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM ESignatures
@@ -211,15 +211,15 @@ public class ESignatureComponent
             // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<ESignature>
+                return new PaginationResult<ESignatureReadDto>
                 {
-                    Items = new List<ESignature>(),
+                    Items = new List<ESignatureReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new ESignature
+                .Select(row => new ESignatureReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
@@ -240,7 +240,7 @@ public class ESignatureComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<ESignature>
+            return new PaginationResult<ESignatureReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -252,7 +252,7 @@ public class ESignatureComponent
         }
     }
      
-    public async Task<ESignature> GetByIdAsync(string code)
+    public async Task<ESignatureReadDto> GetByIdAsync(string code)
     {
         try
         {
@@ -270,7 +270,7 @@ public class ESignatureComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ESignature
+            return new ESignatureReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),
@@ -287,7 +287,7 @@ public class ESignatureComponent
     }
 
 
-    public async Task<ESignature> UpdateAsync(ESignature input)
+    public async Task<ESignatureReadDto> UpdateAsync(ESignatureUpdateDto input)
     {
         try
         {
@@ -337,7 +337,7 @@ public class ESignatureComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ESignature
+            return new ESignatureReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),

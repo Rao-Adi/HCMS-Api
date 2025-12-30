@@ -40,7 +40,7 @@ public class DMSAttributeMandatoryScopeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScope>>()
+            return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScopeReadDto>>()
             {
                 Success = true,
                 Data = await _attributeMandatoryScopeComponent.GetAllAsync(input),
@@ -97,7 +97,7 @@ public class DMSAttributeMandatoryScopeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
+            return Ok(new HttpApiResponse<AttributeMandatoryScopeReadDto>()
             {
                 Success = true,
                 Data = await _attributeMandatoryScopeComponent.GetByCodeAsync(code),
@@ -123,7 +123,7 @@ public class DMSAttributeMandatoryScopeController : Controller
     [HttpPost("create-attribute-mandatory-scopes")]
   
     [MapToApiVersion("1.0")]
-    public async Task<IActionResult> Create([FromBody] AttributeMandatoryScope input)
+    public async Task<IActionResult> Create([FromBody] AttributeMandatoryScopeCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -133,7 +133,7 @@ public class DMSAttributeMandatoryScopeController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
+            return Ok(new HttpApiResponse<AttributeMandatoryScopeReadDto>()
             {
                 Success = true,
                 Data = await _attributeMandatoryScopeComponent.CreateAsync(input),
@@ -157,17 +157,17 @@ public class DMSAttributeMandatoryScopeController : Controller
 
     [HttpPost("create")]
     [MapToApiVersion("2.0")]
-    public IActionResult CreateV2(AttributeMandatoryScope request)
+    public IActionResult CreateV2(AttributeMandatoryScopeCreateDto request)
     {
         return Ok("Created using v2");
     }
 
     [HttpPut("update-attribute-mandatory-scopes")]
-    public async Task<IActionResult> Update([FromBody] AttributeMandatoryScope input)
+    public async Task<IActionResult> Update([FromBody] AttributeMandatoryScopeUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<AttributeMandatoryScope>()
+            return Ok(new HttpApiResponse<AttributeMandatoryScopeReadDto>()
             {
                 Success = true,
                 Data = await _attributeMandatoryScopeComponent.UpdateAsync(input),

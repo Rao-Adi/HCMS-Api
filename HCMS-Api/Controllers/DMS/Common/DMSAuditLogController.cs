@@ -39,7 +39,7 @@ public class DMSAuditLogController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<AuditLog>>()
+            return Ok(new HttpApiResponse<PaginationResult<AuditLogReadDto>>()
             {
                 Success = true,
                 Data = await _auditLogComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSAuditLogController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<AuditLog>()
+            return Ok(new HttpApiResponse<AuditLogReadDto>()
             {
                 Success = true,
                 Data = await _auditLogComponent.GetByUserIdAsync(code),
@@ -120,7 +120,7 @@ public class DMSAuditLogController : Controller
 
 
     [HttpPost("create-audit-log")]
-    public async Task<IActionResult> Create([FromBody] AuditLog input)
+    public async Task<IActionResult> Create([FromBody] AuditLogCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSAuditLogController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<AuditLog>()
+            return Ok(new HttpApiResponse<AuditLogReadDto>()
             {
                 Success = true,
                 Data = await _auditLogComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSAuditLogController : Controller
     }
 
     [HttpPut("update-audit-log")]
-    public async Task<IActionResult> Update([FromBody] AuditLog input)
+    public async Task<IActionResult> Update([FromBody] AuditLogUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<AuditLog>()
+            return Ok(new HttpApiResponse<AuditLogReadDto>()
             {
                 Success = true,
                 Data = await _auditLogComponent.UpdateAsync(input),

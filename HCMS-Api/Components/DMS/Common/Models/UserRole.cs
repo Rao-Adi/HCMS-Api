@@ -14,3 +14,36 @@ public class UserRole : AuditableEntity
     public User User { get; set; } = null!;
     public Role Role { get; set; } = null!;
 }
+
+
+public class UserRoleReadDto : AuditableEntity
+{
+    public Guid UserId { get; set; }
+    public int RoleId { get; set; }
+
+    public DateTime AssignedAt { get; set; }
+    public string AssignedBy { get; set; } = null!;
+     
+}
+
+public class UserRoleCreateDto
+{
+    public Guid UserId { get; set; }
+    public int RoleId { get; set; }
+
+    public DateTime AssignedAt { get; set; }
+    public string AssignedBy { get; set; } = null!;
+     
+}
+
+public class UserRoleUpdateDto
+{
+    public Guid UserId { get; set; }
+    public int RoleId { get; set; }
+
+    public DateTime AssignedAt { get; set; }
+    public string AssignedBy { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}

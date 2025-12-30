@@ -28,3 +28,64 @@ public class AuditLog : AuditableEntity
     public string? IPAddress { get; set; }
 }
 
+public class AuditLogReadDto : AuditableEntity
+{ 
+    public Guid Id { get; set; }
+
+    public Guid UserId { get; set; }
+     
+    public string Action { get; set; } = null!;
+     
+    public string EntityType { get; set; } = null!;
+
+    public Guid EntityId { get; set; }
+
+    public string? OldValues { get; set; }
+    public string? NewValues { get; set; }
+
+    public DateTime Timestamp { get; set; }
+     
+    public string? IPAddress { get; set; }
+}
+
+public class AuditLogCreateDto
+{   
+    public Guid UserId { get; set; }
+     
+    public string Action { get; set; } = null!;
+     
+    public string EntityType { get; set; } = null!;
+
+    public Guid EntityId { get; set; }
+
+    public string? OldValues { get; set; }
+    public string? NewValues { get; set; }
+
+    public DateTime Timestamp { get; set; }
+     
+    public string? IPAddress { get; set; }
+}
+
+public class AuditLogUpdateDto
+{ 
+    public Guid Id { get; set; }
+
+    public Guid UserId { get; set; }
+     
+    public string Action { get; set; } = null!;
+     
+    public string EntityType { get; set; } = null!;
+
+    public Guid EntityId { get; set; }
+
+    public string? OldValues { get; set; }
+    public string? NewValues { get; set; }
+
+    public DateTime Timestamp { get; set; }
+     
+    public string? IPAddress { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}
+

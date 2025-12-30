@@ -46,7 +46,7 @@ public class TrainingPolicyComponent
 
 
 
-    public async Task<TrainingPolicy> CreateAsync(TrainingPolicy input)
+    public async Task<TrainingPolicyReadDto> CreateAsync(TrainingPolicyCreateDto input)
     {
         try
         {
@@ -113,7 +113,7 @@ public class TrainingPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TrainingPolicy
+            return new TrainingPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
@@ -160,7 +160,7 @@ public class TrainingPolicyComponent
     }
 
 
-    public async Task<PaginationResult<TrainingPolicy>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<TrainingPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -190,14 +190,14 @@ public class TrainingPolicyComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM TrainingPolicies
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM TrainingPolicies
@@ -210,15 +210,15 @@ public class TrainingPolicyComponent
             // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<TrainingPolicy>
+                return new PaginationResult<TrainingPolicyReadDto>
                 {
-                    Items = new List<TrainingPolicy>(),
+                    Items = new List<TrainingPolicyReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new TrainingPolicy
+                .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentTypeId = row.Table.Columns.Contains("DocumentTypeId") ? row.Field<int>("DocumentTypeId") : 0,
@@ -239,7 +239,7 @@ public class TrainingPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<TrainingPolicy>
+            return new PaginationResult<TrainingPolicyReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -251,7 +251,7 @@ public class TrainingPolicyComponent
         }
     }
 
-    public async Task<TrainingPolicy> GetByIdAsync(string code)
+    public async Task<TrainingPolicyReadDto> GetByIdAsync(string code)
     {
         try
         {
@@ -273,7 +273,7 @@ public class TrainingPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TrainingPolicy
+            return new TrainingPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
@@ -289,7 +289,7 @@ public class TrainingPolicyComponent
     }
 
 
-    public async Task<TrainingPolicy> UpdateAsync(TrainingPolicy input)
+    public async Task<TrainingPolicyReadDto> UpdateAsync(TrainingPolicyUpdateDto input)
     {
         try
         {
@@ -339,7 +339,7 @@ public class TrainingPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TrainingPolicy
+            return new TrainingPolicyReadDto
             {
                 Id = row.Field<Guid>("Id"), 
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),

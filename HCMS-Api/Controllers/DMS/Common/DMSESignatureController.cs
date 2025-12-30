@@ -39,7 +39,7 @@ public class DMSESignatureController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<ESignature>>()
+            return Ok(new HttpApiResponse<PaginationResult<ESignatureReadDto>>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.GetAllAsync(input),
@@ -67,7 +67,7 @@ public class DMSESignatureController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<ESignature>()
+            return Ok(new HttpApiResponse<ESignatureReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.GetByIdAsync(code),
@@ -90,7 +90,7 @@ public class DMSESignatureController : Controller
     }
 
     [HttpPost("create-esignature")]
-    public async Task<IActionResult> Create([FromBody] ESignature input)
+    public async Task<IActionResult> Create([FromBody] ESignatureCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -100,7 +100,7 @@ public class DMSESignatureController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<ESignature>()
+            return Ok(new HttpApiResponse<ESignatureReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.CreateAsync(input),
@@ -123,11 +123,11 @@ public class DMSESignatureController : Controller
     }
 
     [HttpPut("update-esignature")]
-    public async Task<IActionResult> Update([FromBody] ESignature input)
+    public async Task<IActionResult> Update([FromBody] ESignatureUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<ESignature>()
+            return Ok(new HttpApiResponse<ESignatureReadDto>()
             {
                 Success = true,
                 Data = await _eSignatureComponent.UpdateAsync(input),

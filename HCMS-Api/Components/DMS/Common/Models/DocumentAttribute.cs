@@ -29,3 +29,62 @@ public class DocumentAttribute : AuditableEntity
     public ICollection<AttributeMandatoryScope> MandatoryScopes { get; set; }
         = new List<AttributeMandatoryScope>();
 }
+
+public class DocumentAttributeReadDto : AuditableEntity
+{ 
+    public Guid Id { get; set; }
+
+    // ⚠️ Matches DB column:
+    // DocumentTypeCode INT NOT NULL REFERENCES DocumentTypes(Id)
+    public string DocumentTypeCode { get; set; }
+
+    [MaxLength(100)]
+    public string ControlLabel { get; set; } = null!;
+
+    public int ControlType { get; set; }
+
+    [MaxLength(1000)]
+    public string? ListValues { get; set; }
+
+    public bool IsMandatory { get; set; }
+     
+}
+
+public class DocumentAttributeCreateDto
+{ 
+    public Guid Id { get; set; }
+     
+    public string DocumentTypeCode { get; set; }
+
+    [MaxLength(100)]
+    public string ControlLabel { get; set; } = null!;
+
+    public int ControlType { get; set; }
+
+    [MaxLength(1000)]
+    public string? ListValues { get; set; }
+
+    public bool IsMandatory { get; set; }
+     
+}
+
+public class DocumentAttributeUpdateDto
+{ 
+    public Guid Id { get; set; }
+     
+    public string DocumentTypeCode { get; set; }
+
+    [MaxLength(100)]
+    public string ControlLabel { get; set; } = null!;
+
+    public int ControlType { get; set; }
+
+    [MaxLength(1000)]
+    public string? ListValues { get; set; }
+
+    public bool IsMandatory { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+}

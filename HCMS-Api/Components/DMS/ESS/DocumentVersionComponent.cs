@@ -44,7 +44,7 @@ public class DocumentVersionComponent
     }
 
 
-    public async Task<DocumentVersion> CreateAsync(DocumentVersion input)
+    public async Task<DocumentVersionReadDto> CreateAsync(DocumentVersionCreateDto input)
     {
         try
         {
@@ -115,7 +115,7 @@ public class DocumentVersionComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentVersion
+            return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<Guid>("DocumentId"),
                 Version = row.Field<string>("Version"),
@@ -163,7 +163,7 @@ public class DocumentVersionComponent
     }
 
 
-    public async Task<PaginationResult<DocumentVersion>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentVersionReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -193,14 +193,14 @@ public class DocumentVersionComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM DocumentVersions
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM DocumentVersions
@@ -213,15 +213,15 @@ public class DocumentVersionComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DocumentVersion>
+                return new PaginationResult<DocumentVersionReadDto>
                 {
-                    Items = new List<DocumentVersion>(),
+                    Items = new List<DocumentVersionReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DocumentVersion
+                .Select(row => new DocumentVersionReadDto
                 {
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<Guid>("DocumentId") : Guid.Empty,
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
@@ -240,7 +240,7 @@ public class DocumentVersionComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DocumentVersion>
+            return new PaginationResult<DocumentVersionReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -283,7 +283,7 @@ public class DocumentVersionComponent
     }
 
 
-    public async Task<DocumentVersion> GetByCodeAsync(string code)
+    public async Task<DocumentVersionReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -301,7 +301,7 @@ public class DocumentVersionComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentVersion
+            return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<Guid>("DocumentId"),
                 Version = row.Field<string>("Version"),
@@ -318,7 +318,7 @@ public class DocumentVersionComponent
     }
 
 
-    public async Task<DocumentVersion> GetByDescriptionAsync(string dCode)
+    public async Task<DocumentVersionReadDto> GetByDescriptionAsync(string dCode)
     {
         try
         {
@@ -336,7 +336,7 @@ public class DocumentVersionComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentVersion
+            return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<Guid>("DocumentId"),
                 Version = row.Field<string>("Version"),
@@ -353,7 +353,7 @@ public class DocumentVersionComponent
     }
 
 
-    public async Task<DocumentVersion> UpdateAsync(DocumentVersion input)
+    public async Task<DocumentVersionReadDto> UpdateAsync(DocumentVersionUpdateDto input)
     {
         try
         {
@@ -403,7 +403,7 @@ public class DocumentVersionComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentVersion
+            return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<Guid>("DocumentId"),
                 Version = row.Field<string>("Version"),

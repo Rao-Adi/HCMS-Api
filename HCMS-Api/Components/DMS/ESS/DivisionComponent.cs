@@ -100,7 +100,7 @@ public class DivisionComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive
+            SELECT Id, Code, Name, IsActive,IsDeleted
             FROM Divisions
             WHERE Id = {newId}";
 
@@ -115,7 +115,8 @@ public class DivisionComponent
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsActive = row.Field<bool>("IsActive"),
+                IsDeleted = row.Field<bool>("IsDeleted")
             };
         }
         catch
@@ -160,6 +161,9 @@ public class DivisionComponent
     {
         try
         {
+            Console.WriteLine($"PageNo={input.PageNumber}, PageSize={input.PageSize}");
+
+
             var whereClause = @"
                 WHERE IsDeleted = False 
                   AND IsActive = " + (input.IsActive ? "True" : "False");
@@ -186,14 +190,14 @@ public class DivisionComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM Divisions
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Divisions

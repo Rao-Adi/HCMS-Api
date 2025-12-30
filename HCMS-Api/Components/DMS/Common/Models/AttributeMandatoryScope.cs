@@ -28,3 +28,41 @@ public class AttributeMandatoryScope
     public Department Department { get; set; } = null!;
 }
 
+public class AttributeMandatoryScopeCreateDto
+{ 
+
+    public Guid DocumentAttributeId { get; set; }
+    public string DivisionCode { get; set; }
+    public string DepartmentCode { get; set; }
+     
+}
+
+public class AttributeMandatoryScopeUpdateDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentAttributeId { get; set; }
+    public string DivisionCode { get; set; }
+    public string DepartmentCode { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+     
+}
+
+public class AttributeMandatoryScopeReadDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentAttributeId { get; set; }
+    public string DivisionCode { get; set; }
+    public string DepartmentCode { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+    public string CreatedBy { get; set; }
+    public string CreatedAt { get; set; }
+    public string LastModifiedBy { get; set; }
+    public string LastModifiedAt { get; set; }
+}

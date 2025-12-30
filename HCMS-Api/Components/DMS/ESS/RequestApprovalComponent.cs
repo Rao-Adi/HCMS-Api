@@ -44,7 +44,7 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<RequestApproval> CreateAsync(RequestApproval input)
+    public async Task<RequestApprovalReadDto> CreateAsync(RequestApprovalCreateDto input)
     {
         try
         {
@@ -124,7 +124,7 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApproval
+            return new RequestApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
@@ -174,7 +174,7 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<PaginationResult<RequestApproval>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<RequestApprovalReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -204,14 +204,14 @@ public class RequestApprovalComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM RequestApprovals
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM RequestApprovals
@@ -224,15 +224,15 @@ public class RequestApprovalComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<RequestApproval>
+                return new PaginationResult<RequestApprovalReadDto>
                 {
-                    Items = new List<RequestApproval>(),
+                    Items = new List<RequestApprovalReadDto>(),
                     TotalCount = 0
                 };
             }
              
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new RequestApproval
+                .Select(row => new RequestApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<Guid>("DocumentRequestId") : Guid.Empty,
@@ -258,7 +258,7 @@ public class RequestApprovalComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<RequestApproval>
+            return new PaginationResult<RequestApprovalReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -272,7 +272,7 @@ public class RequestApprovalComponent
 
  
 
-    public async Task<RequestApproval> GetByIdAsync(string code)
+    public async Task<RequestApprovalReadDto> GetByIdAsync(string code)
     {
         try
         {
@@ -290,7 +290,7 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApproval
+            return new RequestApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
@@ -309,7 +309,7 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<RequestApproval> GetByWorkflowStepIdAsync(string dId)
+    public async Task<RequestApprovalReadDto> GetByWorkflowStepIdAsync(string dId)
     {
         try
         {
@@ -327,7 +327,7 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApproval
+            return new RequestApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
@@ -346,7 +346,7 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<RequestApproval> UpdateAsync(RequestApproval input)
+    public async Task<RequestApprovalReadDto> UpdateAsync(RequestApprovalUpdateDto input)
     {
         try
         {
@@ -396,7 +396,7 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApproval
+            return new RequestApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),

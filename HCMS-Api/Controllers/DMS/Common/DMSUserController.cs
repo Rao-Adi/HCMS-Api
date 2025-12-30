@@ -41,7 +41,7 @@ public class DMSUserController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<User>>()
+            return Ok(new HttpApiResponse<PaginationResult<UserReadDto>>()
             {
                 Success = true,
                 Data = await _userComponent.GetAllAsync(input),
@@ -70,7 +70,7 @@ public class DMSUserController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<User>()
+            return Ok(new HttpApiResponse<UserReadDto>()
             {
                 Success = true,
                 Data = await _userComponent.GetByCodeAsync(code),
@@ -94,7 +94,7 @@ public class DMSUserController : Controller
 
 
     [HttpPost("create-user")]
-    public async Task<IActionResult> Create([FromBody] User input)
+    public async Task<IActionResult> Create([FromBody] UserCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -104,7 +104,7 @@ public class DMSUserController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<User>()
+            return Ok(new HttpApiResponse<UserReadDto>()
             {
                 Success = true,
                 Data = await _userComponent.CreateAsync(input),
@@ -127,11 +127,11 @@ public class DMSUserController : Controller
     }
 
     [HttpPut("update-user")]
-    public async Task<IActionResult> Update([FromBody] User input)
+    public async Task<IActionResult> Update([FromBody] UserUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<User>()
+            return Ok(new HttpApiResponse<UserReadDto>()
             {
                 Success = true,
                 Data = await _userComponent.UpdateAsync(input),

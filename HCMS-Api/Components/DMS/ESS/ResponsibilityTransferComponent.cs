@@ -44,7 +44,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<ResponsibilityTransfer> CreateAsync(ResponsibilityTransfer input)
+    public async Task<ResponsibilityTransferReadDto> CreateAsync(ResponsibilityTransferCreateDto input)
     {
         try
         {
@@ -133,7 +133,7 @@ public class ResponsibilityTransferComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ResponsibilityTransfer
+            return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
@@ -187,7 +187,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<PaginationResult<ResponsibilityTransfer>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<ResponsibilityTransferReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -217,14 +217,14 @@ public class ResponsibilityTransferComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM ResponsibilityTransfers
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM ResponsibilityTransfers
@@ -237,15 +237,15 @@ public class ResponsibilityTransferComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<ResponsibilityTransfer>
+                return new PaginationResult<ResponsibilityTransferReadDto>
                 {
-                    Items = new List<ResponsibilityTransfer>(),
+                    Items = new List<ResponsibilityTransferReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new ResponsibilityTransfer
+                .Select(row => new ResponsibilityTransferReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     EmployeeFromId = row.Table.Columns.Contains("EmployeeFromId") ? row.Field<Guid>("EmployeeFromId") : Guid.Empty,
@@ -275,7 +275,7 @@ public class ResponsibilityTransferComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<ResponsibilityTransfer>
+            return new PaginationResult<ResponsibilityTransferReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -287,7 +287,7 @@ public class ResponsibilityTransferComponent
         }
     }
      
-    public async Task<ResponsibilityTransfer> GetByCodeAsync(string code)
+    public async Task<ResponsibilityTransferReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -316,7 +316,7 @@ public class ResponsibilityTransferComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ResponsibilityTransfer
+            return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
@@ -339,7 +339,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<ResponsibilityTransfer> GetByDivisionCodeAsync(string dCode)
+    public async Task<ResponsibilityTransferReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -368,7 +368,7 @@ public class ResponsibilityTransferComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ResponsibilityTransfer
+            return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
@@ -391,7 +391,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<ResponsibilityTransfer> UpdateAsync(ResponsibilityTransfer input)
+    public async Task<ResponsibilityTransferReadDto> UpdateAsync(ResponsibilityTransferUpdateDto input)
     {
         try
         {
@@ -450,7 +450,7 @@ public class ResponsibilityTransferComponent
 
             DataRow row = dt.Rows[0];
 
-            return new ResponsibilityTransfer
+            return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeFromId = row.Field<Guid>("EmployeeFromId"),

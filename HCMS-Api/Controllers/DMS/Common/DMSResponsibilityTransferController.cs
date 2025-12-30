@@ -36,7 +36,7 @@ public class DMSResponsibilityTransferController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<ResponsibilityTransfer>>()
+            return Ok(new HttpApiResponse<PaginationResult<ResponsibilityTransferReadDto>>()
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.GetAllAsync(input),
@@ -64,7 +64,7 @@ public class DMSResponsibilityTransferController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<ResponsibilityTransfer>()
+            return Ok(new HttpApiResponse<ResponsibilityTransferReadDto>()
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.GetByCodeAsync(code),
@@ -87,7 +87,7 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPost("create-responsibility-transfer")]
-    public async Task<IActionResult> Create([FromBody] ResponsibilityTransfer input)
+    public async Task<IActionResult> Create([FromBody] ResponsibilityTransferCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -97,7 +97,7 @@ public class DMSResponsibilityTransferController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<ResponsibilityTransfer>()
+            return Ok(new HttpApiResponse<ResponsibilityTransferReadDto>()
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.CreateAsync(input),
@@ -120,11 +120,11 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPut("update-responsibility-transfer")]
-    public async Task<IActionResult> Update([FromBody] ResponsibilityTransfer input)
+    public async Task<IActionResult> Update([FromBody] ResponsibilityTransferUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<ResponsibilityTransfer>()
+            return Ok(new HttpApiResponse<ResponsibilityTransferReadDto>()
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.UpdateAsync(input),

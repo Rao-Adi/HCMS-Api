@@ -44,7 +44,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<DocumentRequest> CreateAsync(DocumentRequest input)
+    public async Task<DocumentRequestReadDto> CreateAsync(DocumentRequestCreateDto input)
     {
         try
         {
@@ -137,7 +137,7 @@ public class DocumentRequestComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentRequest
+            return new DocumentRequestReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
@@ -191,7 +191,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<PaginationResult<DocumentRequest>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentRequestReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -221,7 +221,7 @@ public class DocumentRequestComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -230,7 +230,7 @@ public class DocumentRequestComponent
 						ON dep.DocumentId = div.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Documents dep
@@ -243,15 +243,15 @@ public class DocumentRequestComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DocumentRequest>
+                return new PaginationResult<DocumentRequestReadDto>
                 {
-                    Items = new List<DocumentRequest>(),
+                    Items = new List<DocumentRequestReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DocumentRequest
+                .Select(row => new DocumentRequestReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     RequestNumber = row.Table.Columns.Contains("RequestNumber") ? row.Field<string>("RequestNumber") : string.Empty,
@@ -282,7 +282,7 @@ public class DocumentRequestComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DocumentRequest>
+            return new PaginationResult<DocumentRequestReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -325,7 +325,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<DocumentRequest> GetByCodeAsync(string code)
+    public async Task<DocumentRequestReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -354,7 +354,7 @@ public class DocumentRequestComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentRequest
+            return new DocumentRequestReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
@@ -377,7 +377,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<DocumentRequest> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentRequestReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -406,7 +406,7 @@ public class DocumentRequestComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentRequest
+            return new DocumentRequestReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
@@ -429,7 +429,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<DocumentRequest> UpdateAsync(DocumentRequest input)
+    public async Task<DocumentRequestReadDto> UpdateAsync(DocumentRequestUpdateDto input)
     {
         try
         {
@@ -488,7 +488,7 @@ public class DocumentRequestComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentRequest
+            return new DocumentRequestReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),

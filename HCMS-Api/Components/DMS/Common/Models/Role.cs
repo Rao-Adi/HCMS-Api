@@ -18,3 +18,43 @@ public class Role : AuditableEntity
      
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }
+
+
+public class RoleReadDto : AuditableEntity
+{ 
+    public int Id { get; set; }
+
+    [MaxLength(50)]
+    public string Name { get; set; } = null!;
+
+    [MaxLength(200)]
+    public string Description { get; set; } = null!;
+     
+}
+
+
+public class RoleCreateDto
+{ 
+    public int Id { get; set; }
+
+    [MaxLength(50)]
+    public string Name { get; set; } = null!;
+
+    [MaxLength(200)]
+    public string Description { get; set; } = null!;
+     
+}
+
+
+public class RoleUpdateDto
+{ 
+    public int Id { get; set; }
+
+    [MaxLength(50)]
+    public string Name { get; set; } = null!;
+
+    [MaxLength(200)]
+    public string Description { get; set; } = null!;
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}

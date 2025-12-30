@@ -39,7 +39,7 @@ public class DMSDocumentTrainingController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DocumentTraining>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentTrainingReadDto>>()
             {
                 Success = true,
                 Data = await _documentTrainingComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentTrainingController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentTraining>()
+            return Ok(new HttpApiResponse<DocumentTrainingReadDto>()
             {
                 Success = true,
                 Data = await _documentTrainingComponent.GetByCodeAsync(code),
@@ -120,7 +120,7 @@ public class DMSDocumentTrainingController : Controller
 
 
     [HttpPost("create-document-training")]
-    public async Task<IActionResult> Create([FromBody] DocumentTraining input)
+    public async Task<IActionResult> Create([FromBody] DocumentTrainingCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSDocumentTrainingController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DocumentTraining>()
+            return Ok(new HttpApiResponse<DocumentTrainingReadDto>()
             {
                 Success = true,
                 Data = await _documentTrainingComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSDocumentTrainingController : Controller
     }
 
     [HttpPut("update-document-training")]
-    public async Task<IActionResult> Update([FromBody] DocumentTraining input)
+    public async Task<IActionResult> Update([FromBody] DocumentTrainingUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentTraining>()
+            return Ok(new HttpApiResponse<DocumentTrainingReadDto>()
             {
                 Success = true,
                 Data = await _documentTrainingComponent.UpdateAsync(input),

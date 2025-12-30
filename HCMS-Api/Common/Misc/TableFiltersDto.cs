@@ -10,7 +10,7 @@ public class TableFiltersDto
 
     public bool IsActive { get; set; } = true;
 
-    public int pageNo { get; set; }
+    public int PageNumber { get; set; }
 
-    public int pageSize { get; set; }
+    public int PageSize { get; set; }
 }

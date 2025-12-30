@@ -44,7 +44,7 @@ public class TransferScopePolicyComponent
     }
 
 
-    public async Task<TransferScopePolicy> CreateAsync(TransferScopePolicy input)
+    public async Task<TransferScopePolicyReadDto> CreateAsync(TransferScopePolicyCreateDto input)
     {
         try
         {
@@ -107,7 +107,7 @@ public class TransferScopePolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferScopePolicy
+            return new TransferScopePolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
@@ -152,7 +152,7 @@ public class TransferScopePolicyComponent
     }
 
 
-    public async Task<PaginationResult<TransferScopePolicy>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<TransferScopePolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -182,14 +182,14 @@ public class TransferScopePolicyComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM TransferScopePolicies
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM TransferScopePolicies
@@ -202,15 +202,15 @@ public class TransferScopePolicyComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<TransferScopePolicy>
+                return new PaginationResult<TransferScopePolicyReadDto>
                 {
-                    Items = new List<TransferScopePolicy>(),
+                    Items = new List<TransferScopePolicyReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new TransferScopePolicy
+                .Select(row => new TransferScopePolicyReadDto
                 {
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     ReportingToLevel = row.Table.Columns.Contains("ReportingToLevel") ? row.Field<int>("ReportingToLevel") : 0,
@@ -231,7 +231,7 @@ public class TransferScopePolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<TransferScopePolicy>
+            return new PaginationResult<TransferScopePolicyReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -243,7 +243,7 @@ public class TransferScopePolicyComponent
         }
     }
 
-    public async Task<TransferScopePolicy> GetByTransferScopePolicyCodeAsync(string code)
+    public async Task<TransferScopePolicyReadDto> GetByTransferScopePolicyCodeAsync(string code)
     {
         try
         {
@@ -261,7 +261,7 @@ public class TransferScopePolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferScopePolicy
+            return new TransferScopePolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
@@ -274,7 +274,7 @@ public class TransferScopePolicyComponent
         }
     }
  
-    public async Task<TransferScopePolicy> UpdateAsync(TransferScopePolicy input)
+    public async Task<TransferScopePolicyReadDto> UpdateAsync(TransferScopePolicyUpdateDto input)
     {
         try
         {
@@ -325,7 +325,7 @@ public class TransferScopePolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferScopePolicy
+            return new TransferScopePolicyReadDto
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),

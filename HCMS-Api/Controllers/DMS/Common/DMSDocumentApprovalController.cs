@@ -39,7 +39,7 @@ public class DMSDocumentApprovalController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DocumentApproval>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentApprovalReadDto>>()
             {
                 Success = true,
                 Data = await _documentApprovalComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentApprovalController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentApproval>()
+            return Ok(new HttpApiResponse<DocumentApprovalReadDto>()
             {
                 Success = true,
                 Data = await _documentApprovalComponent.GetByCodeAsync(code),
@@ -120,7 +120,7 @@ public class DMSDocumentApprovalController : Controller
 
 
     [HttpPost("create-document-approval")]
-    public async Task<IActionResult> Create([FromBody] DocumentApproval input)
+    public async Task<IActionResult> Create([FromBody] DocumentApprovalCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSDocumentApprovalController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DocumentApproval>()
+            return Ok(new HttpApiResponse<DocumentApprovalReadDto>()
             {
                 Success = true,
                 Data = await _documentApprovalComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSDocumentApprovalController : Controller
     }
 
     [HttpPut("update-document-approval")]
-    public async Task<IActionResult> Update([FromBody] DocumentApproval input)
+    public async Task<IActionResult> Update([FromBody] DocumentApprovalUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentApproval>()
+            return Ok(new HttpApiResponse<DocumentApprovalReadDto>()
             {
                 Success = true,
                 Data = await _documentApprovalComponent.UpdateAsync(input),

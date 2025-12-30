@@ -43,10 +43,8 @@ public class NotificationComponent
 
     }
 
-
-
-
-    public async Task<Notification> CreateAsync(Notification input)
+     
+    public async Task<NotificationReadDto> CreateAsync(NotificationCreateDto input)
     {
         try
         {
@@ -116,7 +114,7 @@ public class NotificationComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Notification
+            return new NotificationReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),
@@ -167,7 +165,7 @@ public class NotificationComponent
     }
 
 
-    public async Task<PaginationResult<Notification>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<NotificationReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -197,14 +195,14 @@ public class NotificationComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM Notifications
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Notifications
@@ -217,15 +215,15 @@ public class NotificationComponent
             // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<Notification>
+                return new PaginationResult<NotificationReadDto>
                 {
-                    Items = new List<Notification>(),
+                    Items = new List<NotificationReadDto>(),
                     TotalCount = 0
                 };
             }
              
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new Notification
+                .Select(row => new NotificationReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
@@ -246,7 +244,7 @@ public class NotificationComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<Notification>
+            return new PaginationResult<NotificationReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -258,7 +256,7 @@ public class NotificationComponent
         }
     }
 
-    public async Task<Notification> GetByIdAsync(string code)
+    public async Task<NotificationReadDto> GetByIdAsync(string code)
     {
         try
         {
@@ -276,7 +274,7 @@ public class NotificationComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Notification
+            return new NotificationReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),
@@ -296,7 +294,7 @@ public class NotificationComponent
     }
 
 
-    public async Task<Notification> UpdateAsync(Notification input)
+    public async Task<NotificationReadDto> UpdateAsync(NotificationUpdateDto input)
     {
         try
         {
@@ -345,7 +343,7 @@ public class NotificationComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Notification
+            return new NotificationReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 UserId = row.Field<Guid>("UserId"),

@@ -39,7 +39,7 @@ public class DMSTransferScopePolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<TransferScopePolicy>>()
+            return Ok(new HttpApiResponse<PaginationResult<TransferScopePolicyReadDto>>()
             {
                 Success = true,
                 Data = await _templateComponent.GetAllAsync(input),
@@ -68,7 +68,7 @@ public class DMSTransferScopePolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicy>()
+            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.GetByTransferScopePolicyCodeAsync(code),
@@ -92,7 +92,7 @@ public class DMSTransferScopePolicyController : Controller
 
 
     [HttpPost("create-template")]
-    public async Task<IActionResult> Create([FromBody] TransferScopePolicy input)
+    public async Task<IActionResult> Create([FromBody] TransferScopePolicyCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,11 +102,11 @@ public class DMSTransferScopePolicyController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicy>()
+            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.CreateAsync(input),
-                Message = "Audit Log created successfully.",
+                Message = "Transfer Scope Policy created successfully.",
                 Code = 200
             });
         }
@@ -125,15 +125,15 @@ public class DMSTransferScopePolicyController : Controller
     }
 
     [HttpPut("update-template")]
-    public async Task<IActionResult> Update([FromBody] TransferScopePolicy input)
+    public async Task<IActionResult> Update([FromBody] TransferScopePolicyUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicy>()
+            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.UpdateAsync(input),
-                Message = "Audit Log updated successfully.",
+                Message = "Transfer Scope Policy updated successfully.",
                 Code = 200
             });
         }
@@ -163,7 +163,7 @@ public class DMSTransferScopePolicyController : Controller
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Audit Log not found",
+                    Message = "Transfer Scope Policy not found",
                     Code = 404
                 });
             }
@@ -172,7 +172,7 @@ public class DMSTransferScopePolicyController : Controller
             {
                 Success = true,
                 Data = await _templateComponent.DeleteAsync(code),
-                Message = "Audit Log deleted successfully.",
+                Message = "Transfer Scope Policy deleted successfully.",
                 Code = 200
             });
         }

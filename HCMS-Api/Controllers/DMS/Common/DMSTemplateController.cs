@@ -39,7 +39,7 @@ public class DMSTemplateController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<Template>>()
+            return Ok(new HttpApiResponse<PaginationResult<TemplateReadDto>>()
             {
                 Success = true,
                 Data = await _templateComponent.GetAllAsync(input),
@@ -68,7 +68,7 @@ public class DMSTemplateController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<Template>()
+            return Ok(new HttpApiResponse<TemplateReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.GetByCodeAsync(code),
@@ -92,7 +92,7 @@ public class DMSTemplateController : Controller
 
 
     [HttpPost("create-template")]
-    public async Task<IActionResult> Create([FromBody] Template input)
+    public async Task<IActionResult> Create([FromBody] TemplateCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,11 +102,11 @@ public class DMSTemplateController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<Template>()
+            return Ok(new HttpApiResponse<TemplateReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.CreateAsync(input),
-                Message = "Audit Log created successfully.",
+                Message = "Template created successfully.",
                 Code = 200
             });
         }
@@ -125,15 +125,15 @@ public class DMSTemplateController : Controller
     }
 
     [HttpPut("update-template")]
-    public async Task<IActionResult> Update([FromBody] Template input)
+    public async Task<IActionResult> Update([FromBody] TemplateUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<Template>()
+            return Ok(new HttpApiResponse<TemplateReadDto>()
             {
                 Success = true,
                 Data = await _templateComponent.UpdateAsync(input),
-                Message = "Audit Log updated successfully.",
+                Message = "Template updated successfully.",
                 Code = 200
             });
         }
@@ -163,7 +163,7 @@ public class DMSTemplateController : Controller
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Audit Log not found",
+                    Message = "Template not found",
                     Code = 404
                 });
             }
@@ -172,7 +172,7 @@ public class DMSTemplateController : Controller
             {
                 Success = true,
                 Data = await _templateComponent.DeleteAsync(code),
-                Message = "Audit Log deleted successfully.",
+                Message = "Template deleted successfully.",
                 Code = 200
             });
         }

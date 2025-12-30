@@ -44,7 +44,7 @@ public class DocumentApprovalComponent
     }
 
 
-    public async Task<DocumentApproval> CreateAsync(DocumentApproval input)
+    public async Task<DocumentApprovalReadDto> CreateAsync(DocumentApprovalCreateDto input)
     {
         try
         {
@@ -115,7 +115,7 @@ public class DocumentApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentApproval
+            return new DocumentApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentVersionId = row.Field<Guid>("DocumentVersionId"),
@@ -123,7 +123,7 @@ public class DocumentApprovalComponent
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }
@@ -165,7 +165,7 @@ public class DocumentApprovalComponent
     }
 
 
-    public async Task<PaginationResult<DocumentApproval>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentApprovalReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -195,7 +195,7 @@ public class DocumentApprovalComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -204,7 +204,7 @@ public class DocumentApprovalComponent
 						ON dep.DivisionCode = div.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM DocumentApprovals dep
@@ -217,15 +217,15 @@ public class DocumentApprovalComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DocumentApproval>
+                return new PaginationResult<DocumentApprovalReadDto>
                 {
-                    Items = new List<DocumentApproval>(),
+                    Items = new List<DocumentApprovalReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DocumentApproval
+                .Select(row => new DocumentApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentVersionId = row.Table.Columns.Contains("DocumentVersionId") ? row.Field<Guid>("DocumentVersionId") : Guid.Empty,
@@ -233,7 +233,7 @@ public class DocumentApprovalComponent
                     ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<Guid>("ApproverUserId") : Guid.Empty,
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                     Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
-                    ActionDate = row.Table.Columns.Contains("ActionDate") ? row.Field<DateTime>("ActionDate") : null,
+                    ActionDate = row.Table.Columns.Contains("ActionDate") ? row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -251,7 +251,7 @@ public class DocumentApprovalComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DocumentApproval>
+            return new PaginationResult<DocumentApprovalReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -294,7 +294,7 @@ public class DocumentApprovalComponent
     }
 
 
-    public async Task<DocumentApproval> GetByCodeAsync(string code)
+    public async Task<DocumentApprovalReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -318,7 +318,7 @@ public class DocumentApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentApproval
+            return new DocumentApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentVersionId = row.Field<Guid>("DocumentVersionId"),
@@ -326,7 +326,7 @@ public class DocumentApprovalComponent
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }
@@ -337,7 +337,7 @@ public class DocumentApprovalComponent
     }
 
 
-    public async Task<DocumentApproval> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentApprovalReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -362,7 +362,7 @@ public class DocumentApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentApproval
+            return new DocumentApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentVersionId = row.Field<Guid>("DocumentVersionId"),
@@ -370,7 +370,7 @@ public class DocumentApprovalComponent
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }
@@ -381,7 +381,7 @@ public class DocumentApprovalComponent
     }
 
 
-    public async Task<DocumentApproval> UpdateAsync(DocumentApproval input)
+    public async Task<DocumentApprovalReadDto> UpdateAsync(DocumentApprovalUpdateDto input)
     {
         try
         {
@@ -436,7 +436,7 @@ public class DocumentApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentApproval
+            return new DocumentApprovalReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentVersionId = row.Field<Guid>("DocumentVersionId"),
@@ -444,7 +444,7 @@ public class DocumentApprovalComponent
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsActive = row.Field<bool>("IsActive")
             };
         }

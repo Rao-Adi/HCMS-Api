@@ -44,7 +44,7 @@ public class UserRoleComponent
     }
 
 
-    public async Task<UserRole> CreateAsync(UserRole input)
+    public async Task<UserRoleReadDto> CreateAsync(UserRoleCreateDto input)
     {
         try
         {
@@ -115,7 +115,7 @@ public class UserRoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new UserRole
+            return new UserRoleReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -162,7 +162,7 @@ public class UserRoleComponent
     }
 
 
-    public async Task<PaginationResult<UserRole>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<UserRoleReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -192,14 +192,14 @@ public class UserRoleComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM UserRoles
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM UserRoles
@@ -212,15 +212,15 @@ public class UserRoleComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<UserRole>
+                return new PaginationResult<UserRoleReadDto>
                 {
-                    Items = new List<UserRole>(),
+                    Items = new List<UserRoleReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new UserRole
+                .Select(row => new UserRoleReadDto
                 {
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
                     RoleId = row.Table.Columns.Contains("RoleId") ? row.Field<int>("RoleId") : 0,
@@ -243,7 +243,7 @@ public class UserRoleComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<UserRole>
+            return new PaginationResult<UserRoleReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -255,7 +255,7 @@ public class UserRoleComponent
         }
     }
 
-    public async Task<UserRole> GetByUserIdAsync(string code)
+    public async Task<UserRoleReadDto> GetByUserIdAsync(string code)
     {
         try
         {
@@ -277,7 +277,7 @@ public class UserRoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new UserRole
+            return new UserRoleReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -293,7 +293,7 @@ public class UserRoleComponent
     }
 
 
-    public async Task<UserRole> GetByRoleIdAsync(string dUserId)
+    public async Task<UserRoleReadDto> GetByRoleIdAsync(string dUserId)
     {
         try
         {
@@ -315,7 +315,7 @@ public class UserRoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new UserRole
+            return new UserRoleReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -331,7 +331,7 @@ public class UserRoleComponent
     }
 
 
-    public async Task<UserRole> UpdateAsync(UserRole input)
+    public async Task<UserRoleReadDto> UpdateAsync(UserRoleUpdateDto input)
     {
         try
         {
@@ -382,7 +382,7 @@ public class UserRoleComponent
 
             DataRow row = dt.Rows[0];
 
-            return new UserRole
+            return new UserRoleReadDto
             {
                 UserId = row.Field<Guid>("UserId"),
                 RoleId = row.Field<int>("RoleId"),

@@ -39,7 +39,7 @@ public class DMSDistributionListController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DistributionList>>()
+            return Ok(new HttpApiResponse<PaginationResult<DistributionListReadDto>>()
             {
                 Success = true,
                 Data = await _distributionListComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDistributionListController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DistributionList>()
+            return Ok(new HttpApiResponse<DistributionListReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.GetByCodeAsync(code),
@@ -120,7 +120,7 @@ public class DMSDistributionListController : Controller
 
 
     [HttpPost("create-distribution-list")]
-    public async Task<IActionResult> Create([FromBody] DistributionList input)
+    public async Task<IActionResult> Create([FromBody] DistributionListCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSDistributionListController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DistributionList>()
+            return Ok(new HttpApiResponse<DistributionListReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSDistributionListController : Controller
     }
 
     [HttpPut("update-distribution-list")]
-    public async Task<IActionResult> Update([FromBody] DistributionList input)
+    public async Task<IActionResult> Update([FromBody] DistributionListUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DistributionList>()
+            return Ok(new HttpApiResponse<DistributionListReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.UpdateAsync(input),

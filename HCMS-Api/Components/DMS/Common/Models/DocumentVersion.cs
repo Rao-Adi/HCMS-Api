@@ -27,3 +27,61 @@ public class DocumentVersion
 
     public Document Document { get; set; } = null!;
 }
+
+
+public class DocumentVersionReadDto : AuditableEntity
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    [MaxLength(10)]
+    public string Version { get; set; } = null!;
+
+    public int VersionType { get; set; }
+    public string Content { get; set; } = null!;
+    public string? ChangeDescription { get; set; }
+    public int Status { get; set; }
+}
+
+
+
+public class DocumentVersionCreateDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    [MaxLength(10)]
+    public string Version { get; set; } = null!;
+
+    public int VersionType { get; set; }
+    public string Content { get; set; } = null!;
+    public string? ChangeDescription { get; set; }
+    public int Status { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+}
+
+
+
+public class DocumentVersionUpdateDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    [MaxLength(10)]
+    public string Version { get; set; } = null!;
+
+    public int VersionType { get; set; }
+    public string Content { get; set; } = null!;
+    public string? ChangeDescription { get; set; }
+    public int Status { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+}

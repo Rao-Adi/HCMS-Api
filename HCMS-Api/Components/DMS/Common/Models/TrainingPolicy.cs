@@ -15,3 +15,35 @@ public class TrainingPolicy : AuditableEntity
      
 }
 
+public class TrainingPolicyReadDto : AuditableEntity
+{
+    [Key]
+    public Guid Id { get; set; }
+
+    public int DocumentTypeId { get; set; }
+    public bool TrainingRequired { get; set; }
+    public int? MinimumScore { get; set; }
+
+}
+
+public class TrainingPolicyCreateDto
+{ 
+    public Guid Id { get; set; }
+
+    public int DocumentTypeId { get; set; }
+    public bool TrainingRequired { get; set; }
+    public int? MinimumScore { get; set; }
+
+}
+
+public class TrainingPolicyUpdateDto
+{ 
+    public Guid Id { get; set; }
+
+    public int DocumentTypeId { get; set; }
+    public bool TrainingRequired { get; set; }
+    public int? MinimumScore { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}
+

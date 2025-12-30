@@ -39,7 +39,7 @@ public class DMSDocumentAttributeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DocumentAttribute>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentAttributeReadDto>>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentAttributeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentAttribute>()
+            return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.GetByCodeAsync(code),
@@ -120,7 +120,7 @@ public class DMSDocumentAttributeController : Controller
 
 
     [HttpPost("create-document-attributes")]
-    public async Task<IActionResult> Create([FromBody] DocumentAttribute input)
+    public async Task<IActionResult> Create([FromBody] DocumentAttributeCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSDocumentAttributeController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DocumentAttribute>()
+            return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSDocumentAttributeController : Controller
     }
 
     [HttpPut("update-document-attributes")]
-    public async Task<IActionResult> Update([FromBody] DocumentAttribute input)
+    public async Task<IActionResult> Update([FromBody] DocumentAttributeUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentAttribute>()
+            return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.UpdateAsync(input),

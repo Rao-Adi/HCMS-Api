@@ -39,7 +39,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<DocumentRequest>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
             {
                 Success = true,
                 Data = await _distributionListComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentRequest>()
+            return Ok(new HttpApiResponse<DocumentRequestReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.GetByCodeAsync(code),
@@ -120,7 +120,7 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpPost("create-document-request")]
-    public async Task<IActionResult> Create([FromBody] DocumentRequest input)
+    public async Task<IActionResult> Create([FromBody] DocumentRequestCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -130,7 +130,7 @@ public class DMSDocumentRequestController : Controller
 
         try
         { 
-            return Ok(new HttpApiResponse<DocumentRequest>()
+            return Ok(new HttpApiResponse<DocumentRequestReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.CreateAsync(input),
@@ -153,11 +153,11 @@ public class DMSDocumentRequestController : Controller
     }
 
     [HttpPut("update-document-request")]
-    public async Task<IActionResult> Update([FromBody] DocumentRequest input)
+    public async Task<IActionResult> Update([FromBody] DocumentRequestUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentRequest>()
+            return Ok(new HttpApiResponse<DocumentRequestReadDto>()
             {
                 Success = true,
                 Data = await _distributionListComponent.UpdateAsync(input),

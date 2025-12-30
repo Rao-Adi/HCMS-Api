@@ -43,7 +43,7 @@ public class AttributeMandatoryScopeComponent
         _dataservice.BeginProcess(connectionString);
 
     }
-    public async Task<AttributeMandatoryScope> CreateAsync(AttributeMandatoryScope input)
+    public async Task<AttributeMandatoryScopeReadDto> CreateAsync(AttributeMandatoryScopeCreateDto input)
     {
         try
         {
@@ -57,7 +57,7 @@ public class AttributeMandatoryScopeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM AttributeMandatoryScopes
-            WHERE (Id = '{input.Id}'
+            WHERE (Id = '{input.DocumentAttributeId}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -108,7 +108,7 @@ public class AttributeMandatoryScopeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AttributeMandatoryScope
+            return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -154,7 +154,7 @@ public class AttributeMandatoryScopeComponent
     }
 
 
-    public async Task<PaginationResult<AttributeMandatoryScope>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -185,7 +185,7 @@ public class AttributeMandatoryScopeComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -194,7 +194,7 @@ public class AttributeMandatoryScopeComponent
 						ON dep.DivisionCode = div.DocumentAttributeId
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM AttributeMandatoryScopes dep
@@ -207,15 +207,15 @@ public class AttributeMandatoryScopeComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<AttributeMandatoryScope>
+                return new PaginationResult<AttributeMandatoryScopeReadDto>
                 {
-                    Items = new List<AttributeMandatoryScope>(),
+                    Items = new List<AttributeMandatoryScopeReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new AttributeMandatoryScope
+                .Select(row => new AttributeMandatoryScopeReadDto
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<Guid>("DocumentAttributeId") : Guid.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -237,7 +237,7 @@ public class AttributeMandatoryScopeComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<AttributeMandatoryScope>
+            return new PaginationResult<AttributeMandatoryScopeReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -280,7 +280,7 @@ public class AttributeMandatoryScopeComponent
     }
 
 
-    public async Task<AttributeMandatoryScope> GetByCodeAsync(string code)
+    public async Task<AttributeMandatoryScopeReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -298,7 +298,7 @@ public class AttributeMandatoryScopeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AttributeMandatoryScope
+            return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -313,7 +313,7 @@ public class AttributeMandatoryScopeComponent
     }
 
 
-    public async Task<AttributeMandatoryScope> GetByDivisionCodeAsync(string dCode)
+    public async Task<AttributeMandatoryScopeReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -331,7 +331,7 @@ public class AttributeMandatoryScopeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AttributeMandatoryScope
+            return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -346,7 +346,7 @@ public class AttributeMandatoryScopeComponent
     }
 
 
-    public async Task<AttributeMandatoryScope> UpdateAsync(AttributeMandatoryScope input)
+    public async Task<AttributeMandatoryScopeReadDto> UpdateAsync(AttributeMandatoryScopeUpdateDto input)
     {
         try
         {
@@ -396,7 +396,7 @@ public class AttributeMandatoryScopeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new AttributeMandatoryScope
+            return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),

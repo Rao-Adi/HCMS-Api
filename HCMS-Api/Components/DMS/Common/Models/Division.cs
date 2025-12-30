@@ -26,3 +26,53 @@ public class Division
 
     public ICollection<Department> Departments { get; set; } = new List<Department>();
 }
+
+
+public class DivisionReadDto
+{ 
+    public int Id { get; set; }
+     
+    public string Code { get; set; } = null!;
+     
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
+    public string CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = null!;
+    public string LastModifiedAt { get; set; }
+    public string LastModifiedBy { get; set; } = null!;
+
+    public List<Department> Departments { get; set; } = new List<Department>();
+}
+
+
+
+public class DivisionCreateDto
+{ 
+    public int Id { get; set; }
+     
+    public string Code { get; set; } = null!;
+     
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; } 
+}
+
+
+
+public class DivisionUpdateDto
+{ 
+    public int Id { get; set; }
+     
+    public string Code { get; set; } = null!;
+     
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+     
+     
+}

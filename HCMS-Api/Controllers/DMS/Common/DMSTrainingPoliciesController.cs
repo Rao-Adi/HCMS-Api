@@ -39,7 +39,7 @@ public class DMSTrainingPoliciesController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<TrainingPolicy>>()
+            return Ok(new HttpApiResponse<PaginationResult<TrainingPolicyReadDto>>()
             {
                 Success = true,
                 Data = await _trainingpolicyComponent.GetAllAsync(input),
@@ -68,7 +68,7 @@ public class DMSTrainingPoliciesController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<TrainingPolicy>()
+            return Ok(new HttpApiResponse<TrainingPolicyReadDto>()
             {
                 Success = true,
                 Data = await _trainingpolicyComponent.GetByIdAsync(code),
@@ -92,7 +92,7 @@ public class DMSTrainingPoliciesController : Controller
 
 
     [HttpPost("create-training-policy")]
-    public async Task<IActionResult> Create([FromBody] TrainingPolicy input)
+    public async Task<IActionResult> Create([FromBody] TrainingPolicyCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,7 +102,7 @@ public class DMSTrainingPoliciesController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<TrainingPolicy>()
+            return Ok(new HttpApiResponse<TrainingPolicyReadDto>()
             {
                 Success = true,
                 Data = await _trainingpolicyComponent.CreateAsync(input),
@@ -125,11 +125,11 @@ public class DMSTrainingPoliciesController : Controller
     }
 
     [HttpPut("update-training-policy")]
-    public async Task<IActionResult> Update([FromBody] TrainingPolicy input)
+    public async Task<IActionResult> Update([FromBody] TrainingPolicyUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<TrainingPolicy>()
+            return Ok(new HttpApiResponse<TrainingPolicyReadDto>()
             {
                 Success = true,
                 Data = await _trainingpolicyComponent.UpdateAsync(input),

@@ -28,3 +28,71 @@ public class WorkflowPolicy : AuditableEntity
 
     public ICollection<WorkflowStep> Steps { get; set; } = new List<WorkflowStep>();
 }
+
+public class WorkflowPolicyReadDto : AuditableEntity
+{ 
+    public Guid Id { get; set; }
+
+    public int PolicyType { get; set; }
+
+    [MaxLength(10)]
+    public string? DivisionCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? SubDepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DocumentTypeCode { get; set; }
+
+    public int? SharingType { get; set; }
+     
+}
+
+public class WorkflowPolicyCreateDto
+{ 
+    public Guid Id { get; set; }
+
+    public int PolicyType { get; set; }
+
+    [MaxLength(10)]
+    public string? DivisionCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? SubDepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DocumentTypeCode { get; set; }
+
+    public int? SharingType { get; set; }
+     
+}
+
+public class WorkflowPolicyUpdateDto
+{ 
+    public Guid Id { get; set; }
+
+    public int PolicyType { get; set; }
+
+    [MaxLength(10)]
+    public string? DivisionCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? SubDepartmentCode { get; set; }
+
+    [MaxLength(10)]
+    public string? DocumentTypeCode { get; set; }
+
+    public int? SharingType { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}

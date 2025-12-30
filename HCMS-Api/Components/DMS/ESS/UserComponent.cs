@@ -44,7 +44,7 @@ public class UserComponent
     }
 
 
-    public async Task<User> CreateAsync(User input)
+    public async Task<UserReadDto> CreateAsync(UserCreateDto input)
     {
         try
         {
@@ -128,7 +128,7 @@ public class UserComponent
 
             DataRow row = dt.Rows[0];
 
-            return new User
+            return new UserReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
@@ -178,7 +178,7 @@ public class UserComponent
     }
 
 
-    public async Task<PaginationResult<User>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<UserReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -208,14 +208,14 @@ public class UserComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM Users
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Users
@@ -228,15 +228,15 @@ public class UserComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<User>
+                return new PaginationResult<UserReadDto>
                 {
-                    Items = new List<User>(),
+                    Items = new List<UserReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new User
+                .Select(row => new UserReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
@@ -262,7 +262,7 @@ public class UserComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<User>
+            return new PaginationResult<UserReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -274,7 +274,7 @@ public class UserComponent
         }
     }
 
-    public async Task<User> GetByCodeAsync(string code)
+    public async Task<UserReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -299,7 +299,7 @@ public class UserComponent
 
             DataRow row = dt.Rows[0];
 
-            return new User
+            return new UserReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
@@ -318,7 +318,7 @@ public class UserComponent
     }
 
 
-    public async Task<User> GetByDivisionCodeAsync(string dCode)
+    public async Task<UserReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -343,7 +343,7 @@ public class UserComponent
 
             DataRow row = dt.Rows[0];
 
-            return new User
+            return new UserReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
@@ -362,7 +362,7 @@ public class UserComponent
     }
 
 
-    public async Task<User> UpdateAsync(User input)
+    public async Task<UserReadDto> UpdateAsync(UserUpdateDto input)
     {
         try
         {
@@ -417,7 +417,7 @@ public class UserComponent
 
             DataRow row = dt.Rows[0];
 
-            return new User
+            return new UserReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),

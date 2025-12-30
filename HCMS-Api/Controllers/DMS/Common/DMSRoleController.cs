@@ -40,7 +40,7 @@ public class DMSRoleController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<Role>>()
+            return Ok(new HttpApiResponse<PaginationResult<RoleReadDto>>()
             {
                 Success = true,
                 Data = await _roleComponent.GetAllAsync(input),
@@ -69,7 +69,7 @@ public class DMSRoleController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<Role>()
+            return Ok(new HttpApiResponse<RoleReadDto>()
             {
                 Success = true,
                 Data = await _roleComponent.GetByCodeAsync(code),
@@ -93,7 +93,7 @@ public class DMSRoleController : Controller
 
 
     [HttpPost("create-role")]
-    public async Task<IActionResult> Create([FromBody] Role input)
+    public async Task<IActionResult> Create([FromBody] RoleCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -103,7 +103,7 @@ public class DMSRoleController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<Role>()
+            return Ok(new HttpApiResponse<RoleReadDto>()
             {
                 Success = true,
                 Data = await _roleComponent.CreateAsync(input),
@@ -126,11 +126,11 @@ public class DMSRoleController : Controller
     }
 
     [HttpPut("update-role")]
-    public async Task<IActionResult> Update([FromBody] Role input)
+    public async Task<IActionResult> Update([FromBody] RoleUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<Role>()
+            return Ok(new HttpApiResponse<RoleReadDto>()
             {
                 Success = true,
                 Data = await _roleComponent.UpdateAsync(input),

@@ -22,5 +22,68 @@ public class DocumentTraining : AuditableEntity
     public int ValidationStatus { get; set; }
     public bool ReadyForAuthorization { get; set; }
 
-   
+}
+
+
+public class DocumentTrainingReadDto : AuditableEntity
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    public int TrainingMode { get; set; }
+    public int TrainingStatus { get; set; }
+
+    [MaxLength(500)]
+    public string? TrainingProofURL { get; set; }
+
+    public decimal? AssessmentScore { get; set; }
+
+    public int ValidationStatus { get; set; }
+    public bool ReadyForAuthorization { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}
+
+
+public class DocumentTrainingCreateDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    public int TrainingMode { get; set; }
+    public int TrainingStatus { get; set; }
+
+    [MaxLength(500)]
+    public string? TrainingProofURL { get; set; }
+
+    public decimal? AssessmentScore { get; set; }
+
+    public int ValidationStatus { get; set; }
+    public bool ReadyForAuthorization { get; set; }
+
+}
+
+
+public class DocumentTrainingUpdateDto
+{
+    public Guid Id { get; set; }
+
+    public Guid DocumentId { get; set; }
+
+    public int TrainingMode { get; set; }
+    public int TrainingStatus { get; set; }
+
+    [MaxLength(500)]
+    public string? TrainingProofURL { get; set; }
+
+    public decimal? AssessmentScore { get; set; }
+
+    public int ValidationStatus { get; set; }
+    public bool ReadyForAuthorization { get; set; }
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
 }

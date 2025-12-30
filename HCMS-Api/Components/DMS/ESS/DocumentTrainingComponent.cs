@@ -45,7 +45,7 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<DocumentTraining> CreateAsync(DocumentTraining input)
+    public async Task<DocumentTrainingReadDto> CreateAsync(DocumentTrainingCreateDto input)
     {
         try
         {
@@ -134,7 +134,7 @@ public class DocumentTrainingComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentTraining
+            return new DocumentTrainingReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentId = row.Field<Guid>("DocumentId"),
@@ -184,7 +184,7 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<PaginationResult<DocumentTraining>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentTrainingReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -214,7 +214,7 @@ public class DocumentTrainingComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -223,7 +223,7 @@ public class DocumentTrainingComponent
 						ON dep.DocumentId = div.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Documents dep
@@ -236,15 +236,15 @@ public class DocumentTrainingComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DocumentTraining>
+                return new PaginationResult<DocumentTrainingReadDto>
                 {
-                    Items = new List<DocumentTraining>(),
+                    Items = new List<DocumentTrainingReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DocumentTraining
+                .Select(row => new DocumentTrainingReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<Guid>("DocumentId") : Guid.Empty,
@@ -270,7 +270,7 @@ public class DocumentTrainingComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DocumentTraining>
+            return new PaginationResult<DocumentTrainingReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -313,7 +313,7 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<DocumentTraining> GetByCodeAsync(string code)
+    public async Task<DocumentTrainingReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -342,7 +342,7 @@ public class DocumentTrainingComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentTraining
+            return new DocumentTrainingReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentId = row.Field<Guid>("DocumentId"),
@@ -361,7 +361,7 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<DocumentTraining> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentTrainingReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -390,7 +390,7 @@ public class DocumentTrainingComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentTraining
+            return new DocumentTrainingReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentId = row.Field<Guid>("DocumentId"),
@@ -409,7 +409,7 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<DocumentTraining> UpdateAsync(DocumentTraining input)
+    public async Task<DocumentTrainingReadDto> UpdateAsync(DocumentTrainingUpdateDto input)
     {
         try
         {
@@ -464,7 +464,7 @@ public class DocumentTrainingComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentTraining
+            return new DocumentTrainingReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentId = row.Field<Guid>("DocumentId"),

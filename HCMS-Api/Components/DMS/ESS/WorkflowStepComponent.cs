@@ -44,7 +44,7 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<WorkflowStep> CreateAsync(WorkflowStep input)
+    public async Task<WorkflowStepReadDto> CreateAsync(WorkflowStepCreateDto input)
     {
         try
         {
@@ -119,7 +119,7 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStep
+            return new WorkflowStepReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
@@ -168,7 +168,7 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<PaginationResult<WorkflowStep>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<WorkflowStepReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -198,14 +198,14 @@ public class WorkflowStepComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
                         FROM WorkflowSteps
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM WorkflowSteps
@@ -218,15 +218,15 @@ public class WorkflowStepComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<WorkflowStep>
+                return new PaginationResult<WorkflowStepReadDto>
                 {
-                    Items = new List<WorkflowStep>(),
+                    Items = new List<WorkflowStepReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new WorkflowStep
+                .Select(row => new WorkflowStepReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<Guid>("WorkflowPolicyId") : Guid.Empty,
@@ -251,7 +251,7 @@ public class WorkflowStepComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<WorkflowStep>
+            return new PaginationResult<WorkflowStepReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -263,7 +263,7 @@ public class WorkflowStepComponent
         }
     }
 
-    public async Task<WorkflowStep> GetByCodeAsync(string code)
+    public async Task<WorkflowStepReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -287,7 +287,7 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStep
+            return new WorkflowStepReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
@@ -305,7 +305,7 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<WorkflowStep> GetBySequenceAsync(string dCode)
+    public async Task<WorkflowStepReadDto> GetBySequenceAsync(string dCode)
     {
         try
         {
@@ -329,7 +329,7 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStep
+            return new WorkflowStepReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
@@ -347,7 +347,7 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<WorkflowStep> UpdateAsync(WorkflowStep input)
+    public async Task<WorkflowStepReadDto> UpdateAsync(WorkflowStepUpdateDto input)
     {
         try
         {
@@ -401,7 +401,7 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStep
+            return new WorkflowStepReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),

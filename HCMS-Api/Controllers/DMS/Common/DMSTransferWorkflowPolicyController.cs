@@ -39,7 +39,7 @@ public class DMSTransferWorkflowPolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<TransferWorkflowPolicy>>()
+            return Ok(new HttpApiResponse<PaginationResult<TransferWorkflowPolicyReadDto>>()
             {
                 Success = true,
                 Data = await _transferWorkflowPolicyComponent.GetAllAsync(input),
@@ -68,7 +68,7 @@ public class DMSTransferWorkflowPolicyController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferWorkflowPolicy>()
+            return Ok(new HttpApiResponse<TransferWorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _transferWorkflowPolicyComponent.GetByTransferWorkflowPolicyCodeAsync(code),
@@ -92,7 +92,7 @@ public class DMSTransferWorkflowPolicyController : Controller
 
 
     [HttpPost("create-transfer-workflow-policy")]
-    public async Task<IActionResult> Create([FromBody] TransferWorkflowPolicy input)
+    public async Task<IActionResult> Create([FromBody] TransferWorkflowPolicyCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,7 +102,7 @@ public class DMSTransferWorkflowPolicyController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<TransferWorkflowPolicy>()
+            return Ok(new HttpApiResponse<TransferWorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _transferWorkflowPolicyComponent.CreateAsync(input),
@@ -125,11 +125,11 @@ public class DMSTransferWorkflowPolicyController : Controller
     }
 
     [HttpPut("update-transfer-workflow-policy")]
-    public async Task<IActionResult> Update([FromBody] TransferWorkflowPolicy input)
+    public async Task<IActionResult> Update([FromBody] TransferWorkflowPolicyUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferWorkflowPolicy>()
+            return Ok(new HttpApiResponse<TransferWorkflowPolicyReadDto>()
             {
                 Success = true,
                 Data = await _transferWorkflowPolicyComponent.UpdateAsync(input),

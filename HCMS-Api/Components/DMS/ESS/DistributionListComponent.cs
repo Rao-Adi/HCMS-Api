@@ -44,7 +44,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<DistributionList> CreateAsync(DistributionList input)
+    public async Task<DistributionListReadDto> CreateAsync(DistributionListCreateDto input)
     {
         try
         {
@@ -114,7 +114,7 @@ public class DistributionListComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DistributionList
+            return new DistributionListReadDto
             {
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -162,7 +162,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<PaginationResult<DistributionList>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DistributionListReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -192,7 +192,7 @@ public class DistributionListComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -203,7 +203,7 @@ public class DistributionListComponent
 						ON dl.DepartmentCode = dep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM DistributionLists dl
@@ -216,15 +216,15 @@ public class DistributionListComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DistributionList>
+                return new PaginationResult<DistributionListReadDto>
                 {
-                    Items = new List<DistributionList>(),
+                    Items = new List<DistributionListReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DistributionList
+                .Select(row => new DistributionListReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<Guid>("DocumentRequestId") : Guid.Empty,
@@ -247,7 +247,7 @@ public class DistributionListComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DistributionList>
+            return new PaginationResult<DistributionListReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -290,7 +290,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<DistributionList> GetByCodeAsync(string code)
+    public async Task<DistributionListReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -308,7 +308,7 @@ public class DistributionListComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DistributionList
+            return new DistributionListReadDto
             {
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -325,7 +325,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<DistributionList> GetByDivisionCodeAsync(string dCode)
+    public async Task<DistributionListReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -347,7 +347,7 @@ public class DistributionListComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DistributionList
+            return new DistributionListReadDto
             {
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -364,7 +364,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<DistributionList> UpdateAsync(DistributionList input)
+    public async Task<DistributionListReadDto> UpdateAsync(DistributionListUpdateDto input)
     {
         try
         {
@@ -418,7 +418,7 @@ public class DistributionListComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DistributionList
+            return new DistributionListReadDto
             {
                 DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),

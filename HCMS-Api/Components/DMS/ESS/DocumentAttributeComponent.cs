@@ -44,7 +44,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttribute> CreateAsync(DocumentAttribute input)
+    public async Task<DocumentAttributeReadDto> CreateAsync(DocumentAttributeCreateDto input)
     {
         try
         {
@@ -119,7 +119,7 @@ public class DocumentAttributeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentAttribute
+            return new DocumentAttributeReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -168,7 +168,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<PaginationResult<DocumentAttribute>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentAttributeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -198,7 +198,7 @@ public class DocumentAttributeComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            int offset = (input.pageNo - 1) * input.pageSize;
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
                         SELECT *
@@ -207,7 +207,7 @@ public class DocumentAttributeComponent
 						ON dep.DivisionCode = div.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
-                        OFFSET {offset} ROWS FETCH NEXT {input.pageSize} ROWS ONLY;
+                        OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM DocumentAttributes dep
@@ -220,15 +220,15 @@ public class DocumentAttributeComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<DocumentAttribute>
+                return new PaginationResult<DocumentAttributeReadDto>
                 {
-                    Items = new List<DocumentAttribute>(),
+                    Items = new List<DocumentAttributeReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new DocumentAttribute
+                .Select(row => new DocumentAttributeReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
@@ -253,7 +253,7 @@ public class DocumentAttributeComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<DocumentAttribute>
+            return new PaginationResult<DocumentAttributeReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -296,7 +296,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttribute> GetByCodeAsync(string code)
+    public async Task<DocumentAttributeReadDto> GetByCodeAsync(string code)
     {
         try
         {
@@ -319,7 +319,7 @@ public class DocumentAttributeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentAttribute
+            return new DocumentAttributeReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -337,7 +337,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttribute> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentAttributeReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
@@ -362,7 +362,7 @@ public class DocumentAttributeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentAttribute
+            return new DocumentAttributeReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -380,7 +380,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttribute> UpdateAsync(DocumentAttribute input)
+    public async Task<DocumentAttributeReadDto> UpdateAsync(DocumentAttributeUpdateDto input)
     {
         try
         {
@@ -434,7 +434,7 @@ public class DocumentAttributeComponent
 
             DataRow row = dt.Rows[0];
 
-            return new DocumentAttribute
+            return new DocumentAttributeReadDto
             {
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),

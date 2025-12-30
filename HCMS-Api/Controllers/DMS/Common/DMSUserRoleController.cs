@@ -7,42 +7,43 @@ using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
 
+
 namespace HCMS_Api.Controllers.DMS.Common;
 
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/[controller]")]
-public class DMSWorkflowStepController : Controller
+public class DMSUserRoleController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly WorkflowStepComponent _workflowStepComponent;
+    private readonly UserRoleComponent _userRoleComponent;
 
-    public DMSWorkflowStepController(
+    public DMSUserRoleController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     WorkflowStepComponent workflowStepComponent)
+     UserRoleComponent userRoleComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _workflowStepComponent = workflowStepComponent;
+        _userRoleComponent = userRoleComponent;
     }
 
-    [HttpPost("get-all-workflow-step")]
-    public async Task<IActionResult> GetAllWorkflowSetups(TableFiltersDto input)
+    [HttpPost("get-all-user")]
+    public async Task<IActionResult> GetAllUsers(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<WorkflowStepReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<UserRoleReadDto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetAllAsync(input),
+                Data = await _userRoleComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,15 +64,15 @@ public class DMSWorkflowStepController : Controller
 
 
 
-    [HttpGet("get-workflow-step-by-code/{code}")]
-    public async Task<IActionResult> GetWorkflowStepById(string code)
+    [HttpGet("get-user-by-code/{code}")]
+    public async Task<IActionResult> GetUserById(string code)
     {
         try
         {
-            return Ok(new HttpApiResponse<WorkflowStepReadDto>()
+            return Ok(new HttpApiResponse<UserRoleReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetByCodeAsync(code),
+                Data = await _userRoleComponent.GetByRoleIdAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -91,8 +92,8 @@ public class DMSWorkflowStepController : Controller
     }
 
 
-    [HttpPost("create-workflow-step")]
-    public async Task<IActionResult> Create([FromBody] WorkflowStepCreateDto input)
+    [HttpPost("create-user")]
+    public async Task<IActionResult> Create([FromBody] UserRoleCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,11 +103,11 @@ public class DMSWorkflowStepController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<WorkflowStepReadDto>()
+            return Ok(new HttpApiResponse<UserRoleReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.CreateAsync(input),
-                Message = "Workflow Step created successfully.",
+                Data = await _userRoleComponent.CreateAsync(input),
+                Message = "User Role created successfully.",
                 Code = 200
             });
         }
@@ -124,16 +125,16 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-    [HttpPut("update-workflow-step")]
-    public async Task<IActionResult> Update([FromBody] WorkflowStepUpdateDto input)
+    [HttpPut("update-user")]
+    public async Task<IActionResult> Update([FromBody] UserRoleUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<WorkflowStepReadDto>()
+            return Ok(new HttpApiResponse<UserRoleReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.UpdateAsync(input),
-                Message = "Workflow Step updated successfully.",
+                Data = await _userRoleComponent.UpdateAsync(input),
+                Message = "User Role updated successfully.",
                 Code = 200
             });
         }
@@ -151,19 +152,19 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-    [HttpDelete("delete-workflow-step/{code}")]
+    [HttpDelete("delete-user/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
         {
-            var existingRecord = await _workflowStepComponent.GetByCodeAsync(code);
+            var existingRecord = await _userRoleComponent.GetByRoleIdAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Workflow Step not found",
+                    Message = "User Role not found",
                     Code = 404
                 });
             }
@@ -171,8 +172,8 @@ public class DMSWorkflowStepController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.DeleteAsync(code),
-                Message = "Workflow Step deleted successfully.",
+                Data = await _userRoleComponent.DeleteAsync(code),
+                Message = "User Role deleted successfully.",
                 Code = 200
             });
         }
@@ -189,5 +190,4 @@ public class DMSWorkflowStepController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
 }
