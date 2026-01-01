@@ -95,7 +95,7 @@ public class CabinetStructureTabsConfigComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Name, IsActive
+            SELECT *
             FROM CabinetStructureTabsConfig
             WHERE Id = {newId}";
 
@@ -108,9 +108,14 @@ public class CabinetStructureTabsConfigComponent
 
             return new CabinetStructureTabsConfigReadDto
             {
-                Id = row.Field<int>("Id"),
+                Id = row.Field<int>("ID"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -278,7 +283,7 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, IsActive
+                SELECT *
                 FROM CabinetStructureTabsConfig
                 WHERE ID = {id}
                   AND IsActive = True
@@ -295,7 +300,12 @@ public class CabinetStructureTabsConfigComponent
             {
                 Id = row.Field<int>("ID"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -343,7 +353,7 @@ public class CabinetStructureTabsConfigComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT ID, Name, IsActive
+            SELECT *
             FROM CabinetStructureTabsConfig
             WHERE ID = '{input.Id}'";
 
@@ -358,7 +368,12 @@ public class CabinetStructureTabsConfigComponent
             {
                 Id = row.Field<int>("ID"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

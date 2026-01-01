@@ -98,7 +98,7 @@ public class TransferWorkflowPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, DivisionCode, ApprovalRoleId, IsActive
+            SELECT *
             FROM TransferWorkflowPolicies
             WHERE Id = {newId}";
 
@@ -113,7 +113,12 @@ public class TransferWorkflowPolicyComponent
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -251,10 +256,7 @@ public class TransferWorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT Id, DivisionCode,
-                    ApprovalRoleId,
-                    ApprovalUserId, 
-                    IsActive
+                SELECT *
                 FROM TransferWorkflowPolicies
                 WHERE DivisionCode = {code}
                   AND IsActive = True
@@ -272,7 +274,12 @@ public class TransferWorkflowPolicyComponent
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<Guid>("ApprovalUserId"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -321,7 +328,7 @@ public class TransferWorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT DivisionCode, DivisionCode, IsActive
+            SELECT *
             FROM TransferWorkflowPolicies
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
@@ -337,7 +344,12 @@ public class TransferWorkflowPolicyComponent
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<Guid>("ApprovalUserId"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

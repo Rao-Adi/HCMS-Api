@@ -98,13 +98,7 @@ public class DocumentVersionComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentId,
-                    Version,
-                    VersionType,
-                    Content,
-                    ChangeDescription,
-                    IsActive
+            SELECT *
             FROM DocumentVersions
             WHERE Id = {newId}";
 
@@ -122,7 +116,12 @@ public class DocumentVersionComponent
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
                 ChangeDescription = row.Field<string>("ChangeDescription"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -288,7 +287,7 @@ public class DocumentVersionComponent
         try
         {
             string query = $@"
-                SELECT Id, Version, DocumentId,VersionType, IsActive
+                SELECT *
                 FROM DocumentVersions
                 WHERE DocumentId = {code}
                   AND IsActive = True
@@ -308,7 +307,12 @@ public class DocumentVersionComponent
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
                 ChangeDescription = row.Field<string>("ChangeDescription"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -323,7 +327,7 @@ public class DocumentVersionComponent
         try
         {
             string query = $@"
-                SELECT Id, Version, DocumentId,VersionType, IsActive
+                SELECT *
                 FROM DocumentVersions
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -343,7 +347,12 @@ public class DocumentVersionComponent
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
                 ChangeDescription = row.Field<string>("ChangeDescription"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -392,7 +401,7 @@ public class DocumentVersionComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT DocumentId, Version, IsActive
+            SELECT *
             FROM DocumentVersions
             WHERE DocumentId = '{input.DocumentId}'";
 
@@ -410,7 +419,12 @@ public class DocumentVersionComponent
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
                 ChangeDescription = row.Field<string>("ChangeDescription"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

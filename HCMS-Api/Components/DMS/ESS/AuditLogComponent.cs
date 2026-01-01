@@ -105,12 +105,7 @@ public class AuditLogComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, UserId, Action,EntityType,EntityId,OldValues,OldNewValues,TimeStamp,IPAdress,IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
+            SELECT *
             FROM AuditLogs
             WHERE Id = {newId}";
 
@@ -240,15 +235,7 @@ public class AuditLogComponent
                     OldValues = row.Table.Columns.Contains("OldValues") ? row.Field<string>("OldValues") : string.Empty,
                     NewValues = row.Table.Columns.Contains("NewValues") ? row.Field<string>("NewValues") : string.Empty,
                     Timestamp = row.Table.Columns.Contains("Timestamp") ? row.Field<DateTime>("Timestamp") : DateTime.Now,
-                    IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty,
-                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty
                 })
                 .ToList();
 
@@ -306,7 +293,7 @@ public class AuditLogComponent
         try
         {
             string query = $@"
-                SELECT Id, Action, UserId,EntityType, IsActive
+                SELECT *
                 FROM AuditLogs
                 WHERE UserId = {code}
                   AND IsActive = True
@@ -328,8 +315,7 @@ public class AuditLogComponent
                 OldValues = row.Table.Columns.Contains("OldValues") ? row.Field<string>("OldValues") : string.Empty,
                 NewValues = row.Table.Columns.Contains("NewValues") ? row.Field<string>("NewValues") : string.Empty,
                 Timestamp = row.Table.Columns.Contains("Timestamp") ? row.Field<DateTime>("Timestamp") : DateTime.Now,
-                IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty,
-                IsActive = row.Field<bool>("IsActive")
+                IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty
             };
         }
         catch (Exception)
@@ -344,7 +330,7 @@ public class AuditLogComponent
         try
         {
             string query = $@"
-                SELECT Id, Action, UserId,EntityType, IsActive
+                SELECT *
                 FROM AuditLogs
                 WHERE Division = {dUserId}
                   AND IsActive = True
@@ -366,8 +352,7 @@ public class AuditLogComponent
                 OldValues = row.Table.Columns.Contains("OldValues") ? row.Field<string>("OldValues") : string.Empty,
                 NewValues = row.Table.Columns.Contains("NewValues") ? row.Field<string>("NewValues") : string.Empty,
                 Timestamp = row.Table.Columns.Contains("Timestamp") ? row.Field<DateTime>("Timestamp") : DateTime.Now,
-                IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty,
-                IsActive = row.Field<bool>("IsActive")
+                IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty
             };
         }
         catch (Exception)
@@ -416,7 +401,7 @@ public class AuditLogComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT UserId, Action, IsActive
+            SELECT *
             FROM AuditLogs
             WHERE UserId = '{input.UserId}'";
 
@@ -436,8 +421,7 @@ public class AuditLogComponent
                 OldValues = row.Field<string>("OldValues"),
                 NewValues = row.Field<string>("NewValues"),
                 Timestamp = row.Field<DateTime>("Timestamp"),
-                IPAddress = row.Field<string>("IPAddress"),
-                IsActive = row.Field<bool>("IsActive")
+                IPAddress = row.Field<string>("IPAddress")
             };
         }
         catch

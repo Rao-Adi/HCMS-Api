@@ -28,7 +28,7 @@ public class AuditLog : AuditableEntity
     public string? IPAddress { get; set; }
 }
 
-public class AuditLogReadDto : AuditableEntity
+public class AuditLogReadDto
 { 
     public Guid Id { get; set; }
 

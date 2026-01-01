@@ -104,7 +104,7 @@ public class DocumentApprovalComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Id, Name, IsActive
+            SELECT *
             FROM DocumentApprovals
             WHERE Id = {newId}";
 
@@ -124,7 +124,12 @@ public class DocumentApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -299,13 +304,7 @@ public class DocumentApprovalComponent
         try
         {
             string query = $@"
-                SELECT Id,  DocumentVersionId,
-                            WorkflowStepId,
-                            ApproverUserId,
-                            Status,
-                            Observation,
-                            ActionDate,
-                            IsActive
+                SELECT *
                 FROM DocumentApprovals
                 WHERE Id = {code}
                   AND IsActive = True
@@ -327,7 +326,12 @@ public class DocumentApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -342,14 +346,7 @@ public class DocumentApprovalComponent
         try
         {
             string query = $@"
-                SELECT  Id, 
-                        DocumentVersionId,
-                        WorkflowStepId,
-                        ApproverUserId,
-                        Status,
-                        Observation,
-                        ActionDate,
-                        IsActive
+                SELECT  *
                 FROM DocumentApprovals
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -371,7 +368,12 @@ public class DocumentApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -425,7 +427,7 @@ public class DocumentApprovalComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, Name, IsActive
+            SELECT *
             FROM DocumentApprovals
             WHERE Id = '{input.Id}'";
 
@@ -445,7 +447,12 @@ public class DocumentApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate").ToString("yyyy-MM-dd HH:mm:ss"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

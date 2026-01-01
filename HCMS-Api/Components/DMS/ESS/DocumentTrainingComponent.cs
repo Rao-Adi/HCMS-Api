@@ -111,19 +111,7 @@ public class DocumentTrainingComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentId,
-                    TrainingMode,
-                    DocumentId,
-                    TrainingProofURL,
-                    AssessmentScore,
-                    ValidationStatus,
-                    ReadyForAuthorization,
-                    DocumentName, 
-                    Justification, 
-                    Status,  
-                    CurrentStep,  
-                    IsActive
+            SELECT *
             FROM Documents
             WHERE Id = {newId}";
 
@@ -143,7 +131,12 @@ public class DocumentTrainingComponent
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
                 ValidationStatus = row.Field<int>("ValidationStatus"),
                 ReadyForAuthorization = row.Field<bool>("ReadyForAuthorization"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -318,18 +311,7 @@ public class DocumentTrainingComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentId,
-                        TrainingMode,
-                        DocumentId,
-                        TrainingProofURL,
-                        AssessmentScore,
-                        ValidationStatus,
-                        ReadyForAuthorization,
-                        DocumentName, 
-                        Justification, 
-                        Status,  
-                        IsActive
+                SELECT *
                 FROM Documents
                 WHERE Id = {code}
                   AND IsActive = True
@@ -351,7 +333,12 @@ public class DocumentTrainingComponent
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
                 ValidationStatus = row.Field<int>("ValidationStatus"),
                 ReadyForAuthorization = row.Field<bool>("ReadyForAuthorization"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -366,18 +353,7 @@ public class DocumentTrainingComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentId,
-                        TrainingMode,
-                        DocumentId,
-                        TrainingProofURL,
-                        AssessmentScore,
-                        ValidationStatus,
-                        ReadyForAuthorization,
-                        DocumentName, 
-                        Justification, 
-                        Status,  
-                        IsActive
+                SELECT *
                 FROM Documents
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -399,7 +375,12 @@ public class DocumentTrainingComponent
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
                 ValidationStatus = row.Field<int>("ValidationStatus"),
                 ReadyForAuthorization = row.Field<bool>("ReadyForAuthorization"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -453,7 +434,7 @@ public class DocumentTrainingComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, IsActive
+            SELECT *
             FROM Documents
             WHERE Id = '{input.Id}'";
 
@@ -473,7 +454,12 @@ public class DocumentTrainingComponent
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
                 ValidationStatus = row.Field<int>("ValidationStatus"),
                 ReadyForAuthorization = row.Field<bool>("ReadyForAuthorization"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

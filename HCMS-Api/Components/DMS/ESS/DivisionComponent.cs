@@ -100,7 +100,7 @@ public class DivisionComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive,IsDeleted
+            SELECT *
             FROM Divisions
             WHERE Id = {newId}";
 
@@ -114,9 +114,13 @@ public class DivisionComponent
             return new DivisionReadDto
             {
                 Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
+                Name = row.Field<string>("Name"), 
+                IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                IsDeleted = row.Field<bool>("IsDeleted")
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -287,7 +291,7 @@ public class DivisionComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Code, IsActive
+                SELECT *
                 FROM Divisions
                 WHERE Code = {code}
                   AND IsActive = True
@@ -304,7 +308,12 @@ public class DivisionComponent
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -353,7 +362,7 @@ public class DivisionComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Code, Name, IsActive
+            SELECT *
             FROM Divisions
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
@@ -368,7 +377,12 @@ public class DivisionComponent
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

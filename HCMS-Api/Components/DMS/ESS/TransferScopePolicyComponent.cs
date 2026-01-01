@@ -96,7 +96,7 @@ public class TransferScopePolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, DivisionCode, ReportingToLevel, IsActive
+            SELECT *
             FROM TransferScopePolicies
             WHERE Id = {newId}";
 
@@ -111,7 +111,12 @@ public class TransferScopePolicyComponent
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -248,7 +253,7 @@ public class TransferScopePolicyComponent
         try
         {
             string query = $@"
-                SELECT Id, DivisionCode, ReportingToLevel, IsActive
+                SELECT *
                 FROM TransferScopePolicies
                 WHERE DivisionCode = {code}
                   AND IsActive = True
@@ -265,7 +270,12 @@ public class TransferScopePolicyComponent
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -314,7 +324,7 @@ public class TransferScopePolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT DivisionCode, DivisionCode, IsActive
+            SELECT *
             FROM TransferScopePolicies
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
@@ -329,7 +339,12 @@ public class TransferScopePolicyComponent
             {
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

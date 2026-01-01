@@ -107,17 +107,7 @@ public class UserComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    EmployeeCode,
-                    UserName,
-                    Email, 
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    IsDefault, 
-                    ApprovedBy, 
-                    ApprovedAt,
-                    IsActive
+            SELECT *
             FROM Users
             WHERE Id = {newId}";
 
@@ -137,7 +127,12 @@ public class UserComponent
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -279,14 +274,7 @@ public class UserComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        EmployeeCode,
-                        UserName,
-                        Email, 
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        IsActive
+                SELECT *
                 FROM Users
                 WHERE Id = {code}
                   AND IsActive = True
@@ -307,8 +295,13 @@ public class UserComponent
                 Email = row.Field<string>("Email"), 
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"), 
-                IsActive = row.Field<bool>("IsActive")
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -323,14 +316,7 @@ public class UserComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        EmployeeCode,
-                        UserName,
-                        Email, 
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        IsActive
+                SELECT *
                 FROM Users
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -351,8 +337,13 @@ public class UserComponent
                 Email = row.Field<string>("Email"), 
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"), 
-                IsActive = row.Field<bool>("IsActive")
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -406,7 +397,7 @@ public class UserComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id
+            SELECT *
             FROM Users
             WHERE Id = '{input.Id}'";
 
@@ -425,8 +416,13 @@ public class UserComponent
                 Email = row.Field<string>("Email"), 
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"), 
-                IsActive = row.Field<bool>("IsActive")
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

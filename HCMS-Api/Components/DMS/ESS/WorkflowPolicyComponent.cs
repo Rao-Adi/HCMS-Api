@@ -108,14 +108,7 @@ public class WorkflowPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    PolicyType, 
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    DocumentTypeCode,
-                    SharingType,
-                    IsActive
+            SELECT *
             FROM WorkflowPolicies
             WHERE Id = {newId}";
 
@@ -135,7 +128,12 @@ public class WorkflowPolicyComponent
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -277,14 +275,7 @@ public class WorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        PolicyType, 
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentTypeCode,
-                        SharingType,
-                        IsActive
+                SELECT *
                 FROM WorkflowPolicies
                 WHERE Id = {code}
                   AND IsActive = True
@@ -306,7 +297,12 @@ public class WorkflowPolicyComponent
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -321,14 +317,7 @@ public class WorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        PolicyType, 
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentTypeCode,
-                        SharingType,
-                        IsActive
+                SELECT *
                 FROM WorkflowPolicies
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -350,7 +339,12 @@ public class WorkflowPolicyComponent
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -404,7 +398,7 @@ public class WorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id
+            SELECT *
             FROM WorkflowPolicies
             WHERE Id = '{input.Id}'";
 
@@ -424,7 +418,12 @@ public class WorkflowPolicyComponent
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

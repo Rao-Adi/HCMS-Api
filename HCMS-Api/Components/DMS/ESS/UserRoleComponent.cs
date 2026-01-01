@@ -100,11 +100,7 @@ public class UserRoleComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, UserId,
-                RoleId,
-                AssignedAt,
-                AssignedBy,
-                IsActive
+            SELECT *
             FROM UserRoles
             WHERE Id = {newId}";
 
@@ -121,7 +117,12 @@ public class UserRoleComponent
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -260,11 +261,7 @@ public class UserRoleComponent
         try
         {
             string query = $@"
-                SELECT Id,UserId,
-                        RoleId,
-                        AssignedAt,
-                        AssignedBy,
-                        IsActive
+                SELECT *
                 FROM UserRoles
                 WHERE UserId = {code}
                   AND IsActive = True
@@ -283,7 +280,12 @@ public class UserRoleComponent
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -298,11 +300,7 @@ public class UserRoleComponent
         try
         {
             string query = $@"
-                SELECT Id, UserId,
-                        RoleId,
-                        AssignedAt,
-                        AssignedBy,
-                        IsActive
+                SELECT *
                 FROM UserRoles
                 WHERE Division = {dUserId}
                   AND IsActive = True
@@ -321,7 +319,12 @@ public class UserRoleComponent
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -371,7 +374,7 @@ public class UserRoleComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT UserId, IsActive
+            SELECT *
             FROM UserRoles
             WHERE UserId = '{input.UserId}'";
 
@@ -388,7 +391,12 @@ public class UserRoleComponent
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

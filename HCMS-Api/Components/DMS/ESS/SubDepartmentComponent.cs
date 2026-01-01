@@ -99,7 +99,7 @@ public class SubDepartmentComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive
+            SELECT *
             FROM SubDepartments
             WHERE Id = {newId}";
 
@@ -115,7 +115,12 @@ public class SubDepartmentComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -287,7 +292,7 @@ public class SubDepartmentComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Code,DepartmentCode, IsActive
+                SELECT *
                 FROM SubDepartments
                 WHERE Code = {code}
                   AND IsActive = True
@@ -305,7 +310,12 @@ public class SubDepartmentComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -319,7 +329,7 @@ public class SubDepartmentComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Code,DepartmentCode, IsActive
+                SELECT *
                 FROM SubDepartments
                 WHERE DepartmentCode = {departmentCode}
                   AND IsActive = True
@@ -337,7 +347,12 @@ public class SubDepartmentComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -386,7 +401,7 @@ public class SubDepartmentComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Code, Name, IsActive
+            SELECT *
             FROM SubDepartments
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
@@ -401,7 +416,12 @@ public class SubDepartmentComponent
             {
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

@@ -96,7 +96,7 @@ public class RoleComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Name, Description, IsActive
+            SELECT *
             FROM Roles
             WHERE Id = {newId}";
 
@@ -111,7 +111,12 @@ public class RoleComponent
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -248,7 +253,7 @@ public class RoleComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Description, IsActive
+                SELECT *
                 FROM Roles
                 WHERE Name = {code}
                   AND IsActive = True
@@ -265,7 +270,12 @@ public class RoleComponent
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -315,7 +325,7 @@ public class RoleComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Name, Name, IsActive
+            SELECT *
             FROM Roles
             WHERE Name = '{input.Name.Replace("'", "''")}'";
 
@@ -330,7 +340,12 @@ public class RoleComponent
             {
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

@@ -113,7 +113,12 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -285,7 +290,7 @@ public class AttributeMandatoryScopeComponent
         try
         {
             string query = $@"
-                SELECT Id, DivisionCode, DocumentAttributeId,DivisionCode, IsActive
+                SELECT *
                 FROM AttributeMandatoryScopes
                 WHERE DocumentAttributeId = {code}
                   AND IsActive = True
@@ -303,7 +308,12 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -318,7 +328,7 @@ public class AttributeMandatoryScopeComponent
         try
         {
             string query = $@"
-                SELECT Id, DivisionCode, DocumentAttributeId,DivisionCode, IsActive
+                SELECT *
                 FROM AttributeMandatoryScopes
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -336,7 +346,12 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DivisionCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -385,7 +400,7 @@ public class AttributeMandatoryScopeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT DocumentAttributeId, DivisionCode, IsActive
+            SELECT *
             FROM AttributeMandatoryScopes
             WHERE DocumentAttributeId = '{input.DocumentAttributeId}'";
 
@@ -401,7 +416,12 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

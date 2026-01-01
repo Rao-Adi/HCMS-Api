@@ -98,11 +98,7 @@ public class TrainingPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id, 
-                    DocumentTypeId,
-                    TrainingRequired,
-                    MinimumScore,
-                    IsActive,
+            SELECT *
             FROM TrainingPolicies
             WHERE Id = {newId}";
 
@@ -119,7 +115,12 @@ public class TrainingPolicyComponent
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -256,11 +257,7 @@ public class TrainingPolicyComponent
         try
         {
             string query = $@"
-                SELECT  Id, 
-                        DocumentTypeId,
-                        TrainingRequired,
-                        MinimumScore,
-                        IsActive,
+                SELECT  *
                 FROM TrainingPolicies
                 WHERE Id = {code}
                   AND IsActive = True
@@ -278,8 +275,13 @@ public class TrainingPolicyComponent
                 Id = row.Field<Guid>("Id"),
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
-                MinimumScore = row.Field<int>("MinimumScore"), 
-                IsActive = row.Field<bool>("IsActive")
+                MinimumScore = row.Field<int>("MinimumScore"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -328,7 +330,7 @@ public class TrainingPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, DocumentTypeId, IsActive
+            SELECT *
             FROM TrainingPolicies
             WHERE Id = '{input.Id}'";
 
@@ -345,7 +347,12 @@ public class TrainingPolicyComponent
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

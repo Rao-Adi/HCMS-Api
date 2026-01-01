@@ -102,7 +102,7 @@ public class ESignatureComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Id, UserId, IsActive
+            SELECT *
             FROM ESignatures
             WHERE Id = {newId}";
 
@@ -119,8 +119,13 @@ public class ESignatureComponent
                 UserId = row.Field<Guid>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
-                FileType = row.Field<string>("FileType"), 
-                IsActive = row.Field<bool>("IsActive")
+                FileType = row.Field<string>("FileType"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -257,7 +262,7 @@ public class ESignatureComponent
         try
         {
             string query = $@"
-                SELECT Id, UserId, Id, IsActive
+                SELECT *
                 FROM ESignatures
                 WHERE Id = {code}
                   AND IsActive = True
@@ -277,7 +282,12 @@ public class ESignatureComponent
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
                 FileType = row.Field<string>("FileType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -326,7 +336,7 @@ public class ESignatureComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, UserId, IsActive
+            SELECT *
             FROM ESignatures
             WHERE Id = '{input.Id}'";
 
@@ -344,7 +354,12 @@ public class ESignatureComponent
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
                 FileType = row.Field<string>("FileType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

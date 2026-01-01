@@ -103,7 +103,7 @@ public class DistributionListComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, DivisionCode, IsActive
+            SELECT *
             FROM DistributionLists
             WHERE Id = {newId}";
 
@@ -121,7 +121,12 @@ public class DistributionListComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
                 DistributionType = row.Field<int>("DistributionType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -295,7 +300,7 @@ public class DistributionListComponent
         try
         {
             string query = $@"
-                SELECT Id, DivisionCode, Code,DivisionCode, IsActive
+                SELECT *
                 FROM DistributionLists
                 WHERE Code = {code}
                   AND IsActive = True
@@ -315,7 +320,12 @@ public class DistributionListComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
                 DistributionType = row.Field<int>("DistributionType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -330,11 +340,7 @@ public class DistributionListComponent
         try
         {
             string query = $@"
-                SELECT Id, DocumentRequestId,
-                DivisionCode,
-                DepartmentCode,
-                RoleId,
-                DistributionType, IsActive
+                SELECT *
                 FROM DistributionLists
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -354,7 +360,12 @@ public class DistributionListComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
                 DistributionType = row.Field<int>("DistributionType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -403,11 +414,7 @@ public class DistributionListComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT DocumentRequestId,
-                   DivisionCode,
-                   DepartmentCode,
-                   RoleId,
-                   DistributionType, IsActive
+            SELECT *
             FROM DistributionLists
             WHERE Id = '{input.Id}'";
 
@@ -425,7 +432,12 @@ public class DistributionListComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
                 DistributionType = row.Field<int>("DistributionType"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

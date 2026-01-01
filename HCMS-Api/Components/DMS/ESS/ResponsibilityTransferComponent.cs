@@ -111,18 +111,7 @@ public class ResponsibilityTransferComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    EmployeeFromId,
-                    EmployeeToId,
-                    Reason,
-                    EffectiveDateFrom,
-                    EffectiveDateTo,
-                    IsPermanent,
-                    Remarks,
-                    Status, 
-                    ApprovedBy, 
-                    ApprovedAt,
-                    IsActive
+            SELECT *
             FROM ResponsibilityTransfers
             WHERE Id = {newId}";
 
@@ -146,7 +135,12 @@ public class ResponsibilityTransferComponent
                 Status = row.Field<int>("Status"),
                 ApprovedBy = row.Field<Guid>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -292,18 +286,7 @@ public class ResponsibilityTransferComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        EmployeeFromId,
-                        EmployeeToId,
-                        Reason,
-                        EffectiveDateFrom,
-                        EffectiveDateTo,
-                        IsPermanent,
-                        Remarks,
-                        Status, 
-                        ApprovedBy, 
-                        ApprovedAt,
-                        IsActive
+                SELECT *
                 FROM ResponsibilityTransfers
                 WHERE Id = {code}
                   AND IsActive = True
@@ -329,7 +312,12 @@ public class ResponsibilityTransferComponent
                 Status = row.Field<int>("Status"),
                 ApprovedBy = row.Field<Guid>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -344,18 +332,7 @@ public class ResponsibilityTransferComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        EmployeeFromId,
-                        EmployeeToId,
-                        Reason,
-                        EffectiveDateFrom,
-                        EffectiveDateTo,
-                        IsPermanent,
-                        Remarks,
-                        Status, 
-                        ApprovedBy, 
-                        ApprovedAt,
-                        IsActive
+                SELECT *
                 FROM ResponsibilityTransfers
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -381,7 +358,12 @@ public class ResponsibilityTransferComponent
                 Status = row.Field<int>("Status"),
                 ApprovedBy = row.Field<Guid>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -463,7 +445,12 @@ public class ResponsibilityTransferComponent
                 Status = row.Field<int>("Status"),
                 ApprovedBy = row.Field<Guid>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

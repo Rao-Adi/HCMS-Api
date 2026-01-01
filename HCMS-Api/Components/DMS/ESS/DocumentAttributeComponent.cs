@@ -102,13 +102,7 @@ public class DocumentAttributeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentTypeCode,
-                    Controllable,
-                    ControlType,
-                    ListValues,
-                    IsMandatory, 
-                    IsActive
+            SELECT *
             FROM DocumentAttributes
             WHERE Id = {newId}";
 
@@ -126,8 +120,13 @@ public class DocumentAttributeComponent
                 ControlLabel = row.Field<string>("ControlLabel"),
                 ControlType = row.Field<int>("ControlType"),
                 ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"), 
-                IsActive = row.Field<bool>("IsActive")
+                IsMandatory = row.Field<bool>("IsMandatory"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -301,12 +300,7 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT Id,  DocumentTypeCode,
-                            ControlLabel,
-                            ControlType,
-                            ListValues,
-                            IsMandatory, 
-                            IsActive
+                SELECT *
                 FROM DocumentAttributes
                 WHERE Id = {code}
                   AND IsActive = True
@@ -327,7 +321,12 @@ public class DocumentAttributeComponent
                 ControlType = row.Field<int>("ControlType"),
                 ListValues = row.Field<string>("ListValues"),
                 IsMandatory = row.Field<bool>("IsMandatory"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -342,14 +341,7 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT  Id, 
-                        DocumentVersionId,
-                        WorkflowStepId,
-                        ApproverUserId,
-                        Status,
-                        Observation,
-                        ActionDate,
-                        IsActive
+                SELECT *
                 FROM DocumentAttributes
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -370,7 +362,12 @@ public class DocumentAttributeComponent
                 ControlType = row.Field<int>("ControlType"),
                 ListValues = row.Field<string>("ListValues"),
                 IsMandatory = row.Field<bool>("IsMandatory"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -423,7 +420,7 @@ public class DocumentAttributeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, Name, IsActive
+            SELECT *
             FROM DocumentAttributes
             WHERE Id = '{input.Id}'";
 
@@ -442,7 +439,12 @@ public class DocumentAttributeComponent
                 ControlType = row.Field<int>("ControlType"),
                 ListValues = row.Field<string>("ListValues"),
                 IsMandatory = row.Field<bool>("IsMandatory"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

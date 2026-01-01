@@ -114,19 +114,7 @@ public class DocumentRequestComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    RequestNumber,
-                    RequestType,
-                    DocumentId,
-                    DocumentTypeCode,
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    DocumentName, 
-                    Justification, 
-                    Status,  
-                    CurrentStep,  
-                    IsActive
+            SELECT *
             FROM Documents
             WHERE Id = {newId}";
 
@@ -150,7 +138,12 @@ public class DocumentRequestComponent
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
                 CurrentStep = row.Field<int>("CurrentStep"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -330,18 +323,7 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        RequestNumber,
-                        RequestType,
-                        DocumentId,
-                        DocumentTypeCode,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentName, 
-                        Justification, 
-                        Status,  
-                        IsActive
+                SELECT *
                 FROM Documents
                 WHERE Id = {code}
                   AND IsActive = True
@@ -367,7 +349,12 @@ public class DocumentRequestComponent
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
                 CurrentStep = row.Field<int>("CurrentStep"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -382,18 +369,7 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        RequestNumber,
-                        RequestType,
-                        DocumentId,
-                        DocumentTypeCode,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentName, 
-                        Justification, 
-                        Status,  
-                        IsActive
+                SELECT *
                 FROM Documents
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -419,7 +395,12 @@ public class DocumentRequestComponent
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
                 CurrentStep = row.Field<int>("CurrentStep"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -477,7 +458,7 @@ public class DocumentRequestComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, IsActive
+            SELECT *
             FROM Documents
             WHERE Id = '{input.Id}'";
 
@@ -501,7 +482,12 @@ public class DocumentRequestComponent
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
                 CurrentStep = row.Field<int>("CurrentStep"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

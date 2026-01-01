@@ -110,18 +110,7 @@ public class TemplateComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentTypeCode,
-                    TemplateName,
-                    TemplateFileURL,
-                    TemplateType,
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    IsDefault, 
-                    ApprovedBy, 
-                    ApprovedAt,
-                    IsActive
+            SELECT  *
             FROM Templates
             WHERE Id = {newId}";
 
@@ -143,7 +132,12 @@ public class TemplateComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDefault = row.Field<bool>("IsDefault"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -287,18 +281,7 @@ public class TemplateComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentTypeCode,
-                        TemplateName,
-                        TemplateFileURL,
-                        TemplateType,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        IsDefault, 
-                        ApprovedBy, 
-                        ApprovedAt,
-                        IsActive
+                SELECT *
                 FROM Templates
                 WHERE Id = {code}
                   AND IsActive = True
@@ -322,7 +305,12 @@ public class TemplateComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDefault = row.Field<bool>("IsDefault"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -337,18 +325,7 @@ public class TemplateComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentTypeCode,
-                        TemplateName,
-                        TemplateFileURL,
-                        TemplateType,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        IsDefault, 
-                        ApprovedBy, 
-                        ApprovedAt,
-                        IsActive
+                SELECT *
                 FROM Templates
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -372,7 +349,12 @@ public class TemplateComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDefault = row.Field<bool>("IsDefault"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -428,7 +410,7 @@ public class TemplateComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id
+            SELECT *
             FROM Templates
             WHERE Id = '{input.Id}'";
 
@@ -450,7 +432,12 @@ public class TemplateComponent
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDefault = row.Field<bool>("IsDefault"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

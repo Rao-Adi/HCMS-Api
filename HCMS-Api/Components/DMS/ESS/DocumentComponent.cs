@@ -112,18 +112,7 @@ public class DocumentComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentNumber,
-                    DocumentTypeCode,
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    DocumentName,
-                    Status,
-                    EffectiveFrom, 
-                    EffectiveTo, 
-                    NextReviewdate,  
-                    IsActive
+            SELECT *
             FROM Documents
             WHERE Id = {newId}";
 
@@ -146,7 +135,12 @@ public class DocumentComponent
                 EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
                 EffectiveTo = row.Field<DateTime>("EffectiveTo"),
                 NextReviewDate = row.Field<DateTime>("NextReviewDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -325,18 +319,7 @@ public class DocumentComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentNumber,
-                        DocumentTypeCode,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentName,
-                        Status,
-                        EffectiveFrom, 
-                        EffectiveTo, 
-                        NextReviewdate,  
-                        IsActive
+                SELECT  *
                 FROM Documents
                 WHERE Id = {code}
                   AND IsActive = True
@@ -361,7 +344,12 @@ public class DocumentComponent
                 EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
                 EffectiveTo = row.Field<DateTime>("EffectiveTo"),
                 NextReviewDate = row.Field<DateTime>("NextReviewDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -376,18 +364,7 @@ public class DocumentComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        DocumentNumber,
-                        DocumentTypeCode,
-                        DivisionCode,
-                        DepartmentCode,
-                        SubDepartmentCode,
-                        DocumentName,
-                        Status,
-                        EffectiveFrom, 
-                        EffectiveTo, 
-                        NextReviewdate,  
-                        IsActive
+                SELECT *
                 FROM Documents
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -412,7 +389,12 @@ public class DocumentComponent
                 EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
                 EffectiveTo = row.Field<DateTime>("EffectiveTo"),
                 NextReviewDate = row.Field<DateTime>("NextReviewDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -469,7 +451,7 @@ public class DocumentComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, IsActive
+            SELECT *
             FROM Documents
             WHERE Id = '{input.Id}'";
 
@@ -492,7 +474,12 @@ public class DocumentComponent
                 EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
                 EffectiveTo = row.Field<DateTime>("EffectiveTo"),
                 NextReviewDate = row.Field<DateTime>("NextReviewDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

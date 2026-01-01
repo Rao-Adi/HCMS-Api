@@ -102,13 +102,7 @@ public class WorkflowStepComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    WorkflowPolicyId, 
-                    Sequence,
-                    ApproverRoleId,
-                    ApproverUserId,
-                    ApprovalLevel, 
-                    IsActive
+            SELECT *
             FROM WorkflowSteps
             WHERE Id = {newId}";
 
@@ -127,7 +121,12 @@ public class WorkflowStepComponent
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -268,13 +267,7 @@ public class WorkflowStepComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        WorkflowPolicyId, 
-                        Sequence,
-                        ApproverRoleId,
-                        ApproverUserId,
-                        ApprovalLevel, 
-                        IsActive
+                SELECT *
                 FROM WorkflowSteps
                 WHERE Id = {code}
                   AND IsActive = True
@@ -295,7 +288,12 @@ public class WorkflowStepComponent
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -310,13 +308,7 @@ public class WorkflowStepComponent
         try
         {
             string query = $@"
-                SELECT  Id,
-                        WorkflowPolicyId, 
-                        Sequence,
-                        ApproverRoleId,
-                        ApproverUserId,
-                        ApprovalLevel, 
-                        IsActive
+                SELECT *
                 FROM WorkflowSteps
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -337,7 +329,12 @@ public class WorkflowStepComponent
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -390,7 +387,7 @@ public class WorkflowStepComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id
+            SELECT *
             FROM WorkflowSteps
             WHERE Id = '{input.Id}'";
 
@@ -409,7 +406,12 @@ public class WorkflowStepComponent
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
                 ApproverUserId = row.Field<Guid>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

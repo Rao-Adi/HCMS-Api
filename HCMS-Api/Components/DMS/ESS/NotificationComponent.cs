@@ -96,14 +96,7 @@ public class NotificationComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, UserId,
-                Title,
-                Message,
-                NotificationType,
-                RelatedEntityType,
-                RelatedEntityId,
-                IsRead, 
-                CreatedAt
+            SELECT *
             FROM Notifications
             WHERE Id = {newId}";
 
@@ -261,7 +254,7 @@ public class NotificationComponent
         try
         {
             string query = $@"
-                SELECT Id, UserId, Id, IsActive
+                SELECT *
                 FROM Notifications
                 WHERE Id = {code}
                   AND IsActive = True
@@ -332,7 +325,7 @@ public class NotificationComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, UserId, IsActive
+            SELECT *
             FROM Notifications
             WHERE Id = '{input.Id}'";
 

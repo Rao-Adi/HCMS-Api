@@ -106,14 +106,7 @@ public class RequestApprovalComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  Id,
-                    DocumentRequestId,
-                    WorkflowStepId,
-                    ApproverUserId,
-                    Status,
-                    Observation,
-                    ActionDate,
-                    IsActive
+            SELECT *
             FROM RequestApprovals
             WHERE Id = {newId}";
 
@@ -133,7 +126,12 @@ public class RequestApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -299,7 +297,12 @@ public class RequestApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -314,7 +317,7 @@ public class RequestApprovalComponent
         try
         {
             string query = $@"
-                SELECT Id, DocumentRequestId, Id,WorkflowStepId, IsActive
+                SELECT *
                 FROM RequestApprovals
                 WHERE Division = {dId}
                   AND IsActive = True
@@ -336,7 +339,12 @@ public class RequestApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -385,7 +393,7 @@ public class RequestApprovalComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id, DocumentRequestId, IsActive
+            SELECT *
             FROM RequestApprovals
             WHERE Id = '{input.Id}'";
 
@@ -405,7 +413,12 @@ public class RequestApprovalComponent
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch

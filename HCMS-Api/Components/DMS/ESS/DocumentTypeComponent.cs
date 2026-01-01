@@ -99,7 +99,7 @@ public class DocumentTypeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, Code, Name, IsActive
+            SELECT *
             FROM DocumentTypes
             WHERE Id = {newId}";
 
@@ -115,7 +115,12 @@ public class DocumentTypeComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -258,7 +263,7 @@ public class DocumentTypeComponent
             FROM DocumentTypes
             WHERE IsActive = True
               AND IsDeleted = False
-            ORDER BY Name";
+            ORDER BY Code";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -284,7 +289,7 @@ public class DocumentTypeComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Code,Description, IsActive
+                SELECT *
                 FROM DocumentTypes
                 WHERE Code = {code}
                   AND IsActive = True
@@ -302,7 +307,12 @@ public class DocumentTypeComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
@@ -317,7 +327,7 @@ public class DocumentTypeComponent
         try
         {
             string query = $@"
-                SELECT Id, Name, Code,Description, IsActive
+                SELECT *
                 FROM DocumentTypes
                 WHERE Division = {dCode}
                   AND IsActive = True
@@ -335,7 +345,12 @@ public class DocumentTypeComponent
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsActive = row.Field<bool>("IsActive")
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch (Exception)
