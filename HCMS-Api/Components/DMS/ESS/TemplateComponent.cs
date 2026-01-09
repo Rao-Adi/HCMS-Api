@@ -51,20 +51,20 @@ public class TemplateComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
-                throw new CustomException("Template code is required.", 200);
+            //if (input.Id >0)
+            //    throw new CustomException("Template code is required.", 200);
 
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Templates
-            WHERE (Id = '{input.Id}' 
-              AND IsDeleted = FALSE";
+            //// Check duplicate by Id OR Name
+            //string checkQuery = $@"
+            //SELECT COUNT(1)
+            //FROM Templates
+            //WHERE (Id = '{input.Id}' 
+            //  AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
-            if (exists > 0)
-                throw new CustomException("Template already exists", 200);
+            //if (exists > 0)
+            //    throw new CustomException("Template already exists", 200);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -77,9 +77,7 @@ public class TemplateComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
-                IsDefault, 
-                ApprovedBy, 
-                ApprovedAt,
+                IsDefault,  
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -123,7 +121,7 @@ public class TemplateComponent
 
             return new TemplateReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileURL = row.Field<string>("TemplateFileURL"),
@@ -238,7 +236,7 @@ public class TemplateComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new TemplateReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
                     TemplateFileURL = row.Table.Columns.Contains("TemplateFileURL") ? row.Field<string>("TemplateFileURL") : string.Empty,
@@ -296,7 +294,7 @@ public class TemplateComponent
 
             return new TemplateReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileURL = row.Field<string>("TemplateFileURL"),
@@ -340,7 +338,7 @@ public class TemplateComponent
 
             return new TemplateReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileURL = row.Field<string>("TemplateFileURL"),
@@ -371,7 +369,7 @@ public class TemplateComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -423,7 +421,7 @@ public class TemplateComponent
 
             return new TemplateReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileURL = row.Field<string>("TemplateFileURL"),

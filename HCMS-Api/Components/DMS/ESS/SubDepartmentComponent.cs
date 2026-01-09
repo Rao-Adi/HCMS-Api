@@ -4,7 +4,7 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models; 
+using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -99,9 +99,11 @@ public class SubDepartmentComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM SubDepartments
-            WHERE Id = {newId}";
+            SELECT * 
+                FROM SubDepartments subd
+                LEFT JOIN Departments dep
+                ON subd.Code = dep.Code
+            WHERE subd.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -112,15 +114,19 @@ public class SubDepartmentComponent
 
             return new SubDepartmentReadDto
             {
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
             };
         }
         catch
@@ -138,7 +144,7 @@ public class SubDepartmentComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM SubDepartments
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -150,7 +156,7 @@ public class SubDepartmentComponent
             string deleteQuery = $@"
                 UPDATE SubDepartments
                 SET IsDeleted = False
-                WHERE Code = {code}";
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -197,7 +203,7 @@ public class SubDepartmentComponent
                         SELECT *
                         FROM SubDepartments subd
                         LEFT JOIN Departments dep
-                        ON subd.Code = dep.Code
+                        ON subd.DepartmentCode = dep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -223,6 +229,7 @@ public class SubDepartmentComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new SubDepartmentReadDto
                 {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
@@ -233,7 +240,7 @@ public class SubDepartmentComponent
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
                 })
                 .ToList();
@@ -293,10 +300,12 @@ public class SubDepartmentComponent
         {
             string query = $@"
                 SELECT *
-                FROM SubDepartments
-                WHERE Code = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                     FROM SubDepartments subd
+                     LEFT JOIN Departments dep
+                     ON subd.Code = dep.Code
+                WHERE subd.Code = '{code}'
+                  AND subd.IsActive = True
+                  AND subd.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -307,15 +316,19 @@ public class SubDepartmentComponent
 
             return new SubDepartmentReadDto
             {
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
             };
         }
         catch (Exception)
@@ -324,36 +337,47 @@ public class SubDepartmentComponent
         }
     }
 
-    public async Task<SubDepartmentReadDto> GetByDepartmentCodeAsync(string departmentCode)
+    public async Task<List<SubDepartmentReadDto>> GetByDepartmentCodeAsync(string departmentCode)
     {
         try
         {
             string query = $@"
                 SELECT *
-                FROM SubDepartments
-                WHERE DepartmentCode = {departmentCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                     FROM SubDepartments subd
+                     LEFT JOIN Departments dep
+                     ON subd.Code = dep.Code
+                WHERE subd.DepartmentCode = '{departmentCode}'
+                  AND subd.IsActive = True
+                  AND subd.IsDeleted = False";
 
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("SubDepartment not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new SubDepartmentReadDto
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
+            DataTable subDepartmentTable = ds.Tables[0];  // your first result set (paged data)
+            DataTable countTable = ds.Tables[0];      // second result set (count)
+                                                      // ✅ SAFETY CHECKS
+            if (subDepartmentTable == null || subDepartmentTable.Rows.Count == 0)
             {
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
+                throw new CustomException("SubDepartment not found", 200);
+            }
+
+            var divisions = subDepartmentTable.AsEnumerable()
+                .Select(row => new SubDepartmentReadDto
+                {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                    Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                }).ToList();
+
+            return divisions;
         }
         catch (Exception)
         {
@@ -389,6 +413,7 @@ public class SubDepartmentComponent
             UPDATE SubDepartments
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
+                DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -402,8 +427,10 @@ public class SubDepartmentComponent
             // Return updated record
             string selectQuery = $@"
             SELECT *
-            FROM SubDepartments
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                   FROM SubDepartments subd
+                   LEFT JOIN Departments dep
+                   ON subd.Code = dep.Code
+            WHERE subd.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -414,17 +441,39 @@ public class SubDepartmentComponent
 
             return new SubDepartmentReadDto
             {
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
             };
         }
         catch
+        {
+            throw;
+        }
+    }
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM DocumentTypes 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
         {
             throw;
         }

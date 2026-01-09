@@ -7,11 +7,11 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class RequestApproval : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentRequestId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
 
@@ -26,11 +26,11 @@ public class RequestApproval : AuditableEntity
 
 public class RequestApprovalReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentRequestId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
 
@@ -44,11 +44,11 @@ public class RequestApprovalReadDto : AuditableEntity
 
 public class RequestApprovalCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentRequestId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
 
@@ -62,11 +62,11 @@ public class RequestApprovalCreateDto
 
 public class RequestApprovalUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentRequestId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
 

@@ -110,7 +110,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
+                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -222,7 +222,7 @@ public class AttributeMandatoryScopeComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new AttributeMandatoryScopeReadDto
                 {
-                    DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<Guid>("DocumentAttributeId") : Guid.Empty,
+                    DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -271,7 +271,7 @@ public class AttributeMandatoryScopeComponent
             var list = dt.AsEnumerable()
                 .Select(row => new SelectListDto
                 {
-                    Code = row.Field<Guid>("DocumentAttributeId").ToString(),
+                    Code = row.Field<int>("DocumentAttributeId").ToString(),
                     Value = row.Field<string>("DivisionCode")
                 })
                 .ToList();
@@ -305,7 +305,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
+                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -343,7 +343,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
+                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DivisionCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -413,7 +413,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                DocumentAttributeId = row.Field<Guid>("DocumentAttributeId"),
+                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

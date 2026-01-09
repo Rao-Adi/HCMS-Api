@@ -8,7 +8,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class Document : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;

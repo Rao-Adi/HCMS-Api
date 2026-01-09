@@ -7,9 +7,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class AuditLog : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     [MaxLength(100)]
     public string Action { get; set; } = null!;
@@ -17,7 +17,7 @@ public class AuditLog : AuditableEntity
     [MaxLength(50)]
     public string EntityType { get; set; } = null!;
 
-    public Guid EntityId { get; set; }
+    public int EntityId { get; set; }
 
     public string? OldValues { get; set; }
     public string? NewValues { get; set; }
@@ -30,15 +30,15 @@ public class AuditLog : AuditableEntity
 
 public class AuditLogReadDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
      
     public string Action { get; set; } = null!;
      
     public string EntityType { get; set; } = null!;
 
-    public Guid EntityId { get; set; }
+    public int EntityId { get; set; }
 
     public string? OldValues { get; set; }
     public string? NewValues { get; set; }
@@ -50,13 +50,13 @@ public class AuditLogReadDto
 
 public class AuditLogCreateDto
 {   
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
      
     public string Action { get; set; } = null!;
      
     public string EntityType { get; set; } = null!;
 
-    public Guid EntityId { get; set; }
+    public int EntityId { get; set; }
 
     public string? OldValues { get; set; }
     public string? NewValues { get; set; }
@@ -68,15 +68,15 @@ public class AuditLogCreateDto
 
 public class AuditLogUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
      
     public string Action { get; set; } = null!;
      
     public string EntityType { get; set; } = null!;
 
-    public Guid EntityId { get; set; }
+    public int EntityId { get; set; }
 
     public string? OldValues { get; set; }
     public string? NewValues { get; set; }

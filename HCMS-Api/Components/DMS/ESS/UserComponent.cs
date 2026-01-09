@@ -51,7 +51,7 @@ public class UserComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("User Id is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -120,10 +120,10 @@ public class UserComponent
 
             return new UserReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 UserName = row.Field<string>("UserName"),
-                Email = row.Field<string>("Email"), 
+                Grade = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -178,8 +178,8 @@ public class UserComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE u.IsDeleted = False 
+                  AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -187,18 +187,33 @@ public class UserComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(u.UserName) LIKE '%{search}%'
+                    OR UPPER(u.Id) LIKE '%{search}%'
+                    OR UPPER(u.EmployeeCode) LIKE '%{search}%'
+                    OR UPPER(u.UserName) LIKE '%{search}%'
+                    OR UPPER(u.DivisionCode) LIKE '%{search}%'
+                    OR UPPER(u.DepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.SubDepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.Grade) LIKE '%{search}%'
+                    OR UPPER(u.DateOfJoining) LIKE '%{search}%'
+                    OR UPPER(u.ReportingTo) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "ID" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "Id" => "u.Id",
+                "EMPLOYEECODE" => "u.EmployeeCode",
+                "USERNAME" => "u.UserName",
+                "DIVISIONCODE" => "u.DivisionCode",
+                "DEPARTMENTCODE" => "u.DepartmentCode",
+                "SUBDEPARTMENTCODE" => "u.SubDepartmentCode",
+                "GRADE" => "u.Grade",
+                "DATEOFJOINING" => "u.DateOfJoining",
+                "REPORTINGTO" => "u.ReportingTo",
+                "ISACTIVE" => "u.IsActive",
+                _ => "u.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -206,14 +221,23 @@ public class UserComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Users
+                        SELECT u.Id,u.EmployeeCode,u.UserName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
+			   		           u.Grade,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
+					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName
+                        FROM Users u
+                        LEFT JOIN Divisions div 
+						ON u.divisionCode = div.Code
+						LEFT JOIN Departments dep
+						ON u.DepartmentCode = dep.Code
+						LEFT JOIN SubDepartments sdep
+						ON u.SubdepartmentCode = sdep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Users
+                        FROM Users u
                         {whereClause};
                     ";
 
@@ -233,13 +257,19 @@ public class UserComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new UserReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     UserName = row.Table.Columns.Contains("UserName") ? row.Field<string>("UserName") : string.Empty,
-                    Email = row.Table.Columns.Contains("Email") ? row.Field<string>("Email") : string.Empty, 
+                    Grade = row.Table.Columns.Contains("Grade") ? row.Field<string>("Grade") : string.Empty,
+                    DivisionName = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+                    DepartmentName = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+                    SubDepartmentName = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+                    ReportingTo = row.Table.Columns.Contains("ReportingTo") ? row.Field<string>("ReportingTo") : string.Empty,
+                    DateOfJoining = (row.Table.Columns.Contains("DateOfJoining") && !row.IsNull("DateOfJoining"))
+                                ? row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -289,10 +319,10 @@ public class UserComponent
 
             return new UserReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 UserName = row.Field<string>("UserName"),
-                Email = row.Field<string>("Email"), 
+                Grade = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -331,10 +361,10 @@ public class UserComponent
 
             return new UserReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 UserName = row.Field<string>("UserName"),
-                Email = row.Field<string>("Email"), 
+                Grade = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -360,7 +390,7 @@ public class UserComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -410,10 +440,10 @@ public class UserComponent
 
             return new UserReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 UserName = row.Field<string>("UserName"),
-                Email = row.Field<string>("Email"), 
+                Grade = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),

@@ -51,7 +51,7 @@ public class ResponsibilityTransferComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("ResponsibilityTransfer code is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -124,16 +124,16 @@ public class ResponsibilityTransferComponent
 
             return new ResponsibilityTransferReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
-                EmployeeToId = row.Field<Guid>("EmployeeToId"),
+                Id = row.Field<int>("Id"),
+                EmployeeFromId = row.Field<int>("EmployeeFromId"),
+                EmployeeToId = row.Field<int>("EmployeeToId"),
                 Reason = row.Field<int>("Reason"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
                 IsPermanent = row.Field<bool>("IsPermanent"),
                 Remarks = row.Field<string>("Remarks"),
                 Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<Guid>("ApprovedBy"),
+                ApprovedBy = row.Field<string>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -241,16 +241,16 @@ public class ResponsibilityTransferComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new ResponsibilityTransferReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    EmployeeFromId = row.Table.Columns.Contains("EmployeeFromId") ? row.Field<Guid>("EmployeeFromId") : Guid.Empty,
-                    EmployeeToId = row.Table.Columns.Contains("EmployeeToId") ? row.Field<Guid>("EmployeeToId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    EmployeeFromId = row.Table.Columns.Contains("EmployeeFromId") ? row.Field<int>("EmployeeFromId") : 0,
+                    EmployeeToId = row.Table.Columns.Contains("EmployeeToId") ? row.Field<int>("EmployeeToId") : 0,
                     Reason = row.Table.Columns.Contains("Reason") ? row.Field<int>("Reason") : 0,
                     EffectiveDateFrom = row.Table.Columns.Contains("EffectiveDateFrom") ? row.Field<DateTime>("EffectiveDateFrom") : DateTime.Now,
                     EffectiveDateTo = row.Table.Columns.Contains("EffectiveDateTo") ? row.Field<DateTime>("EffectiveDateTo") : DateTime.Now,
                     IsPermanent = row.Table.Columns.Contains("IsPermanent") ? row.Field<bool>("IsPermanent") : false,
                     Remarks = row.Table.Columns.Contains("Remarks") ? row.Field<string>("Remarks") : string.Empty,
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
-                    ApprovedBy = row.Table.Columns.Contains("ApprovedBy") ? row.Field<Guid>("ApprovedBy") : Guid.Empty,
+                    ApprovedBy = row.Table.Columns.Contains("ApprovedBy") ? row.Field<string>("ApprovedBy") : string.Empty,
                     ApprovedAt = row.Table.Columns.Contains("ApprovedAt") ? row.Field<DateTime>("ApprovedAt") : DateTime.Now,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -280,7 +280,7 @@ public class ResponsibilityTransferComponent
             throw;
         }
     }
-     
+
     public async Task<ResponsibilityTransferReadDto> GetByCodeAsync(string code)
     {
         try
@@ -301,16 +301,16 @@ public class ResponsibilityTransferComponent
 
             return new ResponsibilityTransferReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
-                EmployeeToId = row.Field<Guid>("EmployeeToId"),
+                Id = row.Field<int>("Id"),
+                EmployeeFromId = row.Field<int>("EmployeeFromId"),
+                EmployeeToId = row.Field<int>("EmployeeToId"),
                 Reason = row.Field<int>("Reason"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
                 IsPermanent = row.Field<bool>("IsPermanent"),
                 Remarks = row.Field<string>("Remarks"),
                 Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<Guid>("ApprovedBy"),
+                ApprovedBy = row.Field<string>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -347,16 +347,16 @@ public class ResponsibilityTransferComponent
 
             return new ResponsibilityTransferReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
-                EmployeeToId = row.Field<Guid>("EmployeeToId"),
+                Id = row.Field<int>("Id"),
+                EmployeeFromId = row.Field<int>("EmployeeFromId"),
+                EmployeeToId = row.Field<int>("EmployeeToId"),
                 Reason = row.Field<int>("Reason"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
                 IsPermanent = row.Field<bool>("IsPermanent"),
                 Remarks = row.Field<string>("Remarks"),
                 Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<Guid>("ApprovedBy"),
+                ApprovedBy = row.Field<string>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -380,7 +380,7 @@ public class ResponsibilityTransferComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -434,16 +434,16 @@ public class ResponsibilityTransferComponent
 
             return new ResponsibilityTransferReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                EmployeeFromId = row.Field<Guid>("EmployeeFromId"),
-                EmployeeToId = row.Field<Guid>("EmployeeToId"),
+                Id = row.Field<int>("Id"),
+                EmployeeFromId = row.Field<int>("EmployeeFromId"),
+                EmployeeToId = row.Field<int>("EmployeeToId"),
                 Reason = row.Field<int>("Reason"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
                 IsPermanent = row.Field<bool>("IsPermanent"),
                 Remarks = row.Field<string>("Remarks"),
                 Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<Guid>("ApprovedBy"),
+                ApprovedBy = row.Field<string>("ApprovedBy"),
                 ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

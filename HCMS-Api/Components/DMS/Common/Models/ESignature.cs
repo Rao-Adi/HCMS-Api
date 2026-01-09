@@ -7,9 +7,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class ESignature : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     public byte[] SignatureData { get; set; } = null!;
     public int SignatureType { get; set; }
@@ -20,9 +20,9 @@ public class ESignature : AuditableEntity
 }
 public class ESignatureReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     public byte[] SignatureData { get; set; } = null!;
     public int SignatureType { get; set; }
@@ -34,9 +34,9 @@ public class ESignatureReadDto : AuditableEntity
 
 public class ESignatureCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     public byte[] SignatureData { get; set; } = null!;
     public int SignatureType { get; set; }
@@ -48,9 +48,9 @@ public class ESignatureCreateDto
 
 public class ESignatureUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     public byte[] SignatureData { get; set; } = null!;
     public int SignatureType { get; set; }

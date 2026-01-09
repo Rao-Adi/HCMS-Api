@@ -7,9 +7,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class Notification
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -22,7 +22,7 @@ public class Notification
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
 
-    public Guid? RelatedEntityId { get; set; }
+    public int? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
     public string CreatedAt { get; set; }
@@ -32,9 +32,9 @@ public class Notification
 public class NotificationReadDto
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -47,7 +47,7 @@ public class NotificationReadDto
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
 
-    public Guid? RelatedEntityId { get; set; }
+    public int? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
     public string CreatedAt { get; set; }
@@ -58,9 +58,9 @@ public class NotificationReadDto
 public class NotificationCreateDto
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -73,7 +73,7 @@ public class NotificationCreateDto
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
 
-    public Guid? RelatedEntityId { get; set; }
+    public int? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
     public string CreatedAt { get; set; }
@@ -84,9 +84,9 @@ public class NotificationCreateDto
 public class NotificationUpdateDto
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -99,7 +99,7 @@ public class NotificationUpdateDto
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
 
-    public Guid? RelatedEntityId { get; set; }
+    public int? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
     public string CreatedAt { get; set; }

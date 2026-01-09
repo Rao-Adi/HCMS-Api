@@ -7,9 +7,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DocumentTraining : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     public int TrainingMode { get; set; }
     public int TrainingStatus { get; set; }
@@ -27,9 +27,9 @@ public class DocumentTraining : AuditableEntity
 
 public class DocumentTrainingReadDto : AuditableEntity
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     public int TrainingMode { get; set; }
     public int TrainingStatus { get; set; }
@@ -49,9 +49,9 @@ public class DocumentTrainingReadDto : AuditableEntity
 
 public class DocumentTrainingCreateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     public int TrainingMode { get; set; }
     public int TrainingStatus { get; set; }
@@ -69,9 +69,9 @@ public class DocumentTrainingCreateDto
 
 public class DocumentTrainingUpdateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     public int TrainingMode { get; set; }
     public int TrainingStatus { get; set; }

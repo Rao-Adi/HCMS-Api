@@ -51,7 +51,7 @@ public class NotificationComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Notifications code is required.", 200);
 
             // Check duplicate by Id OR UserId
@@ -109,13 +109,13 @@ public class NotificationComponent
 
             return new NotificationReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
                 RelatedEntityType = row.Field<string>("RelatedEntityType"),
-                RelatedEntityId = row.Field<Guid>("RelatedEntityId"),
+                RelatedEntityId = row.Field<int>("RelatedEntityId"),
                 IsRead = row.Field<bool>("IsRead"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
@@ -218,13 +218,13 @@ public class NotificationComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new NotificationReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
                     Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
                     NotificationType = row.Table.Columns.Contains("NotificationType") ? row.Field<int>("NotificationType") : 0,
                     RelatedEntityType = row.Table.Columns.Contains("RelatedEntityType") ? row.Field<string>("RelatedEntityType") : string.Empty,
-                    RelatedEntityId = row.Table.Columns.Contains("RelatedEntityId") ? row.Field<Guid>("RelatedEntityId") : Guid.Empty,
+                    RelatedEntityId = row.Table.Columns.Contains("RelatedEntityId") ? row.Field<int>("RelatedEntityId") : 0,
                     IsRead = row.Table.Columns.Contains("IsRead") && row.Field<bool?>("IsRead") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -269,13 +269,13 @@ public class NotificationComponent
 
             return new NotificationReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
                 RelatedEntityType = row.Field<string>("RelatedEntityType"),
-                RelatedEntityId = row.Field<Guid>("RelatedEntityId"),
+                RelatedEntityId = row.Field<int>("RelatedEntityId"),
                 IsRead = row.Field<bool>("IsRead"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
@@ -294,7 +294,7 @@ public class NotificationComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -338,13 +338,13 @@ public class NotificationComponent
 
             return new NotificationReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
                 RelatedEntityType = row.Field<string>("RelatedEntityType"),
-                RelatedEntityId = row.Field<Guid>("RelatedEntityId"),
+                RelatedEntityId = row.Field<int>("RelatedEntityId"),
                 IsRead = row.Field<bool>("IsRead"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };

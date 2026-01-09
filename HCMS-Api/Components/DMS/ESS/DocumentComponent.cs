@@ -51,7 +51,7 @@ public class DocumentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Documents code is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -125,7 +125,7 @@ public class DocumentComponent
 
             return new Document
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -243,7 +243,7 @@ public class DocumentComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new Document
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -334,7 +334,7 @@ public class DocumentComponent
 
             return new Document
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -379,7 +379,7 @@ public class DocumentComponent
 
             return new Document
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -411,7 +411,7 @@ public class DocumentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -464,7 +464,7 @@ public class DocumentComponent
 
             return new Document
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),

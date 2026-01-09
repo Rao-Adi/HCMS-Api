@@ -51,7 +51,7 @@ public class UserRoleComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.UserId != Guid.Empty)
+            if (input.UserId < 0)
                 throw new CustomException("UserRole is required.", 200);
 
             // Check duplicate by UserId OR UserId
@@ -113,7 +113,7 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
-                UserId = row.Field<Guid>("UserId"),
+                UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
@@ -223,7 +223,7 @@ public class UserRoleComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new UserRoleReadDto
                 {
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
+                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     RoleId = row.Table.Columns.Contains("RoleId") ? row.Field<int>("RoleId") : 0,
                     AssignedBy = row.Table.Columns.Contains("AssignedBy") ? row.Field<string>("AssignedBy") : string.Empty,
                     AssignedAt = row.Table.Columns.Contains("AssignedAt") ? row.Field<DateTime>("AssignedAt") : DateTime.Now,
@@ -276,7 +276,7 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
-                UserId = row.Field<Guid>("UserId"),
+                UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
@@ -315,7 +315,7 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
-                UserId = row.Field<Guid>("UserId"),
+                UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),
@@ -341,7 +341,7 @@ public class UserRoleComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.UserId != Guid.Empty)
+            if (input.UserId < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (UserId is VARCHAR → must be quoted)
@@ -387,7 +387,7 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
-                UserId = row.Field<Guid>("UserId"),
+                UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
                 AssignedBy = row.Field<string>("AssignedBy"),

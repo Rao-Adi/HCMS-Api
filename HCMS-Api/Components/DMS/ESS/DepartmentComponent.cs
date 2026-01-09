@@ -4,6 +4,7 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Departments;
 using System.Data;
 
@@ -112,6 +113,7 @@ public class DepartmentComponent
 
             return new DepartmentReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -138,7 +140,7 @@ public class DepartmentComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Departments
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -149,8 +151,8 @@ public class DepartmentComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Departments
-                SET IsDeleted = False
-                WHERE Code = {code}";
+                SET IsDeleted = TRUE
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -223,6 +225,7 @@ public class DepartmentComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DepartmentReadDto
                 {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
@@ -294,7 +297,7 @@ public class DepartmentComponent
             string query = $@"
                 SELECT *
                 FROM Departments
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -307,6 +310,7 @@ public class DepartmentComponent
 
             return new DepartmentReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -325,36 +329,42 @@ public class DepartmentComponent
     }
 
 
-    public async Task<DepartmentReadDto> GetByDivisionCodeAsync(string dCode)
+    public async Task<List<DepartmentReadDto>> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
             string query = $@"
                 SELECT *
                 FROM Departments
-                WHERE Division = {dCode}
+                WHERE DivisionCode = '{dCode}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("Department not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new DepartmentReadDto
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
+            DataTable departmentTable = ds.Tables[0];  // your first result set (paged data)
+            DataTable countTable = ds.Tables[0];      // second result set (count)
+                                                      // ✅ SAFETY CHECKS
+            if (departmentTable == null || departmentTable.Rows.Count == 0)
             {
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
+                throw new CustomException("SubDepartment not found", 200);
+            }
+
+            var departments = departmentTable.AsEnumerable()
+                .Select(row => new DepartmentReadDto
+                {
+                    Id = row.Field<int>("Id"),
+                    Code = row.Field<string>("Code"),
+                    Name = row.Field<string>("Name"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+                    IsDeleted = row.Field<bool>("IsDeleted"),
+                    IsActive = row.Field<bool>("IsActive"),
+                    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    CreatedBy = row.Field<string>("CreatedBy"),
+                    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    LastModifiedBy = row.Field<string>("LastModifiedBy")
+                }).ToList();
+
+            return departments;
         }
         catch (Exception)
         {
@@ -390,7 +400,7 @@ public class DepartmentComponent
             UPDATE Departments
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
             WHERE Code = '{input.Code.Replace("'", "''")}'";
@@ -403,8 +413,10 @@ public class DepartmentComponent
             // Return updated record
             string selectQuery = $@"
             SELECT *
-            FROM Departments
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                   FROM Departments dep
+                   LEFT JOIN Divisions div
+				   ON dep.DivisionCode = div.Code
+            WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -415,6 +427,7 @@ public class DepartmentComponent
 
             return new DepartmentReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -431,5 +444,20 @@ public class DepartmentComponent
         }
     }
 
-
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM Departments 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
 }

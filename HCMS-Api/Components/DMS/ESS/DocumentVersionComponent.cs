@@ -51,7 +51,7 @@ public class DocumentVersionComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.DocumentId != Guid.Empty)
+            if (input.DocumentId < 0)
                 throw new CustomException("Document Version Id is required.", 200);
 
             // Check duplicate by DocumentId OR Version
@@ -111,7 +111,7 @@ public class DocumentVersionComponent
 
             return new DocumentVersionReadDto
             {
-                DocumentId = row.Field<Guid>("DocumentId"),
+                DocumentId = row.Field<int>("DocumentId"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
@@ -222,7 +222,7 @@ public class DocumentVersionComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentVersionReadDto
                 {
-                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<Guid>("DocumentId") : Guid.Empty,
+                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
                     VersionType = row.Table.Columns.Contains("VersionType") ? row.Field<int>("VersionType") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -302,7 +302,7 @@ public class DocumentVersionComponent
 
             return new DocumentVersionReadDto
             {
-                DocumentId = row.Field<Guid>("DocumentId"),
+                DocumentId = row.Field<int>("DocumentId"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
@@ -342,7 +342,7 @@ public class DocumentVersionComponent
 
             return new DocumentVersionReadDto
             {
-                DocumentId = row.Field<Guid>("DocumentId"),
+                DocumentId = row.Field<int>("DocumentId"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
@@ -369,7 +369,7 @@ public class DocumentVersionComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.DocumentId != Guid.Empty)
+            if (input.DocumentId < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (DocumentId is VARCHAR → must be quoted)
@@ -414,7 +414,7 @@ public class DocumentVersionComponent
 
             return new DocumentVersionReadDto
             {
-                DocumentId = row.Field<Guid>("DocumentId"),
+                DocumentId = row.Field<int>("DocumentId"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),

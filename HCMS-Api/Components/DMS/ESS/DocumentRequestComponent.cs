@@ -51,7 +51,7 @@ public class DocumentRequestComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("DocumentRequests code is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -127,7 +127,7 @@ public class DocumentRequestComponent
 
             return new DocumentRequestReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -246,10 +246,10 @@ public class DocumentRequestComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentRequestReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     RequestNumber = row.Table.Columns.Contains("RequestNumber") ? row.Field<string>("RequestNumber") : string.Empty,
                     RequestType = row.Table.Columns.Contains("RequestType") ? row.Field<int>("RequestType") : 0,
-                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<Guid>("DocumentId") : Guid.Empty,
+                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
@@ -338,7 +338,7 @@ public class DocumentRequestComponent
 
             return new DocumentRequestReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -384,7 +384,7 @@ public class DocumentRequestComponent
 
             return new DocumentRequestReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -417,7 +417,7 @@ public class DocumentRequestComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -471,7 +471,7 @@ public class DocumentRequestComponent
 
             return new DocumentRequestReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),

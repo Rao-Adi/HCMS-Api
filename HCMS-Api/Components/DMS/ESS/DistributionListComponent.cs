@@ -51,7 +51,7 @@ public class DistributionListComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("DistributionList code is required.", 200);
 
             // Check duplicate by Code OR DivisionCode
@@ -116,7 +116,7 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
@@ -231,8 +231,8 @@ public class DistributionListComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DistributionListReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<Guid>("DocumentRequestId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") : 0,
                     DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -315,7 +315,7 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
@@ -355,7 +355,7 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),
@@ -382,7 +382,7 @@ public class DistributionListComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id <0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Code is VARCHAR → must be quoted)
@@ -427,7 +427,7 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 RoleId = row.Field<int>("RoleId"),

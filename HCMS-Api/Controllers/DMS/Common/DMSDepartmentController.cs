@@ -125,7 +125,7 @@ public class DMSDepartmentController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DepartmentReadDto>()
+            return Ok(new HttpApiResponse<List<DepartmentReadDto>>()
             {
                 Success = true,
                 Data = await _departmentComponent.GetByDivisionCodeAsync(dCode),
@@ -147,7 +147,32 @@ public class DMSDepartmentController : Controller
         }
     }
 
-
+    [HttpGet("get-department-count")]
+    public async Task<IActionResult> GetDocumentTypeCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _departmentComponent.GetCount(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpPost("create-department")]
     public async Task<IActionResult> Create([FromBody] DepartmentCreateDto input)
@@ -213,26 +238,14 @@ public class DMSDepartmentController : Controller
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
-        {
-            var existingRecord = await _departmentComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Department not found",
-                    Code = 404
-                });
-            }
-
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
                 Data = await _departmentComponent.DeleteAsync(code),
                 Message = "Department deleted successfully.",
                 Code = 200
-            });
+            });             
         }
         catch (CustomException ex)
         {

@@ -8,7 +8,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class WorkflowPolicy : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int PolicyType { get; set; }
 
@@ -31,7 +31,7 @@ public class WorkflowPolicy : AuditableEntity
 
 public class WorkflowPolicyReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int PolicyType { get; set; }
 
@@ -53,7 +53,7 @@ public class WorkflowPolicyReadDto : AuditableEntity
 
 public class WorkflowPolicyCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int PolicyType { get; set; }
 
@@ -75,7 +75,7 @@ public class WorkflowPolicyCreateDto
 
 public class WorkflowPolicyUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int PolicyType { get; set; }
 

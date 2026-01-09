@@ -53,7 +53,7 @@ public class ESignatureComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("ESignatures code is required.", 200);
 
             // Check duplicate by Id OR UserId
@@ -115,8 +115,8 @@ public class ESignatureComponent
 
             return new ESignatureReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
                 FileType = row.Field<string>("FileType"),
@@ -226,8 +226,8 @@ public class ESignatureComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new ESignatureReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<Guid>("UserId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -277,8 +277,8 @@ public class ESignatureComponent
 
             return new ESignatureReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
                 FileType = row.Field<string>("FileType"),
@@ -304,7 +304,7 @@ public class ESignatureComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid Id.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -349,8 +349,8 @@ public class ESignatureComponent
 
             return new ESignatureReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                UserId = row.Field<Guid>("UserId"),
+                Id = row.Field<int>("Id"),
+                UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
                 FileType = row.Field<string>("FileType"),

@@ -157,6 +157,36 @@ public class RoleComponent
     }
 
 
+    public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT Id, Name
+            FROM Roles
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Id";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("Id"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
     public async Task<PaginationResult<RoleReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try

@@ -9,9 +9,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DistributionList : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
@@ -29,9 +29,9 @@ public class DistributionList : AuditableEntity
 
 public class DistributionListReadDto : AuditableEntity
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
@@ -44,9 +44,9 @@ public class DistributionListReadDto : AuditableEntity
 
 public class DistributionListCreateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
@@ -58,9 +58,9 @@ public class DistributionListCreateDto
 
 public class DistributionListUpdateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentRequestId { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }

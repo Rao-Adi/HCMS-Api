@@ -7,9 +7,9 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DocumentVersion
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     [MaxLength(10)]
     public string Version { get; set; } = null!;
@@ -31,9 +31,9 @@ public class DocumentVersion
 
 public class DocumentVersionReadDto : AuditableEntity
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     [MaxLength(10)]
     public string Version { get; set; } = null!;
@@ -48,9 +48,9 @@ public class DocumentVersionReadDto : AuditableEntity
 
 public class DocumentVersionCreateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     [MaxLength(10)]
     public string Version { get; set; } = null!;
@@ -69,9 +69,9 @@ public class DocumentVersionCreateDto
 
 public class DocumentVersionUpdateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public int DocumentId { get; set; }
 
     [MaxLength(10)]
     public string Version { get; set; } = null!;

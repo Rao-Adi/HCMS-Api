@@ -237,9 +237,12 @@ builder.Services.AddScoped<UserComponent>();
 builder.Services.AddScoped<UserRoleComponent>();
 builder.Services.AddScoped<WorkflowPolicyComponent>();
 builder.Services.AddScoped<WorkflowStepComponent>(); 
+builder.Services.AddScoped<DesignationComponent>(); 
 builder.Services.AddScoped<IDivisionService, DivisionService>();
 
 #endregion DMS Service
+
+
 var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
 
 builder.Services.AddCors(options =>

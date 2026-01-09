@@ -5,7 +5,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 [Table("UserRoles")]
 public class UserRole : AuditableEntity
 {
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
     public int RoleId { get; set; }
 
     public DateTime AssignedAt { get; set; }
@@ -18,7 +18,7 @@ public class UserRole : AuditableEntity
 
 public class UserRoleReadDto : AuditableEntity
 {
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
     public int RoleId { get; set; }
 
     public DateTime AssignedAt { get; set; }
@@ -28,7 +28,7 @@ public class UserRoleReadDto : AuditableEntity
 
 public class UserRoleCreateDto
 {
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
     public int RoleId { get; set; }
 
     public DateTime AssignedAt { get; set; }
@@ -38,7 +38,7 @@ public class UserRoleCreateDto
 
 public class UserRoleUpdateDto
 {
-    public Guid UserId { get; set; }
+    public int UserId { get; set; }
     public int RoleId { get; set; }
 
     public DateTime AssignedAt { get; set; }

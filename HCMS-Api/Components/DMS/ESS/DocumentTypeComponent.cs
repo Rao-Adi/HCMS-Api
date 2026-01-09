@@ -112,6 +112,7 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -138,7 +139,7 @@ public class DocumentTypeComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentTypes
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -150,7 +151,7 @@ public class DocumentTypeComponent
             string deleteQuery = $@"
                 UPDATE DocumentTypes
                 SET IsDeleted = False
-                WHERE Code = {code}";
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -221,6 +222,7 @@ public class DocumentTypeComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentTypeReadDto
                 {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Description = row.Table.Columns.Contains("Description") ? row.Field<string>("Description") : string.Empty,
@@ -291,7 +293,7 @@ public class DocumentTypeComponent
             string query = $@"
                 SELECT *
                 FROM DocumentTypes
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -304,6 +306,7 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -329,7 +332,7 @@ public class DocumentTypeComponent
             string query = $@"
                 SELECT *
                 FROM DocumentTypes
-                WHERE Division = {dCode}
+                WHERE Division = '{dCode}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -342,6 +345,7 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -387,6 +391,7 @@ public class DocumentTypeComponent
             UPDATE DocumentTypes
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
+                Description = '{input.Description.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -399,7 +404,7 @@ public class DocumentTypeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Code, Name, IsActive
+            SELECT *
             FROM DocumentTypes
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
@@ -412,9 +417,16 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsActive = row.Field<bool>("IsActive")
+                Description = row.Field<string>("Description"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -423,4 +435,21 @@ public class DocumentTypeComponent
         }
     }
 
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM DocumentTypes 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
 }

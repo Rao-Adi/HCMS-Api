@@ -8,7 +8,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DocumentAttribute : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     // ⚠️ Matches DB column:
     // DocumentTypeCode INT NOT NULL REFERENCES DocumentTypes(Id)
@@ -32,11 +32,12 @@ public class DocumentAttribute : AuditableEntity
 
 public class DocumentAttributeReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     // ⚠️ Matches DB column:
     // DocumentTypeCode INT NOT NULL REFERENCES DocumentTypes(Id)
     public string DocumentTypeCode { get; set; }
+    public string DocumentType { get; set; }
 
     [MaxLength(100)]
     public string ControlLabel { get; set; } = null!;
@@ -52,7 +53,7 @@ public class DocumentAttributeReadDto : AuditableEntity
 
 public class DocumentAttributeCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
      
     public string DocumentTypeCode { get; set; }
 
@@ -70,7 +71,7 @@ public class DocumentAttributeCreateDto
 
 public class DocumentAttributeUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
      
     public string DocumentTypeCode { get; set; }
 

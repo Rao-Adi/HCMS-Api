@@ -51,10 +51,10 @@ public class DocumentAttributeComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
-                throw new CustomException("DocumentAttribute code is required.", 200);
+            if (input.Id < 0)
+                throw new CustomException("DocumentAttribute Id is required.", 200);
 
-            // Check duplicate by Id OR Name
+            // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
@@ -65,22 +65,22 @@ public class DocumentAttributeComponent
 
             if (exists > 0)
                 throw new CustomException("DocumentAttribute already exists", 200);
-
+ 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentAttributes
             (
                 DocumentTypeCode,
-                Controllable,
+                ControlLabel,
                 ControlType,
                 ListValues,
                 IsMandatory, 
                 IsActive,
                 IsDeleted,
-                CreatedAt,
                 CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
+                CreatedAt,
+                LastModifiedBy,
+                LastModifiedAt
             )
             VALUES
             (
@@ -88,13 +88,13 @@ public class DocumentAttributeComponent
                 '{input.ControlLabel}',
                 '{input.ControlType}',
                 '{input.ListValues}',
-                '{input.IsMandatory}', 
+                {input.IsMandatory}, 
                 TRUE,
                 FALSE,
-                NOW(),
                 '{userId.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{userId.Replace("'", "''")}',
+                NOW()
             )
             RETURNING Id;";
 
@@ -103,8 +103,10 @@ public class DocumentAttributeComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT *
-            FROM DocumentAttributes
-            WHERE Id = {newId}";
+            FROM DocumentAttributes da
+                 LEFT JOIN DocumentTypes dt
+                 ON da.DocumentTypeCode = dt.Code
+            WHERE da.Id = '{newId}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -115,18 +117,21 @@ public class DocumentAttributeComponent
 
             return new DocumentAttributeReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                ControlLabel = row.Field<string>("ControlLabel"),
-                ControlType = row.Field<int>("ControlType"),
-                ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty
             };
         }
         catch
@@ -172,8 +177,8 @@ public class DocumentAttributeComponent
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE da.IsDeleted = False 
+                  AND da.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -181,18 +186,18 @@ public class DocumentAttributeComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.Name) LIKE '%{search}%'
-                    OR UPPER(dep.Id) LIKE '%{search}%'
+                    UPPER(da.DocumentTypeCode) LIKE '%{search}%'
+                    OR UPPER(da.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dep.Name",
-                "CODE" => "dep.Id",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.Name"
+                "NAME" => "da.DocumentTypeCode",
+                "CODE" => "da.Id",
+                "ISACTIVE" => "da.IsActive",
+                _ => "da.DocumentTypeCode"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -201,15 +206,15 @@ public class DocumentAttributeComponent
 
             string query = $@"
                         SELECT *
-                        FROM DocumentAttributes dep
-                        LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Id
+                        FROM DocumentAttributes da
+                        LEFT JOIN DocumentTypes dt
+						ON da.DocumentTypeCode = dt.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DocumentAttributes dep
+                        FROM DocumentAttributes da
                         {whereClause};
                     ";
 
@@ -229,7 +234,8 @@ public class DocumentAttributeComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentAttributeReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
                     ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
@@ -270,11 +276,11 @@ public class DocumentAttributeComponent
         try
         {
             string query = @"
-            SELECT Id, Name
+            SELECT Id, DocumentTypeCode
             FROM DocumentAttributes
             WHERE IsActive = True
               AND IsDeleted = False
-            ORDER BY Name";
+            ORDER BY DocumentTypeCode";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -282,7 +288,7 @@ public class DocumentAttributeComponent
                 .Select(row => new SelectListDto
                 {
                     Code = row.Field<string>("Id"),
-                    Value = row.Field<string>("Name")
+                    Value = row.Field<string>("DocumentTypeCode")
                 })
                 .ToList();
 
@@ -300,11 +306,13 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM DocumentAttributes
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT * 
+                    FROM DocumentAttributes da
+                    LEFT JOIN DocumentTypes dt
+                    ON da.DocumentTypeCode = dt.Code
+                WHERE da.Id = '{code}'
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -315,18 +323,21 @@ public class DocumentAttributeComponent
 
             return new DocumentAttributeReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                ControlLabel = row.Field<string>("ControlLabel"),
-                ControlType = row.Field<int>("ControlType"),
-                ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty
             };
         }
         catch (Exception)
@@ -336,16 +347,18 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttributeReadDto> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentAttributeReadDto> GetByDocumentTypeCodeAsync(string dCode)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM DocumentAttributes
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT * 
+                    FROM DocumentAttributes da
+                    LEFT JOIN DocumentTypes dt
+                    ON da.DocumentTypeCode = dt.Code
+                WHERE DocumentTypeCode = '{dCode}'
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -356,18 +369,21 @@ public class DocumentAttributeComponent
 
             return new DocumentAttributeReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                ControlLabel = row.Field<string>("ControlLabel"),
-                ControlType = row.Field<int>("ControlType"),
-                ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty
             };
         }
         catch (Exception)
@@ -383,9 +399,7 @@ public class DocumentAttributeComponent
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
-                throw new CustomException("Invalid division code.", 200);
+            var userId = "manual"; //_utilities.GetUserid(prefix);            
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -403,9 +417,8 @@ public class DocumentAttributeComponent
             string updateQuery = $@"
             UPDATE DocumentAttributes
             SET 
-                DocumentTypeCode = '{input.DocumentTypeCode}',
                 ControlLabel = '{input.ControlLabel}',
-                ControlType = '{input.ControlType}',
+                ControlType = {input.ControlType},
                 ListValues = '{input.ListValues}',
                 IsMandatory = '{input.IsMandatory}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -433,7 +446,7 @@ public class DocumentAttributeComponent
 
             return new DocumentAttributeReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 ControlLabel = row.Field<string>("ControlLabel"),
                 ControlType = row.Field<int>("ControlType"),
@@ -447,9 +460,9 @@ public class DocumentAttributeComponent
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
-        catch
+        catch (Exception ex)
         {
-            throw;
+            throw ex;
         }
     }
 

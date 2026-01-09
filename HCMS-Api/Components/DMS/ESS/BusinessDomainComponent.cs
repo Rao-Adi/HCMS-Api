@@ -112,6 +112,7 @@ public class BusinessDomainComponent
 
             return new BusinessDomainReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -138,7 +139,7 @@ public class BusinessDomainComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM BusinessDomains
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -150,7 +151,7 @@ public class BusinessDomainComponent
             string deleteQuery = $@"
                 UPDATE BusinessDomains
                 SET IsDeleted = False
-                WHERE Code = {code}";
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -223,6 +224,7 @@ public class BusinessDomainComponent
             var businessDomain = businessDomainTable.AsEnumerable()
                 .Select(row => new BusinessDomainReadDto
                 {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     SubDepartment = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
@@ -294,7 +296,7 @@ public class BusinessDomainComponent
             string query = $@"
                 SELECT *
                 FROM BusinessDomains
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -307,8 +309,10 @@ public class BusinessDomainComponent
 
             return new BusinessDomainReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -332,7 +336,7 @@ public class BusinessDomainComponent
             string query = $@"
                 SELECT *
                 FROM BusinessDomains
-                WHERE Division = {dCode}
+                WHERE Division = '{dCode}'
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -345,8 +349,10 @@ public class BusinessDomainComponent
 
             return new BusinessDomainReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -415,8 +421,11 @@ public class BusinessDomainComponent
 
             return new BusinessDomainReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -426,6 +435,23 @@ public class BusinessDomainComponent
             };
         }
         catch
+        {
+            throw;
+        }
+    }
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM BusinessDomains 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
         {
             throw;
         }

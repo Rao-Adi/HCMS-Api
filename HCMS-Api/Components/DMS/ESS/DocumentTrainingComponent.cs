@@ -52,7 +52,7 @@ public class DocumentTrainingComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id <0)
                 throw new CustomException("DocumentTraining code is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -124,8 +124,8 @@ public class DocumentTrainingComponent
 
             return new DocumentTrainingReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentId = row.Field<Guid>("DocumentId"),
+                Id = row.Field<int>("Id"),
+                DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
@@ -239,8 +239,8 @@ public class DocumentTrainingComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentTrainingReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<Guid>("DocumentId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     TrainingMode = row.Table.Columns.Contains("TrainingMode") ? row.Field<int>("TrainingMode") : 0,
                     TrainingProofURL = row.Table.Columns.Contains("TrainingProofURL") ? row.Field<string>("TrainingProofURL") : string.Empty,
                     AssessmentScore = row.Table.Columns.Contains("AssessmentScore") ? row.Field<decimal>("AssessmentScore") : 0,
@@ -326,8 +326,8 @@ public class DocumentTrainingComponent
 
             return new DocumentTrainingReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentId = row.Field<Guid>("DocumentId"),
+                Id = row.Field<int>("Id"),
+                DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
@@ -368,8 +368,8 @@ public class DocumentTrainingComponent
 
             return new DocumentTrainingReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentId = row.Field<Guid>("DocumentId"),
+                Id = row.Field<int>("Id"),
+                DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),
@@ -397,7 +397,7 @@ public class DocumentTrainingComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id <0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -447,8 +447,8 @@ public class DocumentTrainingComponent
 
             return new DocumentTrainingReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentId = row.Field<Guid>("DocumentId"),
+                Id = row.Field<int>("Id"),
+                DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
                 AssessmentScore = row.Field<decimal>("AssessmentScore"),

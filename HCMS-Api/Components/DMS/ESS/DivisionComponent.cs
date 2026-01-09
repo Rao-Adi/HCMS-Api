@@ -113,8 +113,9 @@ public class DivisionComponent
 
             return new DivisionReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"), 
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -224,6 +225,7 @@ public class DivisionComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DivisionReadDto
                 {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -306,6 +308,7 @@ public class DivisionComponent
 
             return new DivisionReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -375,6 +378,7 @@ public class DivisionComponent
 
             return new DivisionReadDto
             {
+                Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -390,5 +394,22 @@ public class DivisionComponent
             throw;
         }
     }
-     
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM Divisions 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 }

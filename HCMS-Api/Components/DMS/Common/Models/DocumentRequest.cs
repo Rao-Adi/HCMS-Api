@@ -7,14 +7,14 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DocumentRequest : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(50)]
     public string RequestNumber { get; set; } = null!;
 
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
-    public Guid? DocumentId { get; set; }
+    public int? DocumentId { get; set; }
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
@@ -43,14 +43,14 @@ public class DocumentRequest : AuditableEntity
 
 public class DocumentRequestReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(50)]
     public string RequestNumber { get; set; } = null!;
 
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
-    public Guid? DocumentId { get; set; }
+    public int? DocumentId { get; set; }
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
@@ -77,14 +77,14 @@ public class DocumentRequestReadDto : AuditableEntity
 
 public class DocumentRequestCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(50)]
     public string RequestNumber { get; set; } = null!;
 
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
-    public Guid? DocumentId { get; set; }
+    public int? DocumentId { get; set; }
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
@@ -111,14 +111,14 @@ public class DocumentRequestCreateDto
 
 public class DocumentRequestUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(50)]
     public string RequestNumber { get; set; } = null!;
 
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
-    public Guid? DocumentId { get; set; }
+    public int? DocumentId { get; set; }
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;

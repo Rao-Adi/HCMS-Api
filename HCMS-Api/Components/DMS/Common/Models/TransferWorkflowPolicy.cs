@@ -13,7 +13,7 @@ public class TransferWorkflowPolicy : AuditableEntity
     public string DivisionCode { get; set; } = null!;
 
     public int ApprovalRoleId { get; set; }
-    public Guid ApprovalUserId { get; set; }
+    public int ApprovalUserId { get; set; }
 
 }
 
@@ -25,7 +25,7 @@ public class TransferWorkflowPolicyReadDto : AuditableEntity
     public string DivisionCode { get; set; } = null!;
 
     public int ApprovalRoleId { get; set; }
-    public Guid ApprovalUserId { get; set; }
+    public int ApprovalUserId { get; set; }
 
 }
 
@@ -37,7 +37,7 @@ public class TransferWorkflowPolicyCreateDto
     public string DivisionCode { get; set; } = null!;
 
     public int ApprovalRoleId { get; set; }
-    public Guid ApprovalUserId { get; set; }
+    public int ApprovalUserId { get; set; }
 
 }
 
@@ -49,7 +49,7 @@ public class TransferWorkflowPolicyUpdateDto
     public string DivisionCode { get; set; } = null!;
 
     public int ApprovalRoleId { get; set; }
-    public Guid ApprovalUserId { get; set; }
+    public int ApprovalUserId { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 

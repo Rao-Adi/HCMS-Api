@@ -7,11 +7,11 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DocumentApproval : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentVersionId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentVersionId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
 
@@ -25,11 +25,11 @@ public class DocumentApproval : AuditableEntity
 
 public class DocumentApprovalReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentVersionId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentVersionId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
      
@@ -40,11 +40,11 @@ public class DocumentApprovalReadDto : AuditableEntity
 
 public class DocumentApprovalCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentVersionId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentVersionId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
      
@@ -55,11 +55,11 @@ public class DocumentApprovalCreateDto
 
 public class DocumentApprovalUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
-    public Guid DocumentVersionId { get; set; }
-    public Guid WorkflowStepId { get; set; }
-    public Guid ApproverUserId { get; set; }
+    public int DocumentVersionId { get; set; }
+    public int WorkflowStepId { get; set; }
+    public int ApproverUserId { get; set; }
 
     public int Status { get; set; }
      

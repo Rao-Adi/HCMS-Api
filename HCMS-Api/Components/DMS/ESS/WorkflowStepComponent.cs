@@ -51,7 +51,7 @@ public class WorkflowStepComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("WorkflowStep ID is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -115,11 +115,11 @@ public class WorkflowStepComponent
 
             return new WorkflowStepReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
+                Id = row.Field<int>("Id"),
+                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -227,11 +227,11 @@ public class WorkflowStepComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new WorkflowStepReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<Guid>("WorkflowPolicyId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
                     Sequence = row.Table.Columns.Contains("Sequence") ? row.Field<int>("Sequence") : 0,
                     ApproverRoleId = row.Table.Columns.Contains("ApproverRoleId") ? row.Field<int>("ApproverRoleId") : 0,
-                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<Guid>("ApproverUserId") : Guid.Empty,
+                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
                     ApprovalLevel = row.Table.Columns.Contains("ApprovalLevel") ? row.Field<int>("ApprovalLevel") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -282,11 +282,11 @@ public class WorkflowStepComponent
 
             return new WorkflowStepReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
+                Id = row.Field<int>("Id"),
+                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -323,11 +323,11 @@ public class WorkflowStepComponent
 
             return new WorkflowStepReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
+                Id = row.Field<int>("Id"),
+                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -351,7 +351,7 @@ public class WorkflowStepComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -400,11 +400,11 @@ public class WorkflowStepComponent
 
             return new WorkflowStepReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                WorkflowPolicyId = row.Field<Guid>("WorkflowPolicyId"),
+                Id = row.Field<int>("Id"),
+                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 ApprovalLevel = row.Field<int>("ApprovalLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

@@ -51,7 +51,7 @@ public class RequestApprovalComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("RequestApproval code is required.", 200);
 
             // Check duplicate by Id OR DocumentRequestId
@@ -119,10 +119,10 @@ public class RequestApprovalComponent
 
             return new RequestApprovalReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
-                WorkflowStepId = row.Field<Guid>("WorkflowStepId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                Id = row.Field<int>("Id"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+                WorkflowStepId = row.Field<int>("WorkflowStepId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
@@ -232,10 +232,10 @@ public class RequestApprovalComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new RequestApprovalReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
-                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<Guid>("DocumentRequestId") : Guid.Empty,
-                    WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<Guid>("WorkflowStepId") : Guid.Empty,
-                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<Guid>("ApproverUserId") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") :0,
+                    WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
+                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                     Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
                     ActionDate = row.Table.Columns.Contains("ActionDate") ? row.Field<DateTime>("ActionDate") : DateTime.Now,
@@ -290,10 +290,10 @@ public class RequestApprovalComponent
 
             return new RequestApprovalReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
-                WorkflowStepId = row.Field<Guid>("WorkflowStepId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                Id = row.Field<int>("Id"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+                WorkflowStepId = row.Field<int>("WorkflowStepId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
@@ -332,10 +332,10 @@ public class RequestApprovalComponent
 
             return new RequestApprovalReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
-                WorkflowStepId = row.Field<Guid>("WorkflowStepId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                Id = row.Field<int>("Id"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+                WorkflowStepId = row.Field<int>("WorkflowStepId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),
@@ -361,7 +361,7 @@ public class RequestApprovalComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -406,10 +406,10 @@ public class RequestApprovalComponent
 
             return new RequestApprovalReadDto
             {
-                Id = row.Field<Guid>("Id"),
-                DocumentRequestId = row.Field<Guid>("DocumentRequestId"),
-                WorkflowStepId = row.Field<Guid>("WorkflowStepId"),
-                ApproverUserId = row.Field<Guid>("ApproverUserId"),
+                Id = row.Field<int>("Id"),
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+                WorkflowStepId = row.Field<int>("WorkflowStepId"),
+                ApproverUserId = row.Field<int>("ApproverUserId"),
                 Status = row.Field<int>("Status"),
                 Observation = row.Field<string>("Observation"),
                 ActionDate = row.Field<DateTime>("ActionDate"),

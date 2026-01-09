@@ -7,7 +7,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class TrainingPolicy : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int DocumentTypeId { get; set; }
     public bool TrainingRequired { get; set; }
@@ -18,7 +18,7 @@ public class TrainingPolicy : AuditableEntity
 public class TrainingPolicyReadDto : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int DocumentTypeId { get; set; }
     public bool TrainingRequired { get; set; }
@@ -28,7 +28,7 @@ public class TrainingPolicyReadDto : AuditableEntity
 
 public class TrainingPolicyCreateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int DocumentTypeId { get; set; }
     public bool TrainingRequired { get; set; }
@@ -38,7 +38,7 @@ public class TrainingPolicyCreateDto
 
 public class TrainingPolicyUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public int DocumentTypeId { get; set; }
     public bool TrainingRequired { get; set; }

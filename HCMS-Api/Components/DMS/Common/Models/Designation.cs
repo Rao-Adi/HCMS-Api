@@ -4,8 +4,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
-[Table("Divisions")]
-public class Division
+ 
+[Table("Designations")]
+public class Designation
 {
     [Key]
     public int Id { get; set; }
@@ -23,49 +24,53 @@ public class Division
     public string CreatedBy { get; set; } = null!;
     public DateTime LastModifiedAt { get; set; }
     public string LastModifiedBy { get; set; } = null!;
-
-    public ICollection<Department> Departments { get; set; } = new List<Department>();
+     
 }
 
 
-public class DivisionReadDto :AuditableEntity
-{ 
+public class DesignationReadDto
+{
     public int Id { get; set; }
-     
+
     public string Code { get; set; } = null!;
-     
-    public string Name { get; set; } = null!;
-     
 
-    public List<Department> Departments { get; set; } = new List<Department>();
-}
-
-
-
-public class DivisionCreateDto
-{ 
-    public int Id { get; set; }
-     
-    public string Code { get; set; } = null!;
-     
-    public string Name { get; set; } = null!;
-
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; } 
-}
-
-
-
-public class DivisionUpdateDto
-{ 
-    public int Id { get; set; }
-     
-    public string Code { get; set; } = null!;
-     
     public string Name { get; set; } = null!;
 
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
+
+    public string CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = null!;
+    public string LastModifiedAt { get; set; }
+    public string LastModifiedBy { get; set; } = null!;
      
-     
+}
+
+
+
+public class DesignationCreateDto
+{
+    public int Id { get; set; }
+
+    public string Code { get; set; } = null!;
+
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+}
+
+
+
+public class DesignationUpdateDto
+{
+    public int Id { get; set; }
+
+    public string Code { get; set; } = null!;
+
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+
 }

@@ -35,6 +35,7 @@ public class DocumentTypeUpdateDto
 
 public class DocumentTypeReadDto : AuditableEntity
 {
+    public int Id { get; set; }
     public string Code { get; set; }
     public string Name { get; set; }
 

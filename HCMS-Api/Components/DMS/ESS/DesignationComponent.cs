@@ -9,7 +9,7 @@ using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class TransferWorkflowPolicyComponent
+public class DesignationComponent
 {
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
@@ -19,7 +19,7 @@ public class TransferWorkflowPolicyComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public TransferWorkflowPolicyComponent(
+    public DesignationComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -44,35 +44,37 @@ public class TransferWorkflowPolicyComponent
     }
 
 
-    public async Task<TransferWorkflowPolicyReadDto> CreateAsync(TransferWorkflowPolicyCreateDto input)
+
+
+    public async Task<DesignationReadDto> CreateAsync(DesignationCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("TransferWorkflowPolicy is required.", 200);
+            if (string.IsNullOrWhiteSpace(input.Code))
+                throw new CustomException("Designation code is required.", 200);
 
-            // Check duplicate by DivisionCode OR DivisionCode
+            // Check duplicate by Code OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM TransferWorkflowPolicies
-            WHERE (DivisionCode = '{input.DivisionCode.Replace("'", "''")}' 
+            FROM Designations
+            WHERE (Code = '{input.Code.Replace("'", "''")}'
+                   OR Name = '{input.Name.Replace("'", "''")}')
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("TransferWorkflowPolicy already exists", 200);
+                throw new CustomException("Designation already exists", 200);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO TransferWorkflowPolicies
+            INSERT INTO Designations
             (
-                DivisionCode,
-                ApprovalRoleId,
-                ApprovalUserId, 
+                Code,
+                Name,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -82,9 +84,8 @@ public class TransferWorkflowPolicyComponent
             )
             VALUES
             (
-                '{input.DivisionCode.Replace("'", "''")}', 
-                '{input.ApprovalRoleId}',
-                '{input.ApprovalUserId}',
+                '{input.Code.Replace("'", "''")}',
+                '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -99,7 +100,7 @@ public class TransferWorkflowPolicyComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT *
-            FROM TransferWorkflowPolicies
+            FROM Designations
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -109,10 +110,10 @@ public class TransferWorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicyReadDto
+            return new DesignationReadDto
             {
-                DivisionCode = row.Field<string>("DivisionCode"),
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -135,20 +136,20 @@ public class TransferWorkflowPolicyComponent
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM TransferWorkflowPolicies
-                WHERE DivisionCode = {code}
+                FROM Designations
+                WHERE Code = {code}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TransferWorkflowPolicy not found", 200);
+                throw new CustomException("Designation not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE TransferWorkflowPolicies
+                UPDATE Designations
                 SET IsDeleted = False
-                WHERE DivisionCode = {code}";
+                WHERE Code = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -159,10 +160,13 @@ public class TransferWorkflowPolicyComponent
     }
 
 
-    public async Task<PaginationResult<TransferWorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DesignationReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
+            Console.WriteLine($"PageNo={input.PageNumber}, PageSize={input.PageSize}");
+
+
             var whereClause = @"
                 WHERE IsDeleted = False 
                   AND IsActive = " + (input.IsActive ? "True" : "False");
@@ -173,18 +177,18 @@ public class TransferWorkflowPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DivisionCode) LIKE '%{search}%'
-                    OR UPPER(DivisionCode) LIKE '%{search}%'
+                    UPPER(Name) LIKE '%{search}%'
+                    OR UPPER(Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "DivisionCode",
-                "DESCRIPTION" => "ApprovalRoleId",
+                "NAME" => "Name",
+                "CODE" => "Code",
                 "ISACTIVE" => "IsActive",
-                _ => "DivisionCode"
+                _ => "Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -193,35 +197,34 @@ public class TransferWorkflowPolicyComponent
 
             string query = $@"
                         SELECT *
-                        FROM TransferWorkflowPolicies
+                        FROM Designations
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM TransferWorkflowPolicies
+                        FROM Designations
                         {whereClause};
                     ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
             DataTable countTable = ds.Tables[1];      // second result set (count)
-                                                      // ✅ SAFETY CHECKS
+            // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<TransferWorkflowPolicyReadDto>
+                return new PaginationResult<DesignationReadDto>
                 {
-                    Items = new List<TransferWorkflowPolicyReadDto>(),
+                    Items = new List<DesignationReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new TransferWorkflowPolicyReadDto
+                .Select(row => new DesignationReadDto
                 {
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
-                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
-                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<int>("ApprovalUserId") : 0,
+                    Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -239,7 +242,7 @@ public class TransferWorkflowPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<TransferWorkflowPolicyReadDto>
+            return new PaginationResult<DesignationReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -251,29 +254,59 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
-    public async Task<TransferWorkflowPolicyReadDto> GetByTransferWorkflowPolicyCodeAsync(string code)
+
+    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT Code, Name
+            FROM Designations
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Name";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectListDto
+                {
+                    Code = row.Field<string>("Code"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<DesignationReadDto> GetByCodeAsync(string code)
     {
         try
         {
             string query = $@"
                 SELECT *
-                FROM TransferWorkflowPolicies
-                WHERE DivisionCode = {code}
+                FROM Designations
+                WHERE Code = {code}
                   AND IsActive = True
                   AND IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("TransferWorkflowPolicy not found", 200);
+                throw new CustomException("Designation not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicyReadDto
+            return new DesignationReadDto
             {
-                DivisionCode = row.Field<string>("DivisionCode"),
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -288,38 +321,38 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
-    public async Task<TransferWorkflowPolicyReadDto> UpdateAsync(TransferWorkflowPolicyUpdateDto input)
+
+    public async Task<DesignationReadDto> UpdateAsync(DesignationUpdateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.DivisionCode))
+            if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid division code.", 200);
 
-            // Check existence (DivisionCode is VARCHAR → must be quoted)
+            // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM TransferWorkflowPolicies
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+            FROM Designations
+            WHERE Code = '{input.Code.Replace("'", "''")}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TransferWorkflowPolicy not found", 200);
+                throw new CustomException("Designation not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE TransferWorkflowPolicies
+            UPDATE Designations
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
-                ApprovalRoleId = '{input.ApprovalRoleId}',
+                Name = '{input.Name.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -329,8 +362,8 @@ public class TransferWorkflowPolicyComponent
             // Return updated record
             string selectQuery = $@"
             SELECT *
-            FROM TransferWorkflowPolicies
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            FROM Designations
+            WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -339,11 +372,10 @@ public class TransferWorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new TransferWorkflowPolicyReadDto
+            return new DesignationReadDto
             {
-                DivisionCode = row.Field<string>("DivisionCode"),
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

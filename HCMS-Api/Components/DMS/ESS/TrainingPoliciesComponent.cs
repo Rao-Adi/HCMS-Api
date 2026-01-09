@@ -111,7 +111,7 @@ public class TrainingPolicyComponent
 
             return new TrainingPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -221,7 +221,7 @@ public class TrainingPolicyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new TrainingPolicyReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     DocumentTypeId = row.Table.Columns.Contains("DocumentTypeId") ? row.Field<int>("DocumentTypeId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -272,7 +272,7 @@ public class TrainingPolicyComponent
 
             return new TrainingPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -298,7 +298,7 @@ public class TrainingPolicyComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid Id.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -343,7 +343,7 @@ public class TrainingPolicyComponent
 
             return new TrainingPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"), 
+                Id = row.Field<int>("Id"), 
                 DocumentTypeId = row.Field<int>("DocumentTypeId"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),

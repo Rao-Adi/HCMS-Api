@@ -7,7 +7,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class Template : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public string DocumentTypeCode { get; set; }
 
@@ -29,7 +29,7 @@ public class Template : AuditableEntity
 
 public class TemplateReadDto : AuditableEntity
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public string DocumentTypeCode { get; set; }
 
@@ -52,7 +52,7 @@ public class TemplateReadDto : AuditableEntity
 
 public class TemplateCreateDto
 { 
-    public Guid Id { get; set; }
+    //public int Id { get; set; }
 
     public string DocumentTypeCode { get; set; }
 
@@ -75,7 +75,7 @@ public class TemplateCreateDto
 
 public class TemplateUpdateDto
 { 
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     public string DocumentTypeCode { get; set; }
 

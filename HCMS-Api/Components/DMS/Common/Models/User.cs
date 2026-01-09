@@ -8,7 +8,7 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class User : AuditableEntity
 {
     [Key]
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -28,7 +28,7 @@ public class User : AuditableEntity
 
 public class UserReadDto : AuditableEntity
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -37,18 +37,23 @@ public class UserReadDto : AuditableEntity
     public string UserName { get; set; } = null!;
 
     [MaxLength(255)]
-    public string Email { get; set; } = null!;
+    public string Grade { get; set; } = null!;
 
     public string? DivisionCode { get; set; }
+    public string? DivisionName { get; set; }
     public string? DepartmentCode { get; set; }
+    public string? DepartmentName { get; set; }
     public string? SubDepartmentCode { get; set; }
+    public string? SubDepartmentName { get; set; }
+    public string? ReportingTo { get; set; }
+    public string? DateOfJoining { get; set; }
 
 }
 
 
 public class UserCreateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -68,7 +73,7 @@ public class UserCreateDto
 
 public class UserUpdateDto
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;

@@ -52,7 +52,7 @@ public class WorkflowPolicyComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("WorkflowPolicy ID is required.", 200);
 
             // Check duplicate by Id OR Name
@@ -121,7 +121,7 @@ public class WorkflowPolicyComponent
 
             return new WorkflowPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -234,7 +234,7 @@ public class WorkflowPolicyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new WorkflowPolicyReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Guid>("Id") : Guid.Empty,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     PolicyType = row.Table.Columns.Contains("PolicyType") ? row.Field<int>("PolicyType") : 0,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
@@ -290,7 +290,7 @@ public class WorkflowPolicyComponent
 
             return new WorkflowPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -332,7 +332,7 @@ public class WorkflowPolicyComponent
 
             return new WorkflowPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -361,7 +361,7 @@ public class WorkflowPolicyComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id != Guid.Empty)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Id is VARCHAR → must be quoted)
@@ -411,7 +411,7 @@ public class WorkflowPolicyComponent
 
             return new WorkflowPolicyReadDto
             {
-                Id = row.Field<Guid>("Id"),
+                Id = row.Field<int>("Id"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
