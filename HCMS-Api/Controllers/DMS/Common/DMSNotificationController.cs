@@ -35,7 +35,7 @@ public class DMSNotificationController : Controller
     }
 
     [HttpPost("get-all-notification")]
-    public async Task<IActionResult> GetAllDocumentTypes(TableFiltersDto input)
+    public async Task<IActionResult> GetAllNotifications(TableFiltersDto input)
     {
         try
         {

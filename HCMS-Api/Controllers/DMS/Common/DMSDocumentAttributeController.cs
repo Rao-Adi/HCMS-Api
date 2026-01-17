@@ -63,7 +63,7 @@ public class DMSDocumentAttributeController : Controller
 
 
     [HttpGet("get-all-document-attributes-list")]
-    public async Task<IActionResult> GetAllDocumentApprovalSelectList()
+    public async Task<IActionResult> GetAllDocumentAttributeSelectList()
     {
         try
         {

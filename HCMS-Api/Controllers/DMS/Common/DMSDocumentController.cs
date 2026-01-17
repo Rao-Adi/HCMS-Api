@@ -39,7 +39,7 @@ public class DMSDocumentController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<Document>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentReadDto>>()
             {
                 Success = true,
                 Data = await _documentComponent.GetAllAsync(input),
@@ -96,7 +96,7 @@ public class DMSDocumentController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<Document>()
+            return Ok(new HttpApiResponse<DocumentReadDto>()
             {
                 Success = true,
                 Data = await _documentComponent.GetByCodeAsync(code),
@@ -120,7 +120,8 @@ public class DMSDocumentController : Controller
      
 
     [HttpPost("create-document")]
-    public async Task<IActionResult> Create([FromBody] Document input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> Create([FromForm] DocumentCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -129,12 +130,12 @@ public class DMSDocumentController : Controller
         }
 
         try
-        { 
-            return Ok(new HttpApiResponse<Document>()
+        {
+            return Ok(new HttpApiResponse<DocumentReadDto>()
             {
                 Success = true,
                 Data = await _documentComponent.CreateAsync(input),
-                Message = "Business Domain created successfully.",
+                Message = "Document created successfully.",
                 Code = 200
             });
         }
@@ -153,15 +154,15 @@ public class DMSDocumentController : Controller
     }
 
     [HttpPut("update-document")]
-    public async Task<IActionResult> Update([FromBody] Document input)
+    public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<Document>()
+            return Ok(new HttpApiResponse<DocumentReadDto>()
             {
                 Success = true,
                 Data = await _documentComponent.UpdateAsync(input),
-                Message = "Business Domain updated successfully.",
+                Message = "Document updated successfully.",
                 Code = 200
             });
         }
@@ -191,7 +192,7 @@ public class DMSDocumentController : Controller
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Business Domain not found",
+                    Message = "Document not found",
                     Code = 404
                 });
             }
@@ -200,7 +201,7 @@ public class DMSDocumentController : Controller
             {
                 Success = true,
                 Data = await _documentComponent.DeleteAsync(code),
-                Message = "Business Domain deleted successfully.",
+                Message = "Document deleted successfully.",
                 Code = 200
             });
         }

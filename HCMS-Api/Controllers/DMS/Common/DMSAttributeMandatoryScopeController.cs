@@ -92,15 +92,15 @@ public class DMSAttributeMandatoryScopeController : Controller
     }
 
 
-    [HttpGet("get-attribute-mandatory-scopes-by-code/{code}")]
-    public async Task<IActionResult> GetAttributeMandatoryScopeById(string code)
+    [HttpGet("get-attribute-mandatory-scopes-by-id/{id}")]
+    public async Task<IActionResult> GetAttributeMandatoryScopeById(int id)
     {
         try
         {
-            return Ok(new HttpApiResponse<AttributeMandatoryScopeReadDto>()
+            return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScopeReadDto>>()
             {
                 Success = true,
-                Data = await _attributeMandatoryScopeComponent.GetByCodeAsync(code),
+                Data = await _attributeMandatoryScopeComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -193,19 +193,7 @@ public class DMSAttributeMandatoryScopeController : Controller
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
-        {
-            var existingRecord = await _attributeMandatoryScopeComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Attribute Mandatory Scope not found",
-                    Code = 404
-                });
-            }
-
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,

@@ -92,7 +92,7 @@ public class DMSUserRoleController : Controller
     }
 
 
-    [HttpPost("create-user")]
+    [HttpPost("create-user-role")]
     public async Task<IActionResult> Create([FromBody] UserRoleCreateDto input)
     {
         if (!ModelState.IsValid)
@@ -125,7 +125,7 @@ public class DMSUserRoleController : Controller
         }
     }
 
-    [HttpPut("update-user")]
+    [HttpPut("update-user-role")]
     public async Task<IActionResult> Update([FromBody] UserRoleUpdateDto input)
     {
         try
@@ -152,7 +152,7 @@ public class DMSUserRoleController : Controller
         }
     }
 
-    [HttpDelete("delete-user/{code}")]
+    [HttpDelete("delete-user-role/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try

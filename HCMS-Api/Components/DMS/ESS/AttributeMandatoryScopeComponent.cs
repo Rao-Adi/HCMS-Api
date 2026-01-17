@@ -43,6 +43,7 @@ public class AttributeMandatoryScopeComponent
         _dataservice.BeginProcess(connectionString);
 
     }
+
     public async Task<AttributeMandatoryScopeReadDto> CreateAsync(AttributeMandatoryScopeCreateDto input)
     {
         try
@@ -63,7 +64,7 @@ public class AttributeMandatoryScopeComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("AttributeMandatoryScope already exists", 200);
+                throw new CustomException("AttributeMandatoryScope already exists", 403);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -72,6 +73,8 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId,
                 DivisionCode,
                 DepartmentCode,
+                SubDepartmentCode,
+                IsMandatory,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -84,6 +87,8 @@ public class AttributeMandatoryScopeComponent
                 '{input.DocumentAttributeId}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
+                '{input.SubDepartmentCode}',
+                '{input.IsMandatory}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -97,22 +102,37 @@ public class AttributeMandatoryScopeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT Id, DocumentAttributeId, DivisionCode, IsActive
-            FROM AttributeMandatoryScopes
-            WHERE Id = {newId}";
+            SELECT doc.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM AttributeMandatoryScopes doc
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+            WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created Attribute Mandatory");
 
             DataRow row = dt.Rows[0];
 
             return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
+
+                Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                IsMandatory = row.Field<bool>("IsMandatory"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -164,8 +184,8 @@ public class AttributeMandatoryScopeComponent
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE doc.IsDeleted = False 
+                  AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -173,19 +193,20 @@ public class AttributeMandatoryScopeComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.DivisionCode) LIKE '%{search}%'
-                    OR UPPER(dep.DepartmentCode) LIKE '%{search}%'
-                    OR UPPER(dep.DocumentAttributeId) LIKE '%{search}%'
+                    UPPER(doc.Name) LIKE '%{search}%'
+                    OR UPPER(doc.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "DivisionCode" => "dep.DivisionCode",
-                "DepartmentCode" => "dep.DepartmentCode",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.DivisionCode"
+                "DocumentAttributeId" => "doc.DocumentAttributeId",
+                "DivisionCode" => "doc.DivisionCode",
+                "DepartmentCode" => "doc.DepartmentCode",
+                "SubDepartmentCode" => "doc.SubDepartmentCode",
+                "ISACTIVE" => "doc.IsActive",
+                _ => "doc.DocumentAttributeId"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -193,16 +214,21 @@ public class AttributeMandatoryScopeComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM AttributeMandatoryScopes dep
+                       SELECT doc.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM AttributeMandatoryScopes doc
                         LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.DocumentAttributeId
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM AttributeMandatoryScopes dep
+                        FROM AttributeMandatoryScopes doc
                         {whereClause};
                     ";
 
@@ -223,8 +249,17 @@ public class AttributeMandatoryScopeComponent
                 .Select(row => new AttributeMandatoryScopeReadDto
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
+
+                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+
+                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
+                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") && row.Field<bool?>("IsMandatory") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -285,35 +320,75 @@ public class AttributeMandatoryScopeComponent
     }
 
 
-    public async Task<AttributeMandatoryScopeReadDto> GetByCodeAsync(string code)
+    public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM AttributeMandatoryScopes
-                WHERE DocumentAttributeId = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT doc.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM AttributeMandatoryScopes doc
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                WHERE DocumentAttributeId = {id}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
                 throw new CustomException("AttributeMandatoryScope not found", 200);
+             
 
-            DataRow row = dt.Rows[0];
-
-            return new AttributeMandatoryScopeReadDto
+            if (dt == null || dt.Rows.Count == 0)
             {
-                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                return new PaginationResult<AttributeMandatoryScopeReadDto>
+                {
+                    Items = new List<AttributeMandatoryScopeReadDto>(),
+                    TotalCount = 0
+                };
+            }
+
+            var divisions = dt.AsEnumerable()
+                .Select(row => new AttributeMandatoryScopeReadDto
+                {
+                    DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
+
+                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+
+                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
+                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") && row.Field<bool?>("IsMandatory") == true,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                })
+                .ToList();
+
+            int totalCount = 0;
+            if (dt != null && dt.Rows.Count > 0)
+            {
+                totalCount = Convert.ToInt32(dt.Rows[0][0]);
+            }
+
+            return new PaginationResult<AttributeMandatoryScopeReadDto>
+            {
+                Items = divisions,
+                TotalCount = totalCount
             };
         }
         catch (Exception)
@@ -322,43 +397,6 @@ public class AttributeMandatoryScopeComponent
         }
     }
 
-
-    public async Task<AttributeMandatoryScopeReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM AttributeMandatoryScopes
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("AttributeMandatoryScope not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new AttributeMandatoryScopeReadDto
-            {
-                DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DivisionCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
 
 
     public async Task<AttributeMandatoryScopeReadDto> UpdateAsync(AttributeMandatoryScopeUpdateDto input)
@@ -388,6 +426,9 @@ public class AttributeMandatoryScopeComponent
             UPDATE AttributeMandatoryScopes
             SET 
                 DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
+                DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
+                SubDepartmentCode = '{input.SubDepartmentCode.Replace("'", "''")}',
+                IsMandatory = {(input.IsMandatory ? "TRUE" : "FALSE")},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -400,9 +441,16 @@ public class AttributeMandatoryScopeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM AttributeMandatoryScopes
-            WHERE DocumentAttributeId = '{input.DocumentAttributeId}'";
+                        SELECT doc.*, div.Name AS DivisionName,
+                            dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                            FROM AttributeMandatoryScopes doc
+                            LEFT JOIN Divisions div
+                            ON doc.DivisionCode = div.Code
+                            LEFT JOIN Departments dep
+                            ON doc.DepartmentCode = dep.Code
+                            LEFT JOIN SubDepartments subd
+                            ON doc.SubDepartmentCode = subd.Code
+            WHERE id = {updated}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -414,8 +462,17 @@ public class AttributeMandatoryScopeComponent
             return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
+
+                Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                IsMandatory = row.Field<bool>("IsMandatory"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

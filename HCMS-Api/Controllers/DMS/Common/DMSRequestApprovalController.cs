@@ -33,7 +33,7 @@ public class DMSRequestApprovalController : Controller
     }
 
     [HttpPost("get-all-request-approval")]
-    public async Task<IActionResult> GetAllDocumentTypes(TableFiltersDto input)
+    public async Task<IActionResult> GetAllRequestApprovals(TableFiltersDto input)
     {
         try
         {

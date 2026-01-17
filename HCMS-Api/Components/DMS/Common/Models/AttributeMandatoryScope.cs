@@ -14,6 +14,8 @@ public class AttributeMandatoryScope : AuditableEntity
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
 
+    public bool IsMandatory { get; set; }
+
     // Navigation Properties
     public DocumentAttribute DocumentAttribute { get; set; } = null!;
     public Division Division { get; set; } = null!;
@@ -26,6 +28,9 @@ public class AttributeMandatoryScopeCreateDto
     public int DocumentAttributeId { get; set; }
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
+    public string SubDepartmentCode { get; set; }
+
+    public bool IsMandatory { get; set; }
 
 }
 
@@ -37,6 +42,10 @@ public class AttributeMandatoryScopeUpdateDto
     public string DivisionCode { get; set; }
     public string DepartmentCode { get; set; }
 
+    public string SubDepartmentCode { get; set; }
+
+    public bool IsMandatory { get; set; }
+
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 
@@ -47,9 +56,15 @@ public class AttributeMandatoryScopeReadDto
     public int Id { get; set; }
 
     public int DocumentAttributeId { get; set; }
+    public string Division { get; set; }
     public string DivisionCode { get; set; }
+    public string Department { get; set; }
     public string DepartmentCode { get; set; }
 
+    public string SubDepartment { get; set; }
+    public string SubDepartmentCode { get; set; }
+
+    public bool IsMandatory { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 

@@ -58,13 +58,13 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE (Id = '{input.Id}' 
+            WHERE ControlLabel = '{input.ControlLabel}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("DocumentAttribute already exists", 200);
+                throw new CustomException("DocumentAttribute already exists", 403);
  
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

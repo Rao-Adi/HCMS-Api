@@ -35,7 +35,7 @@ public class DMSESignatureController : Controller
     }
 
     [HttpPost("get-all-esignatures")]
-    public async Task<IActionResult> GetAllDocumentTypes(TableFiltersDto input)
+    public async Task<IActionResult> GetAllSignatures(TableFiltersDto input)
     {
         try
         {

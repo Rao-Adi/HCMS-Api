@@ -44,21 +44,43 @@ public class DocumentComponent
     }
 
 
-    public async Task<Document> CreateAsync(Document input)
+    public async Task<DocumentReadDto> CreateAsync(DocumentCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Documents code is required.", 200);
 
+
+            if (input.DocumentFile == null || input.DocumentFile.Length == 0)
+                throw new CustomException("Document file is required", 400);
+
+            // 2️⃣ Prepare upload path
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+
+            if (!Directory.Exists(uploadsRoot))
+                Directory.CreateDirectory(uploadsRoot);
+
+            // 3️⃣ Create unique filename
+            var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
+            var fileName = $"{fileExtension}";
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            // 4️⃣ Save file to disk
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await input.DocumentFile.CopyToAsync(stream);
+            }
+
+            // 5️⃣ Generate URL (adjust domain if needed)
+            var documentUrl = $"/uploads/documents/{fileName}";
+             
             // Check duplicate by Id OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Documents
-            WHERE (Id = '{input.Id}' 
+            WHERE DocumentNumber = '{input.DocumentNumber}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -79,7 +101,8 @@ public class DocumentComponent
                 Status,
                 EffectiveFrom, 
                 EffectiveTo, 
-                NextReviewdate,  
+                NextReviewdate, 
+                DocumentURL,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -96,9 +119,10 @@ public class DocumentComponent
                 '{input.SubDepartmentCode}', 
                 '{input.DocumentName}', 
                 '{input.Status}', 
-                '{input.EffectiveFrom}', 
-                '{input.EffectiveTo}', 
-                '{input.NextReviewDate}', 
+                {(input.EffectiveFrom.HasValue ? $"'{input.EffectiveFrom:yyyy-MM-dd}'" : "NULL")}, 
+                {(input.EffectiveTo.HasValue ? $"'{input.EffectiveTo:yyyy-MM-dd}'" : "NULL")}, 
+                '{input.NextReviewDate:yyyy-MM-dd}', 
+                '{documentUrl}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -112,9 +136,18 @@ public class DocumentComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = {newId}";
+            SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+            WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -123,7 +156,7 @@ public class DocumentComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Document
+            return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
@@ -132,9 +165,10 @@ public class DocumentComponent
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentName = row.Field<string>("DocumentName"),
                 Status = row.Field<int>("Status"),
-                EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
-                EffectiveTo = row.Field<DateTime>("EffectiveTo"),
-                NextReviewDate = row.Field<DateTime>("NextReviewDate"),
+                EffectiveFrom = row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss"),
+                EffectiveTo = row.Field<DateTime>("EffectiveTo").ToString("yyyy-MM-dd HH:mm:ss"),
+                NextReviewDate = row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss"),
+                DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -181,13 +215,13 @@ public class DocumentComponent
     }
 
 
-    public async Task<PaginationResult<Document>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<DocumentReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE doc.IsDeleted = False 
+                  AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -195,18 +229,22 @@ public class DocumentComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.Name) LIKE '%{search}%'
-                    OR UPPER(dep.Id) LIKE '%{search}%'
+                    UPPER(doc.Name) LIKE '%{search}%'
+                    OR UPPER(doc.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dep.Name",
-                "CODE" => "dep.Id",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.Name"
+                "DocumentNumber" => "doc.DocumentNumber",
+                "DocumentTypeCode" => "doc.DocumentTypeCode",
+                "DepartmentCode" => "doc.DepartmentCode",
+                "DivisionCode" => "doc.DivisionCode",
+                "SubDepartmentCode" => "doc.SubDepartmentCode",
+                "DocumentName" => "doc.DocumentName",
+                "ISACTIVE" => "doc.IsActive",
+                _ => "doc.DocumentNumber"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -214,16 +252,23 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Documents dep
-                        LEFT JOIN Documents div
-						ON dep.DivisionCode = div.Id
+                        SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Documents dep
+                        FROM Documents doc
                         {whereClause};
                     ";
 
@@ -233,27 +278,43 @@ public class DocumentComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<Document>
+                return new PaginationResult<DocumentReadDto>
                 {
-                    Items = new List<Document>(),
+                    Items = new List<DocumentReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new Document
+                .Select(row => new DocumentReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
+
+                    DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+
+                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+
+                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
                     DocumentName = row.Table.Columns.Contains("DocumentName") ? row.Field<string>("DocumentName") : string.Empty,
-                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("SubDepartmentCode") : 0,
-                    EffectiveFrom = row.Table.Columns.Contains("EffectiveFrom") ? row.Field<DateTime>("EffectiveFrom") : DateTime.Now,
-                    EffectiveTo = row.Table.Columns.Contains("EffectiveTo") ? row.Field<DateTime>("EffectiveTo") : DateTime.Now,
-                    NextReviewDate = row.Table.Columns.Contains("NextReviewDate") ? row.Field<DateTime>("NextReviewDate") : DateTime.Now,
+                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
+                    EffectiveFrom = (row.Table.Columns.Contains("EffectiveFrom") && !row.IsNull("EffectiveFrom"))
+                                ? row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                     
+                    EffectiveTo = (row.Table.Columns.Contains("EffectiveTo") && !row.IsNull("EffectiveTo"))
+                                ? row.Field<DateTime>("EffectiveTo").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                     
+                    NextReviewDate = (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate"))
+                                ? row.Field<DateOnly>("NextReviewDate").ToString("yyyy-MM-dd") : string.Empty,
+                     
+                    DocumentURL = row.Table.Columns.Contains("DocumentURL") ? row.Field<string>("DocumentURL") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -271,7 +332,7 @@ public class DocumentComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<Document>
+            return new PaginationResult<DocumentReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -314,16 +375,25 @@ public class DocumentComponent
     }
 
 
-    public async Task<Document> GetByCodeAsync(string code)
+    public async Task<DocumentReadDto> GetByCodeAsync(string documentNumber)
     {
         try
         {
             string query = $@"
-                SELECT  *
-                FROM Documents
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                WHERE doc.DocumentNumber = {documentNumber}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -332,18 +402,29 @@ public class DocumentComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Document
+            return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                DocumentType = row.Field<string>("DocumentTypeName"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
                 Status = row.Field<int>("Status"),
-                EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
-                EffectiveTo = row.Field<DateTime>("EffectiveTo"),
-                NextReviewDate = row.Field<DateTime>("NextReviewDate"),
+                EffectiveFrom = row.Field<string>("EffectiveFrom"),
+                EffectiveTo = row.Field<string>("EffectiveTo"),
+                NextReviewDate = row.Field<string>("NextReviewDate"),
+                DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -359,16 +440,25 @@ public class DocumentComponent
     }
 
 
-    public async Task<Document> GetByDivisionCodeAsync(string dCode)
+    public async Task<DocumentReadDto> GetByDivisionCodeAsync(string dCode)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM Documents
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                WHERE doc.DivisionCode = {dCode}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -377,18 +467,28 @@ public class DocumentComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Document
+            return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                DocumentType = row.Field<string>("DocumentTypeName"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentName = row.Field<string>("DocumentName"),
                 Status = row.Field<int>("Status"),
-                EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
-                EffectiveTo = row.Field<DateTime>("EffectiveTo"),
-                NextReviewDate = row.Field<DateTime>("NextReviewDate"),
+                EffectiveFrom = row.Field<string>("EffectiveFrom"),
+                EffectiveTo = row.Field<string>("EffectiveTo"),
+                NextReviewDate = row.Field<string>("NextReviewDate"),
+                DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -404,7 +504,7 @@ public class DocumentComponent
     }
 
 
-    public async Task<Document> UpdateAsync(Document input)
+    public async Task<DocumentReadDto> UpdateAsync(DocumentUpdateDto input)
     {
         try
         {
@@ -439,6 +539,7 @@ public class DocumentComponent
                 EffectiveFrom = '{input.EffectiveFrom}',
                 EffectiveTo = '{input.EffectiveTo}',
                 NextReviewDate = '{input.NextReviewDate}',
+                DocumentURL = '{input.DocumentFile}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -451,9 +552,18 @@ public class DocumentComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = '{input.Id}'";
+           SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code 
+            WHERE doc.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -462,18 +572,28 @@ public class DocumentComponent
 
             DataRow row = dt.Rows[0];
 
-            return new Document
+            return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                DocumentType = row.Field<string>("DocumentTypeName"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 DocumentName = row.Field<string>("DocumentName"),
                 Status = row.Field<int>("Status"),
-                EffectiveFrom = row.Field<DateTime>("EffectiveFrom"),
-                EffectiveTo = row.Field<DateTime>("EffectiveTo"),
-                NextReviewDate = row.Field<DateTime>("NextReviewDate"),
+                EffectiveFrom = row.Field<string>("EffectiveFrom"),
+                EffectiveTo = row.Field<string>("EffectiveTo"),
+                NextReviewDate = row.Field<string>("NextReviewDate"),
+                DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
