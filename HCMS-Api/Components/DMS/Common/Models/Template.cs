@@ -15,7 +15,7 @@ public class Template : AuditableEntity
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileURL { get; set; } = null!;
+    public string TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
 
@@ -37,13 +37,15 @@ public class TemplateReadDto : AuditableEntity
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileURL { get; set; } = null!;
+    public string TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
+
+    public string? TemplateContent { get; set; }
 
     public bool IsDefault { get; set; }
 
@@ -60,13 +62,14 @@ public class TemplateCreateDto
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileURL { get; set; } = null!;
+    public string TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
+    public string? TemplateContent { get; set; }
 
     public bool IsDefault { get; set; }
 
@@ -90,6 +93,8 @@ public class TemplateUpdateDto
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
+
+    public string? TemplateContent { get; set; }
 
     public bool IsDefault { get; set; }
 

@@ -87,7 +87,7 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPost("create-responsibility-transfer")]
-    public async Task<IActionResult> Create([FromBody] ResponsibilityTransferCreateDto input)
+    public async Task<IActionResult> Create([FromForm] ResponsibilityTransferCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -120,7 +120,7 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPut("update-responsibility-transfer")]
-    public async Task<IActionResult> Update([FromBody] ResponsibilityTransferUpdateDto input)
+    public async Task<IActionResult> Update([FromForm] ResponsibilityTransferUpdateDto input)
     {
         try
         {

@@ -165,6 +165,42 @@ public class DMSCommon
         }
     }
 
+    // ────────────────────────────────────────────────
+    // New / improved version that accepts parameters
+    // ────────────────────────────────────────────────
+    public string ExecuteScalarQuery(string query, IDictionary<string, object> parameters = null)
+    {
+        try
+        {
+            using (var connection = new NpgsqlConnection(_connectionString))
+            {
+                connection.Open();
+
+                using (var command = new NpgsqlCommand(query, connection))
+                {
+                    if (parameters != null && parameters.Count > 0)
+                    {
+                        foreach (var param in parameters)
+                        {
+                            // Npgsql handles nulls, DBNull, bool → correct PostgreSQL types, etc.
+                            var npgsqlParam = new NpgsqlParameter(param.Key, param.Value ?? DBNull.Value);
+                            command.Parameters.Add(npgsqlParam);
+                        }
+                    }
+
+                    var result = command.ExecuteScalar();
+                    return result?.ToString();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Consider proper logging here instead of silent fail
+            // e.g. _logger.LogError(ex, "ExecuteScalarQuery failed: {Query}", query);
+            return null;
+        }
+    }
+
     // ============================
     // Execute Scalar (generic)
     // ============================

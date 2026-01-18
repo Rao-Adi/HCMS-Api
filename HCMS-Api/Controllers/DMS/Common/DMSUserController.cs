@@ -65,15 +65,15 @@ public class DMSUserController : Controller
 
 
 
-    [HttpGet("get-user-by-code/{code}")]
-    public async Task<IActionResult> GetUserById(string code)
+    [HttpGet("get-user-by-id/{id}")]
+    public async Task<IActionResult> GetUserById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<UserReadDto>()
             {
                 Success = true,
-                Data = await _userComponent.GetByCodeAsync(code),
+                Data = await _userComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -92,6 +92,35 @@ public class DMSUserController : Controller
         }
     }
 
+
+
+    [HttpGet("get-all-users-list")]
+    public async Task<IActionResult> GetAllSelectList()
+    {
+        try
+        {
+            var selectList = await _userComponent.GetAllSelectList();
+            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            {
+                Success = true,
+                Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpPost("create-user")]
     public async Task<IActionResult> Create([FromBody] UserCreateDto input)
@@ -157,19 +186,7 @@ public class DMSUserController : Controller
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
-        {
-            var existingRecord = await _userComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "User not found",
-                    Code = 404
-                });
-            }
-
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,

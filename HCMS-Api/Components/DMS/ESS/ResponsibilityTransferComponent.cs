@@ -51,35 +51,55 @@ public class ResponsibilityTransferComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("ResponsibilityTransfer code is required.", 200);
 
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM ResponsibilityTransfer
-            WHERE (Id = '{input.Id}' 
-              AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            //// Check duplicate by Id OR Name
+            //string checkQuery = $@"
+            //SELECT COUNT(1)
+            //FROM ResponsibilityTransfers
+            //WHERE EmployeeFrom = '{input.EmployeeFrom}' 
+            //  AND IsDeleted = FALSE";
 
-            if (exists > 0)
-                throw new CustomException("ResponsibilityTransfer already exists", 200);
+            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+            //if (exists > 0)
+            //    throw new CustomException("ResponsibilityTransfers already exists", 200);
+
+            if (input.Attachment == null || input.Attachment.Length == 0)
+                throw new CustomException("Document file is required", 400);
+
+            // 2️⃣ Prepare upload path
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+
+            if (!Directory.Exists(uploadsRoot))
+                Directory.CreateDirectory(uploadsRoot);
+
+            // 3️⃣ Create unique filename
+            var fileExtension = Path.GetExtension(input.Attachment.FileName);
+            var fileName = $"{input.Attachment.FileName}.{fileExtension}";
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            // 4️⃣ Save file to disk
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await input.Attachment.CopyToAsync(stream);
+            }
+
+            // 5️⃣ Generate URL (adjust domain if needed)
+            var documentUrl = $"/uploads/documents/{fileName}";
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO ResponsibilityTransfer
+            INSERT INTO ResponsibilityTransfers
             (
-                EmployeeFromId,
-                EmployeeToId,
-                Reason,
+                EmployeeFrom,
+                EmployeeTo,
+                ReasonForTransfer,
                 EffectiveDateFrom,
                 EffectiveDateTo,
-                IsPermanent,
+                PermanentTransfer,
+                Attachment,
                 Remarks,
-                Status, 
-                ApprovedBy, 
-                ApprovedAt,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -89,15 +109,14 @@ public class ResponsibilityTransferComponent
             )
             VALUES
             (
-                '{input.Reason}',
-                '{input.EmployeeToId}',
-                '{input.Reason}',
+                '{input.EmployeeFrom}',
+                '{input.EmployeeTo}',
+                '{input.ReasonForTransfer}',
                 '{input.EffectiveDateFrom}',
                 '{input.EffectiveDateTo}', 
-                '{input.IsPermanent}', 
+                '{input.PermanentTransfer}', 
+                '{documentUrl}', 
                 '{input.Remarks}', 
-                '{input.ApprovedBy}', 
-                '{input.ApprovedAt}', 
                 TRUE,
                 FALSE,
                 NOW(),
@@ -125,16 +144,17 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                EmployeeFromId = row.Field<int>("EmployeeFromId"),
-                EmployeeToId = row.Field<int>("EmployeeToId"),
-                Reason = row.Field<int>("Reason"),
-                EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
-                EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
-                IsPermanent = row.Field<bool>("IsPermanent"),
-                Remarks = row.Field<string>("Remarks"),
-                Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<string>("ApprovedBy"),
-                ApprovedAt = row.Field<DateTime>("ApprovedAt"),
+                EmployeeFrom = row.Field<string>("EmployeeFrom"),
+                EmployeeTo = row.Field<string>("EmployeeTo"),
+                ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
+                EffectiveDateFrom = row.Field<DateOnly>("EffectiveDateFrom")
+                           .ToDateTime(TimeOnly.MinValue),
+
+                EffectiveDateTo = row.Field<DateOnly>("EffectiveDateTo")
+                         .ToDateTime(TimeOnly.MinValue),
+                PermanentTransfer = row.Field<bool>("PermanentTransfer"),
+                Attachment = row.Field<string>("Attachment"),
+                Remarks = row.Field<string>("Remarks"), 
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -203,10 +223,14 @@ public class ResponsibilityTransferComponent
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Id",
+                "EMPLOYEEFROM" => "EmployeeFrom",
+                "EMPLOYEETO" => "EmployeeTo",
+                "REASONFORTRANSFER" => "ReasonForTransfer",
+                "EFFECTIVEDATEFROM" => "EffectiveDateFrom",
+                "EFFECTIVEDATETO" => "EffectiveDateTo",
+                "REMARKS" => "Remarks", 
                 "ISACTIVE" => "IsActive",
-                _ => "Name"
+                _ => "EMPLOYEEFROM"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -242,16 +266,14 @@ public class ResponsibilityTransferComponent
                 .Select(row => new ResponsibilityTransferReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    EmployeeFromId = row.Table.Columns.Contains("EmployeeFromId") ? row.Field<int>("EmployeeFromId") : 0,
-                    EmployeeToId = row.Table.Columns.Contains("EmployeeToId") ? row.Field<int>("EmployeeToId") : 0,
-                    Reason = row.Table.Columns.Contains("Reason") ? row.Field<int>("Reason") : 0,
+                    EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
+                    EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
+                    ReasonForTransfer = row.Table.Columns.Contains("ReasonForTransfer") ? row.Field<string>("ReasonForTransfer") : string.Empty,
                     EffectiveDateFrom = row.Table.Columns.Contains("EffectiveDateFrom") ? row.Field<DateTime>("EffectiveDateFrom") : DateTime.Now,
                     EffectiveDateTo = row.Table.Columns.Contains("EffectiveDateTo") ? row.Field<DateTime>("EffectiveDateTo") : DateTime.Now,
-                    IsPermanent = row.Table.Columns.Contains("IsPermanent") ? row.Field<bool>("IsPermanent") : false,
-                    Remarks = row.Table.Columns.Contains("Remarks") ? row.Field<string>("Remarks") : string.Empty,
-                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
-                    ApprovedBy = row.Table.Columns.Contains("ApprovedBy") ? row.Field<string>("ApprovedBy") : string.Empty,
-                    ApprovedAt = row.Table.Columns.Contains("ApprovedAt") ? row.Field<DateTime>("ApprovedAt") : DateTime.Now,
+                    PermanentTransfer = row.Table.Columns.Contains("PermanentTransfer") ? row.Field<bool>("PermanentTransfer") : false,
+                    Attachment = row.Table.Columns.Contains("Attachment") ? row.Field<string>("Attachment") : string.Empty,
+                    Remarks = row.Table.Columns.Contains("Remarks") ? row.Field<string>("Remarks") : string.Empty, 
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -302,16 +324,14 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                EmployeeFromId = row.Field<int>("EmployeeFromId"),
-                EmployeeToId = row.Field<int>("EmployeeToId"),
-                Reason = row.Field<int>("Reason"),
+                EmployeeFrom = row.Field<string>("EmployeeFrom"),
+                EmployeeTo = row.Field<string>("EmployeeTo"),
+                ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
-                IsPermanent = row.Field<bool>("IsPermanent"),
+                PermanentTransfer = row.Field<bool>("PermanentTransfer"),
+                Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
-                Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<string>("ApprovedBy"),
-                ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -326,53 +346,7 @@ public class ResponsibilityTransferComponent
         }
     }
 
-
-    public async Task<ResponsibilityTransferReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM ResponsibilityTransfers
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("ResponsibilityTransfers not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new ResponsibilityTransferReadDto
-            {
-                Id = row.Field<int>("Id"),
-                EmployeeFromId = row.Field<int>("EmployeeFromId"),
-                EmployeeToId = row.Field<int>("EmployeeToId"),
-                Reason = row.Field<int>("Reason"),
-                EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
-                EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
-                IsPermanent = row.Field<bool>("IsPermanent"),
-                Remarks = row.Field<string>("Remarks"),
-                Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<string>("ApprovedBy"),
-                ApprovedAt = row.Field<DateTime>("ApprovedAt"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+  
     public async Task<ResponsibilityTransferReadDto> UpdateAsync(ResponsibilityTransferUpdateDto input)
     {
         try
@@ -399,16 +373,14 @@ public class ResponsibilityTransferComponent
             string updateQuery = $@"
             UPDATE ResponsibilityTransfers
             SET 
-                EmployeeFromId = '{input.EmployeeFromId}',
-                EmployeeToId = '{input.EmployeeToId}',
-                Reason = '{input.Reason}',
+                EmployeeFrom = '{input.EmployeeFrom}',
+                EmployeeTo = '{input.EmployeeTo}',
+                ReasonForTransfer = '{input.ReasonForTransfer}',
                 EffectiveDateFrom = '{input.EffectiveDateFrom}',
                 EffectiveDateTo = '{input.EffectiveDateTo}',
-                IsPermanent = '{input.IsPermanent}',
-                Remarks = '{input.Remarks}',
-                Status = '{input.Status}',
-                ApprovedBy = '{input.ApprovedBy}',
-                ApprovedAt = '{input.ApprovedAt}',
+                PermanentTransfer = '{input.PermanentTransfer}',
+                Attachment = '{input.Attachment}',
+                Remarks = '{input.Remarks}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -435,16 +407,14 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                EmployeeFromId = row.Field<int>("EmployeeFromId"),
-                EmployeeToId = row.Field<int>("EmployeeToId"),
-                Reason = row.Field<int>("Reason"),
+                EmployeeFrom = row.Field<string>("EmployeeFrom"),
+                EmployeeTo = row.Field<string>("EmployeeTo"),
+                ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
                 EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
                 EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
-                IsPermanent = row.Field<bool>("IsPermanent"),
+                PermanentTransfer = row.Field<bool>("PermanentTransfer"),
+                Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
-                Status = row.Field<int>("Status"),
-                ApprovedBy = row.Field<string>("ApprovedBy"),
-                ApprovedAt = row.Field<DateTime>("ApprovedAt"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

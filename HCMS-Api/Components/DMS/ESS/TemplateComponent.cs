@@ -54,57 +54,79 @@ public class TemplateComponent
             //if (input.Id >0)
             //    throw new CustomException("Template code is required.", 200);
 
-            //// Check duplicate by Id OR Name
-            //string checkQuery = $@"
-            //SELECT COUNT(1)
-            //FROM Templates
-            //WHERE (Id = '{input.Id}' 
-            //  AND IsDeleted = FALSE";
+            // Check duplicate by Id OR Name
+            string checkQuery = $@"
+            SELECT COUNT(1)
+            FROM Templates
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+              AND IsDeleted = FALSE";
 
-            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
-            //if (exists > 0)
-            //    throw new CustomException("Template already exists", 200);
+            if (exists > 0)
+                throw new CustomException("Template already exists", 403);
 
             // Insert (PostgreSQL syntax)
-            string insertQuery = $@"
-            INSERT INTO Templates
-            (
-                DocumentTypeCode,
-                TemplateName,
-                TemplateFileURL,
-                TemplateType,
-                DivisionCode,
-                DepartmentCode,
-                SubDepartmentCode,
-                IsDefault,  
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.DocumentTypeCode}',
-                '{input.TemplateName}',
-                '{input.TemplateFileURL}',
-                '{input.TemplateType}',
-                '{input.DivisionCode}', 
-                '{input.DepartmentCode}', 
-                '{input.SubDepartmentCode}', 
-                '{input.IsDefault}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
+            string Safe(string s) => s?.Replace("'", "''") ?? "";
+            int SafeInt(int s) => 0;
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            string sql = @"
+                        INSERT INTO Templates (
+                            DocumentTypeCode,
+                            TemplateName,
+                            TemplateFileUrl,
+                            TemplateType,
+                            DivisionCode,
+                            DepartmentCode,
+                            SubDepartmentCode,
+                            IsDefault, 
+                            TemplateContent,
+                            IsActive,
+                            IsDeleted,
+                            CreatedAt,
+                            CreatedBy,
+                            LastModifiedAt,
+                            LastModifiedBy
+                        )
+                        VALUES (
+                            @DocumentTypeCode,
+                            @TemplateName,
+                            @TemplateFileUrl,
+                            @TemplateType,
+                            @DivisionCode,
+                            @DepartmentCode,
+                            @SubDepartmentCode,
+                            @IsDefault,
+                            @TemplateContent,
+                            TRUE,
+                            FALSE,
+                            NOW(),
+                            @CreatedBy,
+                            NOW(),
+                            @LastModifiedBy
+                        )
+                        RETURNING Id;
+                    ";
+
+                                // Assuming _common.ExecuteScalarQuery accepts command + parameters
+                                // (if not → change your helper or use NpgsqlCommand directly)
+
+                                var parameters = new Dictionary<string, object>
+                    {
+                        { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
+                        { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
+                        { "@TemplateFileUrl",     input.TemplateFileUrl     ?? (object)DBNull.Value },
+                        { "@TemplateType",        input.TemplateType  },
+                        { "@DivisionCode",        input.DivisionCode        ?? (object)DBNull.Value },
+                        { "@DepartmentCode",      input.DepartmentCode      ?? (object)DBNull.Value },
+                        { "@SubDepartmentCode",   input.SubDepartmentCode   ?? (object)DBNull.Value },
+                        { "@IsDefault",           input.IsDefault           },  // bool → true/false (no quotes)
+                        { "@TemplateContent",     input.TemplateContent     ?? (object)DBNull.Value },
+                        { "@CreatedBy",           userId                    },
+                        { "@LastModifiedBy",      userId                    }
+                    };
+
+            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(sql, parameters));
 
             // Fetch inserted record
             string selectQuery = $@"
@@ -124,12 +146,13 @@ public class TemplateComponent
                 Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
-                TemplateFileURL = row.Field<string>("TemplateFileURL"),
+                TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 IsDefault = row.Field<bool>("IsDefault"),
+                TemplateContent = row.Field<string>("TemplateContent"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -239,11 +262,12 @@ public class TemplateComponent
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
-                    TemplateFileURL = row.Table.Columns.Contains("TemplateFileURL") ? row.Field<string>("TemplateFileURL") : string.Empty,
+                    TemplateFileUrl = row.Table.Columns.Contains("TemplateFileUrl") ? row.Field<string>("TemplateFileUrl") : string.Empty,
                     TemplateType = row.Table.Columns.Contains("TemplateType") ? row.Field<int>("TemplateType") : 0,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+                    TemplateContent = row.Table.Columns.Contains("TemplateContent") ? row.Field<string>("TemplateContent") : string.Empty,
                     IsDefault = row.Table.Columns.Contains("IsDefault") ? row.Field<bool>("IsDefault") : false,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -297,11 +321,12 @@ public class TemplateComponent
                 Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
-                TemplateFileURL = row.Field<string>("TemplateFileURL"),
+                TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                TemplateContent = row.Field<string>("TemplateContent"),
                 IsDefault = row.Field<bool>("IsDefault"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -341,11 +366,12 @@ public class TemplateComponent
                 Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
-                TemplateFileURL = row.Field<string>("TemplateFileURL"),
+                TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                TemplateContent = row.Field<string>("TemplateContent"),
                 IsDefault = row.Field<bool>("IsDefault"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -390,11 +416,12 @@ public class TemplateComponent
             SET 
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 TemplateName = '{input.TemplateName}',
-                TemplateFileURL = '{input.TemplateFileURL}',
+                TemplateFileUrl = '{input.TemplateFileURL}',
                 TemplateType = '{input.TemplateType}',
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
+                TemplateContent = '{input.TemplateContent}',
                 IsDefault = '{input.IsDefault}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
@@ -424,11 +451,12 @@ public class TemplateComponent
                 Id = row.Field<int>("Id"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
-                TemplateFileURL = row.Field<string>("TemplateFileURL"),
+                TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                TemplateContent = row.Field<string>("TemplateContent"),
                 IsDefault = row.Field<bool>("IsDefault"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

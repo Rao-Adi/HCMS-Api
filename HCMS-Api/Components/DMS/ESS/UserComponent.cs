@@ -64,21 +64,20 @@ public class UserComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("User already exists", 200);
+                throw new CustomException("User already exists", 403);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Users
             (
                 EmployeeCode,
-                UserName,
+                EmployeeName,
                 Email, 
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
-                IsDefault, 
-                ApprovedBy, 
-                ApprovedAt,
+                ReportingTo,
+                DateOfJoining, 
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -89,11 +88,13 @@ public class UserComponent
             VALUES
             (
                 '{input.EmployeeCode}',
-                '{input.UserName}',
+                '{input.EmployeeName}',
                 '{input.Email}', 
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}',
+                '{input.ReportingTo}',
+                '{input.DateOfJoining}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -122,11 +123,13 @@ public class UserComponent
             {
                 Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
-                UserName = row.Field<string>("UserName"),
-                Grade = row.Field<string>("Email"),
+                EmployeeName = row.Field<string>("EmployeeName"),
+                Email = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                ReportingTo = row.Field<string>("ReportingTo"),
+                DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -173,6 +176,36 @@ public class UserComponent
     }
 
 
+    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT EmployeeCode,EmployeeName
+                FROM Users
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Id";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectListDto
+                {
+                    Code = row.Field<string>("EmployeeCode"),
+                    Value = row.Field<string>("EmployeeName")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
     public async Task<PaginationResult<UserReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
@@ -187,14 +220,14 @@ public class UserComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(u.UserName) LIKE '%{search}%'
+                    UPPER(u.EmployeeName) LIKE '%{search}%'
                     OR UPPER(u.Id) LIKE '%{search}%'
                     OR UPPER(u.EmployeeCode) LIKE '%{search}%'
-                    OR UPPER(u.UserName) LIKE '%{search}%'
+                    OR UPPER(u.EmployeeName) LIKE '%{search}%'
                     OR UPPER(u.DivisionCode) LIKE '%{search}%'
                     OR UPPER(u.DepartmentCode) LIKE '%{search}%'
                     OR UPPER(u.SubDepartmentCode) LIKE '%{search}%'
-                    OR UPPER(u.Grade) LIKE '%{search}%'
+                    OR UPPER(u.Email) LIKE '%{search}%'
                     OR UPPER(u.DateOfJoining) LIKE '%{search}%'
                     OR UPPER(u.ReportingTo) LIKE '%{search}%'
                 )";
@@ -205,11 +238,11 @@ public class UserComponent
             {
                 "Id" => "u.Id",
                 "EMPLOYEECODE" => "u.EmployeeCode",
-                "USERNAME" => "u.UserName",
+                "USERNAME" => "u.EmployeeName",
                 "DIVISIONCODE" => "u.DivisionCode",
                 "DEPARTMENTCODE" => "u.DepartmentCode",
                 "SUBDEPARTMENTCODE" => "u.SubDepartmentCode",
-                "GRADE" => "u.Grade",
+                "EMAIL" => "u.Email",
                 "DATEOFJOINING" => "u.DateOfJoining",
                 "REPORTINGTO" => "u.ReportingTo",
                 "ISACTIVE" => "u.IsActive",
@@ -221,8 +254,8 @@ public class UserComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT u.Id,u.EmployeeCode,u.UserName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
-			   		           u.Grade,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+                        SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
+			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
 					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
 					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName
                         FROM Users u
@@ -259,8 +292,8 @@ public class UserComponent
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
-                    UserName = row.Table.Columns.Contains("UserName") ? row.Field<string>("UserName") : string.Empty,
-                    Grade = row.Table.Columns.Contains("Grade") ? row.Field<string>("Grade") : string.Empty,
+                    EmployeeName = row.Table.Columns.Contains("EmployeeName") ? row.Field<string>("EmployeeName") : string.Empty,
+                    Email = row.Table.Columns.Contains("Email") ? row.Field<string>("Email") : string.Empty,
                     DivisionName = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentName = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
@@ -299,14 +332,14 @@ public class UserComponent
         }
     }
 
-    public async Task<UserReadDto> GetByCodeAsync(string code)
+    public async Task<UserReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
                 SELECT *
                 FROM Users
-                WHERE Id = {code}
+                WHERE Id = {id}
                   AND IsActive = True
                   AND IsDeleted = False";
 
@@ -321,11 +354,13 @@ public class UserComponent
             {
                 Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
-                UserName = row.Field<string>("UserName"),
-                Grade = row.Field<string>("Email"),
+                EmployeeName = row.Field<string>("EmployeeName"),
+                Email = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                ReportingTo = row.Field<string>("ReportingTo"),
+                DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -340,48 +375,7 @@ public class UserComponent
         }
     }
 
-
-    public async Task<UserReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM Users
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("Users not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new UserReadDto
-            {
-                Id = row.Field<int>("Id"),
-                EmployeeCode = row.Field<string>("EmployeeCode"),
-                UserName = row.Field<string>("UserName"),
-                Grade = row.Field<string>("Email"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
+ 
 
     public async Task<UserReadDto> UpdateAsync(UserUpdateDto input)
     {
@@ -410,11 +404,13 @@ public class UserComponent
             UPDATE Users
             SET 
                 EmployeeCode = '{input.EmployeeCode}',
-                UserName = '{input.UserName}',
+                EmployeeName = '{input.EmployeeName}',
                 Email = '{input.Email}', 
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}', 
+                ReportingTo = '{input.ReportingTo}', 
+                DateOfJoining = '{input.DateOfJoining}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -442,11 +438,13 @@ public class UserComponent
             {
                 Id = row.Field<int>("Id"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
-                UserName = row.Field<string>("UserName"),
-                Grade = row.Field<string>("Email"),
+                EmployeeName = row.Field<string>("EmployeeName"),
+                Email = row.Field<string>("Email"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+                ReportingTo = row.Field<string>("ReportingTo"),
+                DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
