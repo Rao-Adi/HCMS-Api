@@ -52,7 +52,7 @@ public class RoleComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (input.Id < 0)
-                throw new CustomException("Role is required.", 200);
+                throw new CustomException("Role is required.", 400);
 
             // Check duplicate by Name OR Name
             string checkQuery = $@"
@@ -64,7 +64,7 @@ public class RoleComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("Role already exists", 200);
+                throw new CustomException("Role already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

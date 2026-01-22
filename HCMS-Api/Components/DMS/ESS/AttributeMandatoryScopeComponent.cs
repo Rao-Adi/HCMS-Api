@@ -64,7 +64,7 @@ public class AttributeMandatoryScopeComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("AttributeMandatoryScope already exists", 403);
+                throw new CustomException("AttributeMandatoryScope already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

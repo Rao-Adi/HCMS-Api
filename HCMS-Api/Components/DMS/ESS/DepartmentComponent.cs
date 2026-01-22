@@ -52,62 +52,106 @@ public class DepartmentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Department code is required.", 200);
+            
+            // 🔒 Validation
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Department name is required.", 409);
 
-            // Check duplicate by Code OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Departments
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.DivisionCode))
+                throw new CustomException("Division code is required.", 409);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+            // 🔍 Validate parent Division exists
+            string divisionCheckQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Divisions
+                        WHERE Code = '{input.DivisionCode.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int divisionExists = Convert.ToInt32(_common.ExecuteScalarQuery(divisionCheckQuery));
+
+            if (divisionExists == 0)
+                throw new CustomException("Parent Division not found", 404);
+
+            // 🔍 Prevent duplicate department name PER DIVISION
+            string duplicateCheckQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Departments
+                        WHERE Name = '{input.Name.Replace("'", "''")}'
+                          AND DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("Department already exists", 200);
+                throw new CustomException("Department already exists in this Division", 409);
+
+            // 🔢 Generate next DPT code PER DIVISION
+            string lastCodeQuery = $@"
+                        SELECT Code
+                        FROM Departments
+                        WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                          AND Code IS NOT NULL
+                        ORDER BY Id DESC
+                        LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(lastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                // Example: DIV-0003-DPT-0004
+                var lastCode = lastCodeObj.ToString();
+                var numericPart = lastCode.Split("-DPT-").Last();
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"{input.DivisionCode}-DPT-{nextNumber:D4}";
 
             // Insert (PostgreSQL syntax)
+            // 🧾 Insert
             string insertQuery = $@"
-            INSERT INTO Departments
-            (
-                Code,
-                Name,
-                DivisionCode,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.Code.Replace("'", "''")}',
-                '{input.Name.Replace("'", "''")}',
-                '{input.DivisionCode}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
+                    INSERT INTO Departments
+                    (
+                        Code,
+                        Name,
+                        DivisionCode,
+                        IsActive,
+                        IsDeleted,
+                        CreatedAt,
+                        CreatedBy,
+                        LastModifiedAt,
+                        LastModifiedBy
+                    )
+                    VALUES
+                    (
+                        '{generatedCode}',
+                        '{input.Name.Replace("'", "''")}',
+                        '{input.DivisionCode.Replace("'", "''")}',
+                        TRUE,
+                        FALSE,
+                        NOW(),
+                        '{userId.Replace("'", "''")}',
+                        NOW(),
+                        '{userId.Replace("'", "''")}'
+                    )
+                    RETURNING Id;";
 
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
-            // Fetch inserted record
+            // 📥 Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Departments
-            WHERE Id = {newId}";
+                    SELECT *
+                    FROM Departments
+                    WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created department");
 
             DataRow row = dt.Rows[0];
 
@@ -380,61 +424,99 @@ public class DepartmentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
+                                   // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Department code is required.", 200);
 
-            // Check existence (Code is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Departments
-            WHERE Code = '{input.Code.Replace("'", "''")}'
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Department name is required.", 200);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            if (string.IsNullOrWhiteSpace(input.DivisionCode))
+                throw new CustomException("Division code is required.", 200);
 
-            if (exists == 0)
+            // 🔍 Check department exists
+            string departmentExistsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM Departments
+                    WHERE Code = '{input.Code.Replace("'", "''")}'
+                      AND IsDeleted = FALSE";
+
+            int departmentExists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
+
+            if (departmentExists == 0)
                 throw new CustomException("Department not found", 200);
 
-            // Update (PostgreSQL boolean + timestamp)
+            // 🔍 Validate parent Division exists
+            string divisionExistsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM Divisions
+                    WHERE Code = '{input.DivisionCode.Replace("'", "''")}'
+                      AND IsDeleted = FALSE";
+
+            int divisionExists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(divisionExistsQuery));
+
+            if (divisionExists == 0)
+                throw new CustomException("Parent Division not found", 200);
+
+            // 🚫 Prevent duplicate Department Name PER Division
+            string duplicateNameQuery = $@"
+                    SELECT COUNT(1)
+                    FROM Departments
+                    WHERE Name = '{input.Name.Replace("'", "''")}'
+                      AND DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                      AND Code <> '{input.Code.Replace("'", "''")}'
+                      AND IsDeleted = FALSE";
+
+            int duplicate =
+                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
+
+            if (duplicate > 0)
+                throw new CustomException(
+                    "Department name already exists in this Division", 200);
+
+            // ✏️ Update ONLY mutable fields
             string updateQuery = $@"
-            UPDATE Departments
-            SET 
-                Name = '{input.Name.Replace("'", "''")}',
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                UPDATE Departments
+                SET
+                    Name = '{input.Name.Replace("'", "''")}',
+                    DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{userId.Replace("'", "''")}'
+                WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
+            // 📥 Fetch updated record
             string selectQuery = $@"
-            SELECT *
-                   FROM Departments dep
-                   LEFT JOIN Divisions div
-				   ON dep.DivisionCode = div.Code
-            WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
+                    SELECT dep.*
+                    FROM Departments dep
+                    WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
+                throw new Exception("Failed to fetch updated department");
 
             DataRow row = dt.Rows[0];
 
             return new DepartmentReadDto
             {
                 Id = row.Field<int>("Id"),
-                Code = row.Field<string>("Code"),
+                Code = row.Field<string>("Code"), // 🔒 Immutable
                 Name = row.Field<string>("Name"),
+                DivisionCode = row.Field<string>("DivisionCode"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedAt = row.Field<DateTime>("CreatedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }

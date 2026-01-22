@@ -52,7 +52,7 @@ public class DocumentApprovalComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (input.Id < 0)
-                throw new CustomException("DocumentApproval code is required.", 200);
+                throw new CustomException("DocumentApproval code is required.", 400);
 
             // Check duplicate by Id OR Name
             string checkQuery = $@"
@@ -64,7 +64,7 @@ public class DocumentApprovalComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("DocumentApproval already exists", 200);
+                throw new CustomException("DocumentApproval already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

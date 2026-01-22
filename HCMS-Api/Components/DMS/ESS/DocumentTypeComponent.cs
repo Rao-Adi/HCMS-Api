@@ -6,6 +6,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
+using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -50,77 +51,93 @@ public class DocumentTypeComponent
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("DocumentType code is required.", 200);
+            var userId = "manual";
 
-            // Check duplicate by Code OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM DocumentTypes
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Document type name is required.", 400);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔐 Normalize & map Code
+            string normalizedName = input.Name.Trim().ToUpper();
+            string generatedCode = normalizedName switch
+            {
+                "SOP" or "STANDARD OPERATING PROCEDURE" => "SOP",
+                "POLICY" => "POL",
+                "FORM" => "FRM",
+                _ => throw new CustomException(
+                    "Invalid document type. Allowed values: SOP, Policy, Form.", 400)
+            };
+
+            // 🔍 Prevent duplicates (by Code or Name)
+            string duplicateCheckQuery = $@"
+                    SELECT COUNT(1)
+                    FROM DocumentTypes
+                    WHERE (Code = '{generatedCode}'
+                           OR UPPER(Name) = '{normalizedName}')
+                      AND IsDeleted = FALSE";
+
+            int exists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("DocumentType already exists", 200);
+                throw new CustomException("Document type already exists", 409);
 
-            // Insert (PostgreSQL syntax)
+            // 🧾 Insert
             string insertQuery = $@"
-            INSERT INTO DocumentTypes
-            (
-                Code,
-                Name,
-                description,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.Code.Replace("'", "''")}',
-                '{input.Name.Replace("'", "''")}',
-                '{input.Description}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
+                    INSERT INTO DocumentTypes
+                    (
+                        Code,
+                        Name,
+                        Description,
+                        IsActive,
+                        IsDeleted,
+                        CreatedAt,
+                        CreatedBy,
+                        LastModifiedAt,
+                        LastModifiedBy
+                    )
+                    VALUES
+                    (
+                        '{generatedCode}',
+                        '{input.Name.Replace("'", "''")}',
+                        '{input.Description?.Replace("'", "''")}',
+                        TRUE,
+                        FALSE,
+                        NOW(),
+                        '{userId.Replace("'", "''")}',
+                        NOW(),
+                        '{userId.Replace("'", "''")}'
+                    )
+                    RETURNING Id;";
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            int newId =
+                Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
-            // Fetch inserted record
+            // 📥 Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM DocumentTypes
-            WHERE Id = {newId}";
+                SELECT *
+                FROM DocumentTypes
+                WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created document type");
 
             DataRow row = dt.Rows[0];
 
             return new DocumentTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                Code = row.Field<string>("Code"),
+                Code = row.Field<string>("Code"), // 🔒 immutable
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                CreatedAt = row.Field<DateTime>("CreatedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }

@@ -42,7 +42,6 @@ public class Department
 
 public class DepartmentCreateDto
 {
-    public string Code { get; set; }
     public string DivisionCode { get; set; }
 
     public string Name { get; set; }

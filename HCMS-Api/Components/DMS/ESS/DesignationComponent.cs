@@ -54,7 +54,7 @@ public class DesignationComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Designation code is required.", 200);
+                throw new CustomException("Designation code is required.", 400);
 
             // Check duplicate by Code OR Name
             string checkQuery = $@"
@@ -67,7 +67,7 @@ public class DesignationComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("Designation already exists", 200);
+                throw new CustomException("Designation already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

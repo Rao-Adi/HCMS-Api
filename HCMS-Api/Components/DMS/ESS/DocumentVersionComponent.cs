@@ -52,7 +52,7 @@ public class DocumentVersionComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (input.DocumentId < 0)
-                throw new CustomException("Document Version Id is required.", 200);
+                throw new CustomException("Document Version Id is required.", 400);
 
             // Check duplicate by DocumentId OR Version
             string checkQuery = $@"
@@ -64,7 +64,7 @@ public class DocumentVersionComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("DocumentVersion already exists", 200);
+                throw new CustomException("DocumentVersion already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

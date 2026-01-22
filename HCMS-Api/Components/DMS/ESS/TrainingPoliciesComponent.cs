@@ -54,23 +54,23 @@ public class TrainingPolicyComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
              
-            // Check duplicate by Id OR DocumentTypeId
+            // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE (Id = '{input.Id}'
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("TrainingPolicy already exists", 200);
+                throw new CustomException("TrainingPolicy already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TrainingPolicies
             (
-                DocumentTypeId,
+                DocumentTypeCode,
                 TrainingRequired,
                 MinimumScore,
                 IsActive,
@@ -82,7 +82,7 @@ public class TrainingPolicyComponent
             )
             VALUES
             (
-                '{input.DocumentTypeId}',
+                '{input.DocumentTypeCode}',
                 '{input.TrainingRequired}',
                 '{input.MinimumScore}',
                 TRUE,
@@ -112,7 +112,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                DocumentTypeId = row.Field<int>("DocumentTypeId"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -175,7 +175,7 @@ public class TrainingPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DocumentTypeId) LIKE '%{search}%'
+                    UPPER(DocumentTypeCode) LIKE '%{search}%'
                     OR UPPER(Id) LIKE '%{search}%'
                 )";
             }
@@ -183,7 +183,7 @@ public class TrainingPolicyComponent
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "DocumentTypeId" => "DocumentTypeId",
+                "DocumentTypeCode" => "DocumentTypeCode",
                 "Id" => "Id",
                 "ISACTIVE" => "IsActive",
                 _ => "Id"
@@ -222,7 +222,9 @@ public class TrainingPolicyComponent
                 .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    DocumentTypeId = row.Table.Columns.Contains("DocumentTypeId") ? row.Field<int>("DocumentTypeId") : 0,
+                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
+                    TrainingRequired = row.Table.Columns.Contains("TrainingRequired") && row.Field<bool?>("TrainingRequired") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -273,7 +275,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                DocumentTypeId = row.Field<int>("DocumentTypeId"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -317,7 +319,7 @@ public class TrainingPolicyComponent
             string updateQuery = $@"
             UPDATE TrainingPolicies
             SET 
-                DocumentTypeId = '{input.DocumentTypeId}',
+                DocumentTypeCode = '{input.DocumentTypeCode}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -344,7 +346,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"), 
-                DocumentTypeId = row.Field<int>("DocumentTypeId"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

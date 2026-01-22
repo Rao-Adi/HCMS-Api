@@ -64,7 +64,7 @@ public class TemplateComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("Template already exists", 403);
+                throw new CustomException("Template already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string Safe(string s) => s?.Replace("'", "''") ?? "";

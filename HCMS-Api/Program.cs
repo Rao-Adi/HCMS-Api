@@ -14,8 +14,7 @@ using HCMS_Api.Components.HCMS.HR;
 using HCMS_Api.Components.HCMS.Payroll;
 using HCMS_Api.Models;
 using HCMS_Api.Services;
-using HCMS_Api.Services.Authorization;
-using HCMS_Api.Services.DMS.Divisions;
+using HCMS_Api.Services.Authorization; 
 using HCMS_Api.Services.EmployeeAuthority;
 using HCMS_Api.Services.HodService;
 using HCMS_Api.Services.LookupService;
@@ -238,7 +237,7 @@ builder.Services.AddScoped<UserRoleComponent>();
 builder.Services.AddScoped<WorkflowPolicyComponent>();
 builder.Services.AddScoped<WorkflowStepComponent>(); 
 builder.Services.AddScoped<DesignationComponent>(); 
-builder.Services.AddScoped<IDivisionService, DivisionService>();
+builder.Services.AddScoped<DistributionTypeComponent>();  
 
 #endregion DMS Service
 

@@ -8,41 +8,42 @@ using Microsoft.AspNetCore.Mvc;
 using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
+  
 
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/[controller]")]
-public class DMSTransferScopePolicyController : Controller
+public class DMSDistributionTypeController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly TransferScopePolicyComponent _templateComponent;
+    private readonly DistributionTypeComponent _roleComponent;
 
-    public DMSTransferScopePolicyController(
+    public DMSDistributionTypeController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     TransferScopePolicyComponent templateComponent)
+     DistributionTypeComponent roleComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _templateComponent = templateComponent;
+        _roleComponent = roleComponent;
     }
 
-    [HttpPost("get-all-transfer-scope-policies")]
-    public async Task<IActionResult> GetAllTrainingPolicies(TableFiltersDto input)
+    [HttpPost("get-all-distribution-type")]
+    public async Task<IActionResult> GetAllDistributionTypes(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<TransferScopePolicyReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DistributionTypeReadDto>>()
             {
                 Success = true,
-                Data = await _templateComponent.GetAllAsync(input),
+                Data = await _roleComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -63,15 +64,15 @@ public class DMSTransferScopePolicyController : Controller
 
 
 
-    [HttpGet("get-transfer-scope-policies-by-code/{code}")]
-    public async Task<IActionResult> GetTransferScopePolicyById(string code)
+    [HttpGet("get-distribution-type-by-code/{code}")]
+    public async Task<IActionResult> GetDistributionTypeById(int id)
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
+            return Ok(new HttpApiResponse<DistributionTypeReadDto>()
             {
                 Success = true,
-                Data = await _templateComponent.GetByTransferScopePolicyCodeAsync(code),
+                Data = await _roleComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -90,9 +91,36 @@ public class DMSTransferScopePolicyController : Controller
         }
     }
 
+    [HttpGet("get-all-distribution-type-list")]
+    public async Task<IActionResult> GetAllSelectList()
+    {
+        try
+        {
+            var selectList = await _roleComponent.GetAllSelectList();
+            return Ok(new HttpApiResponse<IList<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
 
-    [HttpPost("create-transfer-scope-policy")]
-    public async Task<IActionResult> Create([FromBody] TransferScopePolicyCreateDto input)
+    [HttpPost("create-distribution-type")]
+    public async Task<IActionResult> Create([FromBody] DistributionTypeCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -102,11 +130,11 @@ public class DMSTransferScopePolicyController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
+            return Ok(new HttpApiResponse<DistributionTypeReadDto>()
             {
                 Success = true,
-                Data = await _templateComponent.CreateAsync(input),
-                Message = "Transfer Scope Policy created successfully.",
+                Data = await _roleComponent.CreateAsync(input),
+                Message = "DistributionType created successfully.",
                 Code = 200
             });
         }
@@ -124,16 +152,16 @@ public class DMSTransferScopePolicyController : Controller
         }
     }
 
-    [HttpPut("update-transfer-scope-policy")]
-    public async Task<IActionResult> Update([FromBody] TransferScopePolicyUpdateDto input)
+    [HttpPut("update-distribution-type")]
+    public async Task<IActionResult> Update([FromBody] DistributionTypeUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<TransferScopePolicyReadDto>()
+            return Ok(new HttpApiResponse<DistributionTypeReadDto>()
             {
                 Success = true,
-                Data = await _templateComponent.UpdateAsync(input),
-                Message = "Transfer Scope Policy updated successfully.",
+                Data = await _roleComponent.UpdateAsync(input),
+                Message = "DistributionType updated successfully.",
                 Code = 200
             });
         }
@@ -151,28 +179,16 @@ public class DMSTransferScopePolicyController : Controller
         }
     }
 
-    [HttpDelete("delete-transfer-scope-policy/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-distribution-type/{id}")]
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
-        {
-            var existingRecord = await _templateComponent.GetByTransferScopePolicyCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Transfer Scope Policy not found",
-                    Code = 404
-                });
-            }
-
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _templateComponent.DeleteAsync(code),
-                Message = "Transfer Scope Policy deleted successfully.",
+                Data = await _roleComponent.DeleteAsync(id),
+                Message = "DistributionType deleted successfully.",
                 Code = 200
             });
         }

@@ -44,14 +44,7 @@ public class DivisionReadDto :AuditableEntity
 
 public class DivisionCreateDto
 { 
-    public int Id { get; set; }
-     
-    public string Code { get; set; } = null!;
-     
-    public string Name { get; set; } = null!;
-
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; } 
+    public string Name { get; set; } = null!; 
 }
 
 

@@ -51,82 +51,125 @@ public class SubDepartmentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("SubDepartment code is required.", 200);
+                                   // 🔒 Validation
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Sub-Department name is required.", 200);
 
-            // Check duplicate by Code OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM SubDepartments
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.DepartmentCode))
+                throw new CustomException("Department code is required.", 200);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔍 Validate parent Department exists
+            string departmentCheckQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Departments
+                        WHERE Code = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int departmentExists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(departmentCheckQuery));
+
+            if (departmentExists == 0)
+                throw new CustomException("Parent Department not found", 200);
+
+            // 🚫 Prevent duplicate Sub-Department name PER Department
+            string duplicateCheckQuery = $@"
+                        SELECT COUNT(1)
+                        FROM SubDepartments
+                        WHERE Name = '{input.Name.Replace("'", "''")}'
+                          AND DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int exists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("SubDepartment already exists", 200);
+                throw new CustomException(
+                    "Sub-Department already exists in this Department", 200);
 
-            // Insert (PostgreSQL syntax)
+            // 🔢 Generate next SCT code PER Department
+            string lastCodeQuery = $@"
+                        SELECT Code
+                        FROM SubDepartments
+                        WHERE DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND Code IS NOT NULL
+                        ORDER BY Id DESC
+                        LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(lastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                // Example: DIV-0003-DPT-0002-SCT-0004
+                var lastCode = lastCodeObj.ToString();
+                var numericPart = lastCode.Split("-SCT-").Last();
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode =
+                $"{input.DepartmentCode}-SCT-{nextNumber:D4}";
+
+            // 🧾 Insert
             string insertQuery = $@"
-            INSERT INTO SubDepartments
-            (
-                Code,
-                Name,
-                DepartmentCode,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.Code.Replace("'", "''")}',
-                '{input.Name.Replace("'", "''")}',
-                '{input.DepartmentCode}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
+                        INSERT INTO SubDepartments
+                        (
+                            Code,
+                            Name,
+                            DepartmentCode,
+                            IsActive,
+                            IsDeleted,
+                            CreatedAt,
+                            CreatedBy,
+                            LastModifiedAt,
+                            LastModifiedBy
+                        )
+                        VALUES
+                        (
+                            '{generatedCode}',
+                            '{input.Name.Replace("'", "''")}',
+                            '{input.DepartmentCode.Replace("'", "''")}',
+                            TRUE,
+                            FALSE,
+                            NOW(),
+                            '{userId.Replace("'", "''")}',
+                            NOW(),
+                            '{userId.Replace("'", "''")}'
+                        )
+                        RETURNING Id;";
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            int newId =
+                Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
-            // Fetch inserted record
+            // 📥 Fetch inserted record
             string selectQuery = $@"
-            SELECT * 
-                FROM SubDepartments subd
-                LEFT JOIN Departments dep
-                ON subd.Code = dep.Code
-            WHERE subd.Id = {newId}";
+                    SELECT sub.*
+                    FROM SubDepartments sub
+                    WHERE sub.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created sub-department");
 
             DataRow row = dt.Rows[0];
 
             return new SubDepartmentReadDto
             {
-                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
-                Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
-                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                Id = row.Field<int>("Id"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+                IsActive = row.Field<bool>("IsActive"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                CreatedAt = row.Field<DateTime>("CreatedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -393,67 +436,101 @@ public class SubDepartmentComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
+                                   // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Sub-Department code is required.", 200);
 
-            // Check existence (Code is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM SubDepartments
-            WHERE Code = '{input.Code.Replace("'", "''")}'
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Sub-Department name is required.", 200);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            if (string.IsNullOrWhiteSpace(input.DepartmentCode))
+                throw new CustomException("Department code is required.", 200);
 
-            if (exists == 0)
-                throw new CustomException("SubDepartment not found", 200);
+            // 🔍 Check Sub-Department exists
+            string subDeptExistsQuery = $@"
+                        SELECT COUNT(1)
+                        FROM SubDepartments
+                        WHERE Code = '{input.Code.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
 
-            // Update (PostgreSQL boolean + timestamp)
+            int subDeptExists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(subDeptExistsQuery));
+
+            if (subDeptExists == 0)
+                throw new CustomException("Sub-Department not found", 200);
+
+            // 🔍 Validate parent Department exists
+            string departmentExistsQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Departments
+                        WHERE Code = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int departmentExists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
+
+            if (departmentExists == 0)
+                throw new CustomException("Parent Department not found", 200);
+
+            // 🚫 Prevent duplicate name PER Department
+            string duplicateNameQuery = $@"
+                        SELECT COUNT(1)
+                        FROM SubDepartments
+                        WHERE Name = '{input.Name.Replace("'", "''")}'
+                          AND DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND Code <> '{input.Code.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int duplicate =
+                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
+
+            if (duplicate > 0)
+                throw new CustomException(
+                    "Sub-Department name already exists in this Department", 200);
+
+            // ✏️ Update mutable fields ONLY
             string updateQuery = $@"
-            UPDATE SubDepartments
-            SET 
-                Name = '{input.Name.Replace("'", "''")}',
-                DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                    UPDATE SubDepartments
+                    SET
+                        Name = '{input.Name.Replace("'", "''")}',
+                        DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
+                        IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                        LastModifiedAt = NOW(),
+                        LastModifiedBy = '{userId.Replace("'", "''")}'
+                    WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
+            // 📥 Fetch updated record (no incorrect JOINs)
             string selectQuery = $@"
-            SELECT *
-                   FROM SubDepartments subd
-                   LEFT JOIN Departments dep
-                   ON subd.Code = dep.Code
-            WHERE subd.Code = '{input.Code.Replace("'", "''")}'";
+                    SELECT *
+                    FROM SubDepartments
+                    WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
+                throw new Exception("Failed to fetch updated sub-department");
 
             DataRow row = dt.Rows[0];
 
             return new SubDepartmentReadDto
             {
-                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
-                Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
-                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                             ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                Id = row.Field<int>("Id"),
+                Code = row.Field<string>("Code"), // 🔒 immutable
+                Name = row.Field<string>("Name"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+                IsActive = row.Field<bool>("IsActive"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                CreatedAt = row.Field<DateTime>("CreatedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
         catch
@@ -468,7 +545,7 @@ public class SubDepartmentComponent
         {
             string query = $@"
                 SELECT COUNT(1)
-                FROM DocumentTypes 
+                FROM SubDepartments 
                   WHERE IsDeleted = FALSE";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;

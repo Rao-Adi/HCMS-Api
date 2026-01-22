@@ -65,7 +65,7 @@ public class AuditLogComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("AuditLog already exists", 200);
+                throw new CustomException("AuditLog already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"

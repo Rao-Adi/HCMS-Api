@@ -37,8 +37,7 @@ public class SubDepartment
 
 
 public class SubDepartmentCreateDto
-{
-    public string Code { get; set; }
+{ 
     public string DepartmentCode { get; set; }
 
     public string Name { get; set; }

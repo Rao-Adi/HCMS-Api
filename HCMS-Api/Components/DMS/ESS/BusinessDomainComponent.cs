@@ -51,62 +51,72 @@ public class BusinessDomainComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Document Type name is required.", 200);
+
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("BusinessDomain code is required.", 200);
+                throw new CustomException("Document Type code is required.", 200);
 
-            // Check duplicate by Code OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM BusinessDomains
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+            string normalizedCode = input.Code.Trim().ToUpper();
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔒 Enforce controlled document types
+            if (!AllowedDocumentTypes.Contains(normalizedCode))
+                throw new CustomException(
+                    "Invalid Document Type. Allowed values: SOP, POL, FRM", 400);
+
+            // 🔍 Prevent duplicate Code or Name
+            string duplicateCheckQuery = $@"
+                    SELECT COUNT(1)
+                    FROM BusinessDomains
+                    WHERE (Code = '{normalizedCode}'
+                           OR Name = '{input.Name.Replace("'", "''")}')
+                      AND IsDeleted = FALSE";
+
+            int exists =
+                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("BusinessDomain already exists", 200);
+                throw new CustomException("Document Type already exists", 409);
 
-            // Insert (PostgreSQL syntax)
+            // 🧾 Insert (GLOBAL, no hierarchy)
             string insertQuery = $@"
-            INSERT INTO BusinessDomains
-            (
-                Code,
-                Name,
-                subdepartmentcode,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.Code.Replace("'", "''")}',
-                '{input.Name.Replace("'", "''")}',
-                '{input.SubDepartmentCode}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
+                    INSERT INTO BusinessDomains
+                    (
+                        Code,
+                        Name,
+                        IsActive,
+                        IsDeleted,
+                        CreatedAt,
+                        CreatedBy,
+                        LastModifiedAt,
+                        LastModifiedBy
+                    )
+                    VALUES
+                    (
+                        '{normalizedCode}',
+                        '{input.Name.Replace("'", "''")}',
+                        TRUE,
+                        FALSE,
+                        NOW(),
+                        '{userId.Replace("'", "''")}',
+                        NOW(),
+                        '{userId.Replace("'", "''")}'
+                    )
+                    RETURNING Id;";
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            int newId =
+                Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
-            // Fetch inserted record
+            // 📥 Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM BusinessDomains
-            WHERE Id = {newId}";
+                    SELECT *
+                    FROM BusinessDomains
+                    WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created Business Domain");
+                throw new Exception("Failed to fetch created Document Type");
 
             DataRow row = dt.Rows[0];
 
@@ -115,12 +125,13 @@ public class BusinessDomainComponent
                 Id = row.Field<int>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                CreatedAt = row.Field<DateTime>("CreatedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
+                                .ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
         }
@@ -456,4 +467,13 @@ public class BusinessDomainComponent
             throw;
         }
     }
+
+    private static readonly HashSet<string> AllowedDocumentTypes =
+    new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SOP",
+        "POL",
+        "FRM"
+    };
+
 }

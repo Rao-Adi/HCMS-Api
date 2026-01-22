@@ -9,8 +9,9 @@ using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class RequestApprovalComponent
+public class DistributionTypeComponent
 {
+
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
     private readonly IConfiguration _configuration;
@@ -19,7 +20,7 @@ public class RequestApprovalComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public RequestApprovalComponent(
+    public DistributionTypeComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -44,39 +45,32 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<RequestApprovalReadDto> CreateAsync(RequestApprovalCreateDto input)
+    public async Task<DistributionTypeReadDto> CreateAsync(DistributionTypeCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("RequestApproval code is required.", 400);
+           
 
-            // Check duplicate by Id OR DocumentRequestId
+            // Check duplicate by Name OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM RequestApprovals
-            WHERE (Id = '{input.Id}'
+            FROM DistributionTypes
+            WHERE Name = '{input.Name.Replace("'", "''")}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
-                throw new CustomException("RequestApproval already exists", 409);
+                throw new CustomException("DistributionType already exists", 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO RequestApprovals
+            INSERT INTO DistributionTypes
             (
-                Id,
-                DocumentRequestId,
-                WorkflowStepId,
-                ApproverUserId,
-                Status,
-                Observation,
-                ActionDate,
+                Name, 
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -86,13 +80,7 @@ public class RequestApprovalComponent
             )
             VALUES
             (
-                '{input.Id}',
-                '{input.DocumentRequestId}',
-                '{input.WorkflowStepId}',
-                '{input.ApproverUserId}',
-                '{input.Status}',
-                '{input.Observation}',
-                '{input.ActionDate}', 
+                '{input.Name.Replace("'", "''")}',  
                 TRUE,
                 FALSE,
                 NOW(),
@@ -107,7 +95,7 @@ public class RequestApprovalComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT *
-            FROM RequestApprovals
+            FROM DistributionTypes
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -117,15 +105,10 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApprovalReadDto
+            return new DistributionTypeReadDto
             {
-                Id = row.Field<int>("Id"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                WorkflowStepId = row.Field<int>("WorkflowStepId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                Status = row.Field<int>("Status"),
-                Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                Id = row.Field<int>("id"),
+                Name = row.Field<string>("Name"), 
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -141,27 +124,27 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM RequestApprovals
-                WHERE Id = {code}
+                FROM DistributionTypes
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("DistributionType not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE RequestApprovals
+                UPDATE DistributionTypes
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -172,7 +155,37 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<PaginationResult<RequestApprovalReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT Id, Name
+            FROM DistributionTypes
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Id";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("Id"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<PaginationResult<DistributionTypeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
@@ -186,18 +199,18 @@ public class RequestApprovalComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DocumentRequestId) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(Name) LIKE '%{search}%'
+                    OR UPPER(Name) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "DocumentRequestId",
-                "CODE" => "Id",
+                "NAME" => "Name",
+                "DESCRIPTION" => "Description",
                 "ISACTIVE" => "IsActive",
-                _ => "DocumentRequestId"
+                _ => "Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -206,13 +219,13 @@ public class RequestApprovalComponent
 
             string query = $@"
                         SELECT *
-                        FROM RequestApprovals
+                        FROM DistributionTypes
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM RequestApprovals
+                        FROM DistributionTypes
                         {whereClause};
                     ";
 
@@ -222,23 +235,17 @@ public class RequestApprovalComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<RequestApprovalReadDto>
+                return new PaginationResult<DistributionTypeReadDto>
                 {
-                    Items = new List<RequestApprovalReadDto>(),
+                    Items = new List<DistributionTypeReadDto>(),
                     TotalCount = 0
                 };
             }
-             
+
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new RequestApprovalReadDto
+                .Select(row => new DistributionTypeReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") :0,
-                    WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
-                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
-                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
-                    Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
-                    ActionDate = row.Table.Columns.Contains("ActionDate") ? row.Field<DateTime>("ActionDate") : DateTime.Now,
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty, 
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -256,7 +263,7 @@ public class RequestApprovalComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<RequestApprovalReadDto>
+            return new PaginationResult<DistributionTypeReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -268,77 +275,27 @@ public class RequestApprovalComponent
         }
     }
 
- 
-
-    public async Task<RequestApprovalReadDto> GetByIdAsync(string code)
-    {
-        try
-        {
-            string query = $@"
-                SELECT Id, DocumentRequestId, Id,WorkflowStepId, IsActive
-                FROM RequestApprovals
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("RequestApproval not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new RequestApprovalReadDto
-            {
-                Id = row.Field<int>("Id"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                WorkflowStepId = row.Field<int>("WorkflowStepId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                Status = row.Field<int>("Status"),
-                Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
-    public async Task<RequestApprovalReadDto> GetByWorkflowStepIdAsync(string dId)
+    public async Task<DistributionTypeReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
                 SELECT *
-                FROM RequestApprovals
-                WHERE Division = {dId}
+                FROM DistributionTypes
+                WHERE Id = {id}
                   AND IsActive = True
                   AND IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("DistributionType not found", 404);
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApprovalReadDto
+            return new DistributionTypeReadDto
             {
-                Id = row.Field<int>("Id"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                WorkflowStepId = row.Field<int>("WorkflowStepId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                Status = row.Field<int>("Status"),
-                Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -354,37 +311,37 @@ public class RequestApprovalComponent
     }
 
 
-    public async Task<RequestApprovalReadDto> UpdateAsync(RequestApprovalUpdateDto input)
+    public async Task<DistributionTypeReadDto> UpdateAsync(DistributionTypeUpdateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
+            if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Invalid division code.", 200);
 
-            // Check existence (Id is VARCHAR → must be quoted)
+            // Check existence (Name is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM RequestApprovals
-            WHERE Id = '{input.Id}'
+            FROM DistributionTypes
+            WHERE Name = '{input.Name.Replace("'", "''")}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("DistributionType not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE RequestApprovals
+            UPDATE DistributionTypes
             SET 
-                DocumentRequestId = '{input.DocumentRequestId}',
+                Name = '{input.Name.Replace("'", "''")}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Name = '{input.Name.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -394,8 +351,8 @@ public class RequestApprovalComponent
             // Return updated record
             string selectQuery = $@"
             SELECT *
-            FROM RequestApprovals
-            WHERE Id = '{input.Id}'";
+            FROM DistributionTypes
+            WHERE Name = '{input.Name.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -404,15 +361,9 @@ public class RequestApprovalComponent
 
             DataRow row = dt.Rows[0];
 
-            return new RequestApprovalReadDto
+            return new DistributionTypeReadDto
             {
-                Id = row.Field<int>("Id"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                WorkflowStepId = row.Field<int>("WorkflowStepId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                Status = row.Field<int>("Status"),
-                Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

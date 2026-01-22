@@ -54,21 +54,43 @@ public class DivisionComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Division code is required.", 200);
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Division name is required.", 400);
 
-            // Check duplicate by Code OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Divisions
-            WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+            // 🔍 Check duplicate by NAME only
+            string duplicateCheckQuery = $@"
+                            SELECT COUNT(1)
+                            FROM Divisions
+                            WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("Division already exists", 200);
+                throw new CustomException("Division already exists", 409);
+
+                                // 🔢 Generate next Division Code
+             string getLastCodeQuery = @"
+                            SELECT Code
+                            FROM Divisions
+                            WHERE Code IS NOT NULL
+                            ORDER BY Id DESC
+                            LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("DIV-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"DIV-{nextNumber:D4}";
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -85,7 +107,7 @@ public class DivisionComponent
             )
             VALUES
             (
-                '{input.Code.Replace("'", "''")}',
+                '{generatedCode}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
@@ -334,40 +356,56 @@ public class DivisionComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Division code is required.", 400);
 
-            // Check existence (Code is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Divisions
-            WHERE Code = '{input.Code.Replace("'", "''")}'
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Division name is required.", 400);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔍 Check division exists
+            string existsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM Divisions
+                    WHERE Code = '{input.Code.Replace("'", "''")}'
+                      AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("Division not found", 404);
 
-            // Update (PostgreSQL boolean + timestamp)
+            // 🚫 Prevent duplicate NAME (excluding current division)
+            string duplicateNameQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Divisions
+                        WHERE Name = '{input.Name.Replace("'", "''")}'
+                          AND Code <> '{input.Code.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int duplicate = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
+
+            if (duplicate > 0)
+                throw new CustomException("Division name already exists", 409);
+
+            // ✏️ Update mutable fields ONLY
             string updateQuery = $@"
-            UPDATE Divisions
-            SET 
-                Name = '{input.Name.Replace("'", "''")}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                        UPDATE Divisions
+                        SET 
+                            Name = '{input.Name.Replace("'", "''")}',
+                            IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = '{userId.Replace("'", "''")}'
+                        WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
+            // 📥 Fetch updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Divisions
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+                        SELECT *
+                        FROM Divisions
+                        WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

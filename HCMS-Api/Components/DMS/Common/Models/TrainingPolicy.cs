@@ -20,17 +20,16 @@ public class TrainingPolicyReadDto : AuditableEntity
     [Key]
     public int Id { get; set; }
 
-    public int DocumentTypeId { get; set; }
+    public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }
     public int? MinimumScore { get; set; }
 
 }
 
 public class TrainingPolicyCreateDto
-{ 
-    public int Id { get; set; }
+{
 
-    public int DocumentTypeId { get; set; }
+    public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }
     public int? MinimumScore { get; set; }
 
@@ -40,7 +39,7 @@ public class TrainingPolicyUpdateDto
 { 
     public int Id { get; set; }
 
-    public int DocumentTypeId { get; set; }
+    public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }
     public int? MinimumScore { get; set; }
     public bool IsActive { get; set; }
