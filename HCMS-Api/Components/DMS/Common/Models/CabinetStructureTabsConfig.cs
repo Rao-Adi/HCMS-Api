@@ -7,7 +7,11 @@ public class CabinetStructureTabsConfig
 
 public class CabinetStructureTabsConfigCreateDto
 {
+
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public string Name { get; set; }
 }
@@ -15,6 +19,10 @@ public class CabinetStructureTabsConfigCreateDto
 public class CabinetStructureTabsConfigUpdateDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string Name { get; set; }
 
     public bool IsActive { get; set; }
@@ -22,6 +30,14 @@ public class CabinetStructureTabsConfigUpdateDto
 
 public class CabinetStructureTabsConfigReadDto : AuditableEntity
 {
+
     public int Id { get; set; }
+
     public string Name { get; set; }
+
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
 }

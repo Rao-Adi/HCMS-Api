@@ -69,7 +69,7 @@ public class NotificationComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Notifications
-            (
+            (   CompanyId,
                 UserId,
                 Title,
                 Message,
@@ -81,6 +81,7 @@ public class NotificationComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.UserId}',
                 '{input.Title}',
                 '{input.Message}',
@@ -96,9 +97,11 @@ public class NotificationComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Notifications
-            WHERE Id = {newId}";
+             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM Notifications n
+                    LEFT JOIN Company c
+                    ON d.CompanyId = c.Id
+            WHERE n.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -110,6 +113,8 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
@@ -163,8 +168,8 @@ public class NotificationComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE n.IsDeleted = False 
+                  AND n.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -172,18 +177,18 @@ public class NotificationComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(UserId) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(n.UserId) LIKE '%{search}%'
+                    OR UPPER(n.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "UserId",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "UserId"
+                "NAME" => "n.UserId",
+                "CODE" => "n.Id",
+                "ISACTIVE" => "n.IsActive",
+                _ => "n.UserId"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -191,8 +196,10 @@ public class NotificationComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Notifications
+                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                            FROM Notifications n
+                            LEFT JOIN Company c
+                            ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -219,6 +226,8 @@ public class NotificationComponent
                 .Select(row => new NotificationReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
                     Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
@@ -254,11 +263,13 @@ public class NotificationComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Notifications
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM Notifications n
+                    LEFT JOIN Company c
+                    ON d.CompanyId = c.Id
+                WHERE n.Id = {code}
+                  AND n.IsActive = True
+                  AND n.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -270,6 +281,8 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
@@ -324,10 +337,12 @@ public class NotificationComponent
                 throw new Exception("Update failed");
 
             // Return updated record
-            string selectQuery = $@"
-            SELECT *
-            FROM Notifications
-            WHERE Id = '{input.Id}'";
+            string selectQuery = $@" 
+                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM Notifications n
+                    LEFT JOIN Company c
+                    ON d.CompanyId = c.Id
+            WHERE n.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -339,6 +354,8 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),

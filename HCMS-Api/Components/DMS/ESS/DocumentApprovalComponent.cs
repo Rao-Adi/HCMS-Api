@@ -69,7 +69,7 @@ public class DocumentApprovalComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentApprovals
-            (
+            (   CompanyId,
                 DocumentVersionId,
                 WorkflowStepId,
                 ApproverUserId,
@@ -85,6 +85,7 @@ public class DocumentApprovalComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentVersionId}',
                 '{input.WorkflowStepId}',
                 '{input.ApproverUserId}',
@@ -104,9 +105,11 @@ public class DocumentApprovalComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM DocumentApprovals
-            WHERE Id = {newId}";
+                        SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
+                        FROM DocumentApprovals da 
+                        LEFT JOIN Company c
+                        ON da.CompanyId = c.Id
+            WHERE da.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -118,6 +121,8 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),
@@ -175,8 +180,8 @@ public class DocumentApprovalComponent
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE da.IsDeleted = False 
+                  AND da.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -184,18 +189,18 @@ public class DocumentApprovalComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.Name) LIKE '%{search}%'
-                    OR UPPER(dep.Id) LIKE '%{search}%'
+                    UPPER(da.Name) LIKE '%{search}%'
+                    OR UPPER(da.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dep.Name",
-                "CODE" => "dep.Id",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.Name"
+                "NAME" => "da.Name",
+                "CODE" => "da.Id",
+                "ISACTIVE" => "da.IsActive",
+                _ => "da.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -203,16 +208,16 @@ public class DocumentApprovalComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM DocumentApprovals dep
-                        LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Id
+                        SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
+                        FROM DocumentApprovals da 
+                        LEFT JOIN Company c
+                        ON da.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DocumentApprovals dep
+                        FROM DocumentApprovals da
                         {whereClause};
                     ";
 
@@ -233,6 +238,8 @@ public class DocumentApprovalComponent
                 .Select(row => new DocumentApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentVersionId = row.Table.Columns.Contains("DocumentVersionId") ? row.Field<int>("DocumentVersionId") : 0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
                     ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
@@ -304,11 +311,13 @@ public class DocumentApprovalComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM DocumentApprovals
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                        SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
+                        FROM DocumentApprovals da 
+                        LEFT JOIN Company c
+                        ON da.CompanyId = c.Id
+                WHERE da.Id = {code}
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -320,6 +329,8 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),
@@ -346,11 +357,13 @@ public class DocumentApprovalComponent
         try
         {
             string query = $@"
-                SELECT  *
-                FROM DocumentApprovals
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                        SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
+                        FROM DocumentApprovals da 
+                        LEFT JOIN Company c
+                        ON da.CompanyId = c.Id
+                WHERE da.Division = {dCode}
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -362,6 +375,8 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),
@@ -427,9 +442,11 @@ public class DocumentApprovalComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM DocumentApprovals
-            WHERE Id = '{input.Id}'";
+                        SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
+                        FROM DocumentApprovals da 
+                        LEFT JOIN Company c
+                        ON da.CompanyId = c.Id
+            WHERE da.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -441,6 +458,8 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),

@@ -82,6 +82,7 @@ public class BusinessDomainComponent
             string insertQuery = $@"
                     INSERT INTO BusinessDomains
                     (
+                        CompanyId,
                         Code,
                         Name,
                         IsActive,
@@ -93,6 +94,7 @@ public class BusinessDomainComponent
                     )
                     VALUES
                     (
+                        '{input.CompanyId}',
                         '{normalizedCode}',
                         '{input.Name.Replace("'", "''")}',
                         TRUE,
@@ -109,8 +111,12 @@ public class BusinessDomainComponent
 
             // 📥 Fetch inserted record
             string selectQuery = $@"
-                    SELECT *
-                    FROM BusinessDomains
+                    SELECT bd.*, dep.*, c.Id,c.Name
+                        FROM BusinessDomains bd
+                        LEFT JOIN SubDepartments dep
+                        ON bd.subdepartmentcode = dep.Code
+                        LEFT JOIN Company c
+                        ON bd.CompanyId = c.Id
                     WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -123,6 +129,8 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -206,10 +214,12 @@ public class BusinessDomainComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
+                        SELECT bd.*, dep.*, c.Id,c.Name
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
+                        LEFT JOIN Company c
+                        ON bd.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -236,6 +246,8 @@ public class BusinessDomainComponent
                 .Select(row => new BusinessDomainReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("CompanyId"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     SubDepartment = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
@@ -305,8 +317,12 @@ public class BusinessDomainComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM BusinessDomains
+                SELECT bd.*, dep.*, c.Id,c.Name
+                        FROM BusinessDomains bd
+                        LEFT JOIN SubDepartments dep
+                        ON bd.subdepartmentcode = dep.Code
+                        LEFT JOIN Company c
+                        ON bd.CompanyId = c.Id
                 WHERE Code = '{code}'
                   AND IsActive = True
                   AND IsDeleted = False";
@@ -321,6 +337,8 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),
@@ -345,8 +363,12 @@ public class BusinessDomainComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM BusinessDomains
+                SELECT bd.*, dep.*, c.Id,c.Name
+                        FROM BusinessDomains bd
+                        LEFT JOIN SubDepartments dep
+                        ON bd.subdepartmentcode = dep.Code
+                        LEFT JOIN Company c
+                        ON bd.CompanyId = c.Id
                 WHERE Division = '{dCode}'
                   AND IsActive = True
                   AND IsDeleted = False";
@@ -361,6 +383,8 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),
@@ -419,8 +443,12 @@ public class BusinessDomainComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM BusinessDomains
+                        SELECT bd.*, dep.*, c.Id,c.Name
+                        FROM BusinessDomains bd
+                        LEFT JOIN SubDepartments dep
+                        ON bd.subdepartmentcode = dep.Code
+                        LEFT JOIN Company c
+                        ON bd.CompanyId = c.Id
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -433,6 +461,8 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),

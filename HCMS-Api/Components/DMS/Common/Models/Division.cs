@@ -1,6 +1,7 @@
 ﻿using HCMS_Api.Components.DMS.Common.Models.Departments;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
@@ -9,6 +10,10 @@ public class Division
 {
     [Key]
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
 
     [MaxLength(10)]
     public string Code { get; set; } = null!;
@@ -31,7 +36,11 @@ public class Division
 public class DivisionReadDto :AuditableEntity
 { 
     public int Id { get; set; }
-     
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public string Code { get; set; } = null!;
      
     public string Name { get; set; } = null!;
@@ -43,7 +52,10 @@ public class DivisionReadDto :AuditableEntity
 
 
 public class DivisionCreateDto
-{ 
+{
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string Name { get; set; } = null!; 
 }
 
@@ -52,7 +64,10 @@ public class DivisionCreateDto
 public class DivisionUpdateDto
 { 
     public int Id { get; set; }
-     
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string Code { get; set; } = null!;
      
     public string Name { get; set; } = null!;

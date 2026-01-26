@@ -9,6 +9,11 @@ public class WorkflowStep : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     public int WorkflowPolicyId { get; set; }
 
     public int Sequence { get; set; }
@@ -24,6 +29,10 @@ public class WorkflowStepReadDto : AuditableEntity
 { 
     public int Id { get; set; }
 
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
     public int WorkflowPolicyId { get; set; }
 
     public int Sequence { get; set; }
@@ -38,6 +47,9 @@ public class WorkflowStepCreateDto
 { 
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public int WorkflowPolicyId { get; set; }
 
     public int Sequence { get; set; }
@@ -51,6 +63,9 @@ public class WorkflowStepCreateDto
 public class WorkflowStepUpdateDto
 { 
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public int WorkflowPolicyId { get; set; }
 

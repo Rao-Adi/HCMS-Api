@@ -70,7 +70,8 @@ public class CabinetStructureTabsConfigComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO CabinetStructureTabsConfig
-            (
+            (   
+                CompanyId,
                 Name,
                 IsActive,
                 IsDeleted,
@@ -81,6 +82,7 @@ public class CabinetStructureTabsConfigComponent
             )
             VALUES
             ( 
+                '{input.CompanyId}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
@@ -109,6 +111,8 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("ID"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -217,6 +221,8 @@ public class CabinetStructureTabsConfigComponent
                 .Select(row => new CabinetStructureTabsConfigReadDto
                 {
                     Id = row.Table.Columns.Contains("ID") ? row.Field<int>("ID") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("CompanyId"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -299,6 +305,8 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("ID"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -367,6 +375,8 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("ID"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

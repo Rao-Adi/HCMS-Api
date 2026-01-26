@@ -84,7 +84,7 @@ public class DocumentTypeComponent
             // 🧾 Insert
             string insertQuery = $@"
                     INSERT INTO DocumentTypes
-                    (
+                    (   CompanyId,
                         Code,
                         Name,
                         Description,
@@ -97,6 +97,7 @@ public class DocumentTypeComponent
                     )
                     VALUES
                     (
+                        '{input.CompanyId}',
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.Description?.Replace("'", "''")}',
@@ -128,6 +129,9 @@ public class DocumentTypeComponent
             return new DocumentTypeReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
                 Code = row.Field<string>("Code"), // 🔒 immutable
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -240,6 +244,8 @@ public class DocumentTypeComponent
                 .Select(row => new DocumentTypeReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Description = row.Table.Columns.Contains("Description") ? row.Field<string>("Description") : string.Empty,
@@ -324,6 +330,8 @@ public class DocumentTypeComponent
             return new DocumentTypeReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),
@@ -340,46 +348,7 @@ public class DocumentTypeComponent
             throw;
         }
     }
-
-
-    public async Task<DocumentTypeReadDto> GetByDescriptionAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM DocumentTypes
-                WHERE Division = '{dCode}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentType not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new DocumentTypeReadDto
-            {
-                Id = row.Field<int>("Id"),
-                Code = row.Field<string>("Code"),
-                Name = row.Field<string>("Name"),
-                Description = row.Field<string>("Description"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
+ 
 
     public async Task<DocumentTypeReadDto> UpdateAsync(DocumentTypeUpdateDto input)
     {
@@ -435,6 +404,8 @@ public class DocumentTypeComponent
             return new DocumentTypeReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 Description = row.Field<string>("Description"),

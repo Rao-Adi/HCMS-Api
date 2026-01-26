@@ -69,7 +69,7 @@ public class TrainingPolicyComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TrainingPolicies
-            (
+            (   CompanyId,
                 DocumentTypeCode,
                 TrainingRequired,
                 MinimumScore,
@@ -82,6 +82,7 @@ public class TrainingPolicyComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentTypeCode}',
                 '{input.TrainingRequired}',
                 '{input.MinimumScore}',
@@ -97,9 +98,11 @@ public class TrainingPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM TrainingPolicies
+            string selectQuery = $@" 
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TrainingPolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -112,6 +115,8 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -166,8 +171,8 @@ public class TrainingPolicyComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False 
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -175,18 +180,18 @@ public class TrainingPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DocumentTypeCode) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(t.DocumentTypeCode) LIKE '%{search}%'
+                    OR UPPER(t.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "DocumentTypeCode" => "DocumentTypeCode",
-                "Id" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "Id"
+                "DocumentTypeCode" => "t.DocumentTypeCode",
+                "Id" => "t.Id",
+                "ISACTIVE" => "t.IsActive",
+                _ => "t.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -194,8 +199,10 @@ public class TrainingPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM TrainingPolicies
+                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM TrainingPolicies t
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -222,6 +229,8 @@ public class TrainingPolicyComponent
                 .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
                     TrainingRequired = row.Table.Columns.Contains("TrainingRequired") && row.Field<bool?>("TrainingRequired") == true,
@@ -259,8 +268,10 @@ public class TrainingPolicyComponent
         try
         {
             string query = $@"
-                SELECT  *
-                FROM TrainingPolicies
+                SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM TrainingPolicies t
+                    LEFT JOIN Company c
+                    ON r.CompanyId = c.Id
                 WHERE Id = {code}
                   AND IsActive = True
                   AND IsDeleted = False";
@@ -275,6 +286,8 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -332,8 +345,10 @@ public class TrainingPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM TrainingPolicies
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TrainingPolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
             WHERE Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -345,7 +360,9 @@ public class TrainingPolicyComponent
 
             return new TrainingPolicyReadDto
             {
-                Id = row.Field<int>("Id"), 
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),

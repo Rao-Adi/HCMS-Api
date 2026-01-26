@@ -11,6 +11,10 @@ public class Designation
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     [MaxLength(10)]
     public string Code { get; set; } = null!;
 
@@ -32,6 +36,10 @@ public class DesignationReadDto
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public string Code { get; set; } = null!;
 
     public string Name { get; set; } = null!;
@@ -52,6 +60,9 @@ public class DesignationCreateDto
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string Code { get; set; } = null!;
 
     public string Name { get; set; } = null!;
@@ -65,6 +76,10 @@ public class DesignationCreateDto
 public class DesignationUpdateDto
 {
     public int Id { get; set; }
+
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public string Code { get; set; } = null!;
 

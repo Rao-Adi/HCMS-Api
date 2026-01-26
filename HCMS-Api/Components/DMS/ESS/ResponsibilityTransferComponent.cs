@@ -91,7 +91,7 @@ public class ResponsibilityTransferComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO ResponsibilityTransfers
-            (
+            (   CompanyId,
                 EmployeeFrom,
                 EmployeeTo,
                 ReasonForTransfer,
@@ -109,6 +109,7 @@ public class ResponsibilityTransferComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.EmployeeFrom}',
                 '{input.EmployeeTo}',
                 '{input.ReasonForTransfer}',
@@ -130,9 +131,11 @@ public class ResponsibilityTransferComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM ResponsibilityTransfers
-            WHERE Id = {newId}";
+            SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+            FROM ResponsibilityTransfers rt
+            LEFT JOIN Company c
+            ON rt.CompanyId = c.Id
+            WHERE rt.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -144,6 +147,8 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
@@ -206,8 +211,8 @@ public class ResponsibilityTransferComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE rt.IsDeleted = False 
+                  AND rt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -215,22 +220,22 @@ public class ResponsibilityTransferComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(rt.Name) LIKE '%{search}%'
+                    OR UPPER(rt.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "EMPLOYEEFROM" => "EmployeeFrom",
-                "EMPLOYEETO" => "EmployeeTo",
-                "REASONFORTRANSFER" => "ReasonForTransfer",
-                "EFFECTIVEDATEFROM" => "EffectiveDateFrom",
-                "EFFECTIVEDATETO" => "EffectiveDateTo",
-                "REMARKS" => "Remarks", 
-                "ISACTIVE" => "IsActive",
-                _ => "EMPLOYEEFROM"
+                "EMPLOYEEFROM" => "rt.EmployeeFrom",
+                "EMPLOYEETO" => "rt.EmployeeTo",
+                "REASONFORTRANSFER" => "rt.ReasonForTransfer",
+                "EFFECTIVEDATEFROM" => "rt.EffectiveDateFrom",
+                "EFFECTIVEDATETO" => "rt.EffectiveDateTo",
+                "REMARKS" => "rt.Remarks", 
+                "ISACTIVE" => "rt.IsActive",
+                _ => "rt.EMPLOYEEFROM"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -238,8 +243,10 @@ public class ResponsibilityTransferComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM ResponsibilityTransfers
+                         SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+                            FROM ResponsibilityTransfers rt
+                            LEFT JOIN Company c
+                            ON rt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -266,6 +273,8 @@ public class ResponsibilityTransferComponent
                 .Select(row => new ResponsibilityTransferReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
                     EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
                     ReasonForTransfer = row.Table.Columns.Contains("ReasonForTransfer") ? row.Field<string>("ReasonForTransfer") : string.Empty,
@@ -308,11 +317,13 @@ public class ResponsibilityTransferComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM ResponsibilityTransfers
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                 SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM ResponsibilityTransfers rt
+                    LEFT JOIN Company c
+                    ON rt.CompanyId = c.Id
+                WHERE rt.Id = {code}
+                  AND rt.IsActive = True
+                  AND rt.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -324,6 +335,8 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
@@ -393,9 +406,11 @@ public class ResponsibilityTransferComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT Id
-            FROM ResponsibilityTransfers
-            WHERE Id = '{input.Id}'";
+                    SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM ResponsibilityTransfers rt
+                    LEFT JOIN Company c
+                    ON rt.CompanyId = c.Id
+            WHERE rt.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -407,6 +422,8 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),

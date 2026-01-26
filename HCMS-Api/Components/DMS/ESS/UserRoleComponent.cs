@@ -69,7 +69,7 @@ public class UserRoleComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO UserRoles
-            (
+            (   CompanyId,
                 UserId,
                 RoleId,
                 AssignedAt,
@@ -83,6 +83,7 @@ public class UserRoleComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.UserId}', 
                 '{input.RoleId}',
                 '{input.AssignedAt}',
@@ -99,10 +100,12 @@ public class UserRoleComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM UserRoles
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+            SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+            FROM UserRoles u
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE u.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -113,6 +116,9 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
@@ -168,8 +174,8 @@ public class UserRoleComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE u.IsDeleted = False 
+                  AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -177,18 +183,18 @@ public class UserRoleComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(UserId) LIKE '%{search}%'
-                    OR UPPER(UserId) LIKE '%{search}%'
+                    UPPER(u.UserId) LIKE '%{search}%'
+                    OR UPPER(u.UserId) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "UserId",
-                "ROLEID" => "RoleId",
-                "ISACTIVE" => "IsActive",
-                _ => "UserId"
+                "NAME" => "u.UserId",
+                "ROLEID" => "u.RoleId",
+                "ISACTIVE" => "u.IsActive",
+                _ => "u.UserId"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -196,8 +202,10 @@ public class UserRoleComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM UserRoles
+                        SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM UserRoles u
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -223,6 +231,9 @@ public class UserRoleComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new UserRoleReadDto
                 {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     RoleId = row.Table.Columns.Contains("RoleId") ? row.Field<int>("RoleId") : 0,
                     AssignedBy = row.Table.Columns.Contains("AssignedBy") ? row.Field<string>("AssignedBy") : string.Empty,
@@ -261,11 +272,13 @@ public class UserRoleComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM UserRoles
-                WHERE UserId = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM UserRoles u
+                    LEFT JOIN Company c
+                    ON r.CompanyId = c.Id
+                WHERE u.UserId = {code}
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -276,6 +289,9 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
@@ -300,11 +316,13 @@ public class UserRoleComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM UserRoles
-                WHERE Division = {dUserId}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM UserRoles u
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
+                WHERE u.UserId = {dUserId}
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -315,6 +333,9 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),
@@ -374,8 +395,10 @@ public class UserRoleComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM UserRoles
+            SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+            FROM UserRoles u
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
             WHERE UserId = '{input.UserId}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -387,6 +410,9 @@ public class UserRoleComponent
 
             return new UserRoleReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
                 AssignedAt = row.Field<DateTime>("AssignedAt"),

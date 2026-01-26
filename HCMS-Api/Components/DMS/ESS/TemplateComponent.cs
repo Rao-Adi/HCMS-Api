@@ -72,6 +72,7 @@ public class TemplateComponent
 
             string sql = @"
                         INSERT INTO Templates (
+                            CompanyId,
                             DocumentTypeCode,
                             TemplateName,
                             TemplateFileUrl,
@@ -89,6 +90,7 @@ public class TemplateComponent
                             LastModifiedBy
                         )
                         VALUES (
+                            @CompanyId,
                             @DocumentTypeCode,
                             @TemplateName,
                             @TemplateFileUrl,
@@ -111,8 +113,9 @@ public class TemplateComponent
                                 // Assuming _common.ExecuteScalarQuery accepts command + parameters
                                 // (if not → change your helper or use NpgsqlCommand directly)
 
-                                var parameters = new Dictionary<string, object>
+                    var parameters = new Dictionary<string, object>
                     {
+                        { "@CompanyId",           input.CompanyId},
                         { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
                         { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
                         { "@TemplateFileUrl",     input.TemplateFileUrl     ?? (object)DBNull.Value },
@@ -130,9 +133,15 @@ public class TemplateComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  *
-            FROM Templates
-            WHERE Id = {newId}";
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            FROM Templates t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
+            WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -144,6 +153,8 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
@@ -204,8 +215,8 @@ public class TemplateComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False 
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -213,18 +224,18 @@ public class TemplateComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(t.Name) LIKE '%{search}%'
+                    OR UPPER(t.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "t.Name",
+                "CODE" => "t.Id",
+                "ISACTIVE" => "t.IsActive",
+                _ => "t.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -232,8 +243,14 @@ public class TemplateComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Templates
+                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+                        FROM Templates t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code
+                        LEFT JOIN Departments d
+                        ON t.DepartmentCode = d.Code
+                        LEFT JOIN SubDepartments sd
+                        ON t.SubDepartmentCode = sd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -260,6 +277,8 @@ public class TemplateComponent
                 .Select(row => new TemplateReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
                     TemplateFileUrl = row.Table.Columns.Contains("TemplateFileUrl") ? row.Field<string>("TemplateFileUrl") : string.Empty,
@@ -303,11 +322,17 @@ public class TemplateComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Templates
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+                    FROM Templates t
+                    LEFT JOIN Divisions div
+                    ON t.DivisionCode = div.Code
+                    LEFT JOIN Departments d
+                    ON t.DepartmentCode = d.Code
+                    LEFT JOIN SubDepartments sd
+                    ON t.SubDepartmentCode = sd.Code
+                WHERE t.Id = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -319,6 +344,8 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
@@ -342,52 +369,7 @@ public class TemplateComponent
         }
     }
 
-
-    public async Task<TemplateReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM Templates
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("Templates not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new TemplateReadDto
-            {
-                Id = row.Field<int>("Id"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                TemplateName = row.Field<string>("TemplateName"),
-                TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
-                TemplateType = row.Field<int>("TemplateType"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-                TemplateContent = row.Field<string>("TemplateContent"),
-                IsDefault = row.Field<bool>("IsDefault"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<TemplateReadDto> UpdateAsync(TemplateUpdateDto input)
     {
         try
@@ -435,9 +417,15 @@ public class TemplateComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Templates
-            WHERE Id = '{input.Id}'";
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            FROM Templates t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
+            WHERE t.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -449,6 +437,8 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),

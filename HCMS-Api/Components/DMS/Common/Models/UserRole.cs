@@ -5,6 +5,10 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 [Table("UserRoles")]
 public class UserRole : AuditableEntity
 {
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     public int UserId { get; set; }
     public int RoleId { get; set; }
 
@@ -18,6 +22,12 @@ public class UserRole : AuditableEntity
 
 public class UserRoleReadDto : AuditableEntity
 {
+    public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public int UserId { get; set; }
     public int RoleId { get; set; }
 
@@ -28,6 +38,8 @@ public class UserRoleReadDto : AuditableEntity
 
 public class UserRoleCreateDto
 {
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
     public int UserId { get; set; }
     public int RoleId { get; set; }
 
@@ -38,6 +50,9 @@ public class UserRoleCreateDto
 
 public class UserRoleUpdateDto
 {
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public int UserId { get; set; }
     public int RoleId { get; set; }
 

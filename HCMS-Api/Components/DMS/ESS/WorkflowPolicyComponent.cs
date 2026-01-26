@@ -70,7 +70,7 @@ public class WorkflowPolicyComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO WorkflowPolicies
-            (
+            (   CompanyId,
                 PolicyType, 
                 DivisionCode,
                 DepartmentCode,
@@ -89,6 +89,7 @@ public class WorkflowPolicyComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.PolicyType}', 
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
@@ -122,6 +123,8 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -234,7 +237,9 @@ public class WorkflowPolicyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new WorkflowPolicyReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     PolicyType = row.Table.Columns.Contains("PolicyType") ? row.Field<int>("PolicyType") : 0,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
@@ -291,6 +296,8 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -333,6 +340,8 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -412,6 +421,8 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),

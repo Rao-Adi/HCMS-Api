@@ -8,6 +8,10 @@ public class ResponsibilityTransfer : AuditableEntity
 {
     [Key]
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }
@@ -22,6 +26,11 @@ public class ResponsibilityTransfer : AuditableEntity
 public class ResponsibilityTransferReadDto : AuditableEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }
@@ -34,7 +43,10 @@ public class ResponsibilityTransferReadDto : AuditableEntity
 }
 
 public class ResponsibilityTransferCreateDto
-{ 
+{
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }
@@ -49,6 +61,9 @@ public class ResponsibilityTransferCreateDto
 public class ResponsibilityTransferUpdateDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }

@@ -10,6 +10,11 @@ public class WorkflowPolicy : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
+
     public int PolicyType { get; set; }
 
     [MaxLength(10)]
@@ -33,6 +38,10 @@ public class WorkflowPolicyReadDto : AuditableEntity
 { 
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public int PolicyType { get; set; }
 
     [MaxLength(10)]
@@ -55,6 +64,9 @@ public class WorkflowPolicyCreateDto
 { 
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public int PolicyType { get; set; }
 
     [MaxLength(10)]
@@ -76,6 +88,9 @@ public class WorkflowPolicyCreateDto
 public class WorkflowPolicyUpdateDto
 { 
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public int PolicyType { get; set; }
 

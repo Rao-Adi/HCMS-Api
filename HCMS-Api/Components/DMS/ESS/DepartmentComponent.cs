@@ -116,6 +116,7 @@ public class DepartmentComponent
             string insertQuery = $@"
                     INSERT INTO Departments
                     (
+                        CompanyId,
                         Code,
                         Name,
                         DivisionCode,
@@ -128,6 +129,7 @@ public class DepartmentComponent
                     )
                     VALUES
                     (
+                        '{input.CompanyId}',
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.DivisionCode.Replace("'", "''")}',
@@ -144,9 +146,13 @@ public class DepartmentComponent
 
             // 📥 Fetch inserted record
             string selectQuery = $@"
-                    SELECT *
-                    FROM Departments
-                    WHERE Id = {newId}";
+                    SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                        FROM Departments dep
+                        LEFT JOIN Divisions div
+						ON dep.DivisionCode = div.Code
+                        LEFT JOIN Company c
+                        ON dep.CompanyId = c.Id
+                    WHERE dep.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -158,9 +164,12 @@ public class DepartmentComponent
             return new DepartmentReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                DivisionCode = row.Field<string>("DivisionCode"),
+                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -240,10 +249,12 @@ public class DepartmentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
+                        SELECT dep.*,c.Id as CompanyId, c.Name As Company
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
+                        LEFT JOIN Company c
+                        ON dep.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -270,6 +281,8 @@ public class DepartmentComponent
                 .Select(row => new DepartmentReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
@@ -339,11 +352,15 @@ public class DepartmentComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Departments
-                WHERE Code = '{code}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                 SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                        FROM Departments dep
+                        LEFT JOIN Divisions div
+						ON dep.DivisionCode = div.Code
+                        LEFT JOIN Company c
+                        ON dep.CompanyId = c.Id
+                WHERE dep.Code = '{code}'
+                  AND dep.IsActive = True
+                  AND dep.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -355,9 +372,12 @@ public class DepartmentComponent
             return new DepartmentReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                DivisionCode = row.Field<string>("DivisionCode"),
+                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -378,11 +398,15 @@ public class DepartmentComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Departments
-                WHERE DivisionCode = '{dCode}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                 SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                        FROM Departments dep
+                        LEFT JOIN Divisions div
+						ON dep.DivisionCode = div.Code
+                        LEFT JOIN Company c
+                        ON dep.CompanyId = c.Id
+                WHERE dep.DivisionCode = '{dCode}'
+                  AND dep.IsActive = True
+                  AND dep.IsDeleted = False";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable departmentTable = ds.Tables[0];  // your first result set (paged data)
@@ -397,9 +421,12 @@ public class DepartmentComponent
                 .Select(row => new DepartmentReadDto
                 {
                     Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Code = row.Field<string>("Code"),
                     Name = row.Field<string>("Name"),
-                    DivisionCode = row.Field<string>("DivisionCode"),
+                    Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     IsDeleted = row.Field<bool>("IsDeleted"),
                     IsActive = row.Field<bool>("IsActive"),
                     CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -493,8 +520,12 @@ public class DepartmentComponent
 
             // 📥 Fetch updated record
             string selectQuery = $@"
-                    SELECT dep.*
-                    FROM Departments dep
+                   SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                        FROM Departments dep
+                        LEFT JOIN Divisions div
+						ON dep.DivisionCode = div.Code
+                        LEFT JOIN Company c
+                        ON dep.CompanyId = c.Id
                     WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -507,9 +538,12 @@ public class DepartmentComponent
             return new DepartmentReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"), // 🔒 Immutable
                 Name = row.Field<string>("Name"),
-                DivisionCode = row.Field<string>("DivisionCode"),
+                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt")

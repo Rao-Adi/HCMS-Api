@@ -10,6 +10,10 @@ public class DocumentAttribute : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     // ⚠️ Matches DB column:
     // DocumentTypeCode INT NOT NULL REFERENCES DocumentTypes(Id)
     public string DocumentTypeCode { get; set; }
@@ -34,6 +38,11 @@ public class DocumentAttributeReadDto : AuditableEntity
 { 
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
+
     // ⚠️ Matches DB column:
     // DocumentTypeCode INT NOT NULL REFERENCES DocumentTypes(Id)
     public string DocumentTypeCode { get; set; }
@@ -54,7 +63,10 @@ public class DocumentAttributeReadDto : AuditableEntity
 public class DocumentAttributeCreateDto
 { 
     public int Id { get; set; }
-     
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string DocumentTypeCode { get; set; }
 
     [MaxLength(100)]
@@ -72,7 +84,10 @@ public class DocumentAttributeCreateDto
 public class DocumentAttributeUpdateDto
 { 
     public int Id { get; set; }
-     
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string DocumentTypeCode { get; set; }
 
     [MaxLength(100)]

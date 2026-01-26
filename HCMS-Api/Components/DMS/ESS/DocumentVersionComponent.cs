@@ -69,7 +69,7 @@ public class DocumentVersionComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentVersions
-            (
+            (   CompanyId,
                 DocumentId,
                 Version,
                 VersionType,
@@ -82,6 +82,7 @@ public class DocumentVersionComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentId}',
                 '{input.Version.Replace("'", "''")}',
                 '{input.VersionType}',
@@ -112,6 +113,8 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
@@ -223,6 +226,8 @@ public class DocumentVersionComponent
                 .Select(row => new DocumentVersionReadDto
                 {
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
                     VersionType = row.Table.Columns.Contains("VersionType") ? row.Field<int>("VersionType") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -303,6 +308,8 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),
@@ -321,47 +328,7 @@ public class DocumentVersionComponent
         }
     }
 
-
-    public async Task<DocumentVersionReadDto> GetByDescriptionAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM DocumentVersions
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentVersion not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new DocumentVersionReadDto
-            {
-                DocumentId = row.Field<int>("DocumentId"),
-                Version = row.Field<string>("Version"),
-                VersionType = row.Field<int>("VersionType"),
-                Content = row.Field<string>("Content"),
-                ChangeDescription = row.Field<string>("ChangeDescription"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<DocumentVersionReadDto> UpdateAsync(DocumentVersionUpdateDto input)
     {
         try
@@ -415,6 +382,8 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
                 Content = row.Field<string>("Content"),

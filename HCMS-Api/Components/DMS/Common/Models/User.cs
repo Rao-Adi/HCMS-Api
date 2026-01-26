@@ -10,6 +10,13 @@ public class User : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
+
+
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
 
@@ -29,6 +36,10 @@ public class User : AuditableEntity
 public class UserReadDto : AuditableEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -55,6 +66,9 @@ public class UserCreateDto
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
 
@@ -77,6 +91,9 @@ public class UserCreateDto
 public class UserUpdateDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;

@@ -69,7 +69,7 @@ public class TransferWorkflowPolicyComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TransferWorkflowPolicies
-            (
+            (   CompanyId,
                 DivisionCode,
                 ApprovalRoleId,
                 ApprovalUserId, 
@@ -82,6 +82,7 @@ public class TransferWorkflowPolicyComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.DivisionCode.Replace("'", "''")}', 
                 '{input.ApprovalRoleId}',
                 '{input.ApprovalUserId}',
@@ -97,10 +98,12 @@ public class TransferWorkflowPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM TransferWorkflowPolicies
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TransferWorkflowPolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -111,6 +114,9 @@ public class TransferWorkflowPolicyComponent
 
             return new TransferWorkflowPolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -164,8 +170,8 @@ public class TransferWorkflowPolicyComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False 
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -173,18 +179,18 @@ public class TransferWorkflowPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DivisionCode) LIKE '%{search}%'
-                    OR UPPER(DivisionCode) LIKE '%{search}%'
+                    UPPER(t.DivisionCode) LIKE '%{search}%'
+                    OR UPPER(t.DivisionCode) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "DivisionCode",
-                "DESCRIPTION" => "ApprovalRoleId",
-                "ISACTIVE" => "IsActive",
-                _ => "DivisionCode"
+                "NAME" => "t.DivisionCode",
+                "DESCRIPTION" => "t.ApprovalRoleId",
+                "ISACTIVE" => "t.IsActive",
+                _ => "t.DivisionCode"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -192,8 +198,10 @@ public class TransferWorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM TransferWorkflowPolicies
+                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM TransferWorkflowPolicies t
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -219,6 +227,9 @@ public class TransferWorkflowPolicyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new TransferWorkflowPolicyReadDto
                 {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
                     ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<int>("ApprovalUserId") : 0,
@@ -256,11 +267,13 @@ public class TransferWorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM TransferWorkflowPolicies
-                WHERE DivisionCode = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                FROM TransferWorkflowPolicies t
+                LEFT JOIN Company c
+                ON r.CompanyId = c.Id
+                WHERE t.DivisionCode = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -271,6 +284,9 @@ public class TransferWorkflowPolicyComponent
 
             return new TransferWorkflowPolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<int>("ApprovalUserId"),
@@ -328,8 +344,10 @@ public class TransferWorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM TransferWorkflowPolicies
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TransferWorkflowPolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -341,6 +359,9 @@ public class TransferWorkflowPolicyComponent
 
             return new TransferWorkflowPolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<int>("ApprovalUserId"),

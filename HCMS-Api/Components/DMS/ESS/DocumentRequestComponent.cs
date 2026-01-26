@@ -58,7 +58,7 @@ public class DocumentRequestComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentRequests
-            WHERE (Id = '{input.Id}' 
+            WHERE Id = '{input.Id}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -69,7 +69,7 @@ public class DocumentRequestComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentRequests
-            (
+            (   CompanyId,
                 RequestNumber,
                 RequestType,
                 DocumentId,
@@ -90,6 +90,7 @@ public class DocumentRequestComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.RequestNumber}',
                 '{input.RequestType}',
                 '{input.DocumentId}',
@@ -114,9 +115,15 @@ public class DocumentRequestComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = {newId}";
+                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                FROM Documents d
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+                LEFT JOIN Divisions div
+                ON d.DivisionCode = div.Code
+                LEFT JOIN Department dep
+                ON d.DepartmentCode = dep.Code
+            WHERE d.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -128,6 +135,8 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -189,8 +198,8 @@ public class DocumentRequestComponent
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False 
+                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -198,18 +207,18 @@ public class DocumentRequestComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.Name) LIKE '%{search}%'
-                    OR UPPER(dep.Id) LIKE '%{search}%'
+                    UPPER(d.Name) LIKE '%{search}%'
+                    OR UPPER(d.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dep.Name",
-                "CODE" => "dep.Id",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.Name"
+                "NAME" => "d.Name",
+                "CODE" => "d.Id",
+                "ISACTIVE" => "d.IsActive",
+                _ => "d.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -217,10 +226,14 @@ public class DocumentRequestComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Documents dep
-                        LEFT JOIN Documents div
-						ON dep.DocumentId = div.Id
+                        SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                            FROM Documents d
+                            LEFT JOIN Company c
+                            ON d.CompanyId = c.Id
+                            LEFT JOIN Divisions div
+                            ON d.DivisionCode = div.Code
+                            LEFT JOIN Department dep
+                            ON d.DepartmentCode = dep.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -247,6 +260,10 @@ public class DocumentRequestComponent
                 .Select(row => new DocumentRequestReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+
                     RequestNumber = row.Table.Columns.Contains("RequestNumber") ? row.Field<string>("RequestNumber") : string.Empty,
                     RequestType = row.Table.Columns.Contains("RequestType") ? row.Field<int>("RequestType") : 0,
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
@@ -323,11 +340,17 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Documents
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                FROM Documents d
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+                LEFT JOIN Divisions div
+                ON d.DivisionCode = div.Code
+                LEFT JOIN Department dep
+                ON d.DepartmentCode = dep.Code
+                WHERE d.Id = {code}
+                  AND d.IsActive = True
+                  AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -339,6 +362,8 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -369,11 +394,17 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Documents
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                FROM Documents d
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+                LEFT JOIN Divisions div
+                ON d.DivisionCode = div.Code
+                LEFT JOIN Department dep
+                ON d.DepartmentCode = dep.Code
+                WHERE d.DivisionCode = {dCode}
+                  AND d.IsActive = True
+                  AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -385,6 +416,8 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
@@ -458,9 +491,15 @@ public class DocumentRequestComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = '{input.Id}'";
+                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                    FROM Documents d
+                    LEFT JOIN Company c
+                    ON d.CompanyId = c.Id
+                    LEFT JOIN Divisions div
+                    ON d.DivisionCode = div.Code
+                    LEFT JOIN Department dep
+                    ON d.DepartmentCode = dep.Code
+            WHERE d.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -472,6 +511,8 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),

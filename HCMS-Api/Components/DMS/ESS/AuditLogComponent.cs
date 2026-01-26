@@ -71,6 +71,7 @@ public class AuditLogComponent
             string insertQuery = $@"
             INSERT INTO AuditLogs
             (
+                CompanyId,
                 UserId,
                 Action,
                 EntityType,
@@ -86,6 +87,7 @@ public class AuditLogComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.UserId}',
                 '{input.Action.Replace("'", "''")}',
                 '{input.EntityId}',
@@ -118,6 +120,8 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
                 EntityType = row.Field<string>("EntityType"),
@@ -227,6 +231,8 @@ public class AuditLogComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new AuditLogReadDto
                 {
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("CompanyId"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     Action = row.Table.Columns.Contains("Action") ? row.Field<string>("Action") : string.Empty,
                     EntityId = row.Table.Columns.Contains("EntityId") ? row.Field<int>("EntityId") : 0,
@@ -307,6 +313,8 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
                 EntityId = row.Field<int>("EntityId"),
@@ -344,6 +352,8 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
                 EntityId = row.Field<int>("EntityId"),
@@ -413,6 +423,8 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
                 EntityId = row.Field<int>("EntityId"),

@@ -69,7 +69,7 @@ public class WorkflowStepComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO WorkflowSteps
-            (
+            (   CompanyId,
                 WorkflowPolicyId, 
                 Sequence,
                 ApproverRoleId,
@@ -84,6 +84,7 @@ public class WorkflowStepComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.WorkflowPolicyId}', 
                 '{input.Sequence}', 
                 '{input.ApproverRoleId}', 
@@ -102,8 +103,10 @@ public class WorkflowStepComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM WorkflowSteps
+                        SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM WorkflowSteps w
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -116,6 +119,8 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
@@ -172,8 +177,8 @@ public class WorkflowStepComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE w.IsDeleted = False 
+                  AND w.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -181,18 +186,18 @@ public class WorkflowStepComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(w.Name) LIKE '%{search}%'
+                    OR UPPER(w.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "w.Name",
+                "CODE" => "w.Id",
+                "ISACTIVE" => "w.IsActive",
+                _ => "w.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -200,8 +205,10 @@ public class WorkflowStepComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM WorkflowSteps
+                        SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM WorkflowSteps w
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -227,7 +234,9 @@ public class WorkflowStepComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new WorkflowStepReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
                     Sequence = row.Table.Columns.Contains("Sequence") ? row.Field<int>("Sequence") : 0,
                     ApproverRoleId = row.Table.Columns.Contains("ApproverRoleId") ? row.Field<int>("ApproverRoleId") : 0,
@@ -267,11 +276,13 @@ public class WorkflowStepComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM WorkflowSteps
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                    SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM WorkflowSteps w
+                    LEFT JOIN Company c
+                    ON r.CompanyId = c.Id
+                WHERE w.Id = {code}
+                  AND w.IsActive = True
+                  AND w.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -283,6 +294,8 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),
@@ -302,48 +315,7 @@ public class WorkflowStepComponent
         }
     }
 
-
-    public async Task<WorkflowStepReadDto> GetBySequenceAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM WorkflowSteps
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("WorkflowSteps not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new WorkflowStepReadDto
-            {
-                Id = row.Field<int>("Id"),
-                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
-                Sequence = row.Field<int>("Sequence"),
-                ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                ApprovalLevel = row.Field<int>("ApprovalLevel"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<WorkflowStepReadDto> UpdateAsync(WorkflowStepUpdateDto input)
     {
         try
@@ -386,10 +358,12 @@ public class WorkflowStepComponent
                 throw new Exception("Update failed");
 
             // Return updated record
-            string selectQuery = $@"
-            SELECT *
-            FROM WorkflowSteps
-            WHERE Id = '{input.Id}'";
+            string selectQuery = $@" 
+            SELECT u.*, c.Id AS CompanyId, c.Name AS Company
+            FROM WorkflowSteps w
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE w.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -401,6 +375,8 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
                 ApproverRoleId = row.Field<int>("ApproverRoleId"),

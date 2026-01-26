@@ -9,6 +9,10 @@ public class Template : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public string DocumentTypeCode { get; set; }
 
     [MaxLength(200)]
@@ -30,6 +34,11 @@ public class Template : AuditableEntity
 public class TemplateReadDto : AuditableEntity
 { 
     public int Id { get; set; }
+
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
 
     public string DocumentTypeCode { get; set; }
 
@@ -53,8 +62,10 @@ public class TemplateReadDto : AuditableEntity
 
 
 public class TemplateCreateDto
-{ 
-    //public int Id { get; set; }
+{
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
@@ -79,6 +90,9 @@ public class TemplateCreateDto
 public class TemplateUpdateDto
 { 
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 

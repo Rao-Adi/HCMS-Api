@@ -9,6 +9,10 @@ public class Notification
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     public int UserId { get; set; }
 
     [MaxLength(200)]
@@ -33,6 +37,10 @@ public class NotificationReadDto
 {
     [Key]
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
 
     public int UserId { get; set; }
 
@@ -60,6 +68,9 @@ public class NotificationCreateDto
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public int UserId { get; set; }
 
     [MaxLength(200)]
@@ -85,6 +96,9 @@ public class NotificationUpdateDto
 {
     [Key]
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public int UserId { get; set; }
 

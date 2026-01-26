@@ -69,7 +69,7 @@ public class TransferScopePolicyComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TransferScopePolicies
-            (
+            (   CompanyId,
                 DivisionCode,
                 ReportingToLevel,
                 IsActive,
@@ -81,6 +81,7 @@ public class TransferScopePolicyComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.DivisionCode.Replace("'", "''")}', 
                 '{input.ReportingToLevel}',
                 TRUE,
@@ -95,10 +96,12 @@ public class TransferScopePolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM TransferScopePolicies
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TransferScopePolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -109,6 +112,9 @@ public class TransferScopePolicyComponent
 
             return new TransferScopePolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -162,8 +168,8 @@ public class TransferScopePolicyComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False 
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -171,18 +177,18 @@ public class TransferScopePolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DivisionCode) LIKE '%{search}%'
-                    OR UPPER(DivisionCode) LIKE '%{search}%'
+                    UPPER(t.DivisionCode) LIKE '%{search}%'
+                    OR UPPER(t.DivisionCode) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "DivisionCode",
-                "DESCRIPTION" => "ReportingToLevel",
-                "ISACTIVE" => "IsActive",
-                _ => "DivisionCode"
+                "NAME" => "t.DivisionCode",
+                "DESCRIPTION" => "t.ReportingToLevel",
+                "ISACTIVE" => "t.IsActive",
+                _ => "t.DivisionCode"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -190,8 +196,10 @@ public class TransferScopePolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM TransferScopePolicies
+                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM TransferScopePolicies t
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -217,6 +225,9 @@ public class TransferScopePolicyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new TransferScopePolicyReadDto
                 {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     ReportingToLevel = row.Table.Columns.Contains("ReportingToLevel") ? row.Field<int>("ReportingToLevel") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -253,11 +264,13 @@ public class TransferScopePolicyComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM TransferScopePolicies
-                WHERE DivisionCode = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                    SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM TransferScopePolicies t
+                    LEFT JOIN Company c
+                    ON r.CompanyId = c.Id
+                WHERE t.DivisionCode = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -268,6 +281,9 @@ public class TransferScopePolicyComponent
 
             return new TransferScopePolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -324,9 +340,11 @@ public class TransferScopePolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM TransferScopePolicies
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            FROM TransferScopePolicies t
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE t.DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -337,6 +355,9 @@ public class TransferScopePolicyComponent
 
             return new TransferScopePolicyReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

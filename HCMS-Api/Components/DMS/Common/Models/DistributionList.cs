@@ -11,6 +11,10 @@ public class DistributionList : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
@@ -31,6 +35,10 @@ public class DistributionListReadDto : AuditableEntity
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
@@ -46,6 +54,9 @@ public class DistributionListCreateDto
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public int DocumentRequestId { get; set; }
 
     public string DivisionCode { get; set; }
@@ -59,6 +70,9 @@ public class DistributionListCreateDto
 public class DistributionListUpdateDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
 
     public int DocumentRequestId { get; set; }
 

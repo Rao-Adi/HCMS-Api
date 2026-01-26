@@ -69,7 +69,7 @@ public class RoleComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Roles
-            (
+            (   CompanyId,
                 Name,
                 Description,
                 IsActive,
@@ -81,6 +81,7 @@ public class RoleComponent
             )
             VALUES
             (
+                '{input.CompanyId}', 
                 '{input.Name.Replace("'", "''")}', 
                 '{input.Description}',
                 TRUE,
@@ -95,10 +96,12 @@ public class RoleComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM Roles
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+            SELECT r.*, c.Id AS CompanyId, c.Name AS Company
+            FROM Roles r
+            LEFT JOIN Company c
+            ON r.CompanyId = c.Id
+            WHERE r.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -110,6 +113,8 @@ public class RoleComponent
             return new RoleReadDto
             {
                 Name = row.Field<string>("Name"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -192,8 +197,8 @@ public class RoleComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE r.IsDeleted = False 
+                  AND r.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -201,18 +206,18 @@ public class RoleComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Name) LIKE '%{search}%'
+                    UPPER(r.Name) LIKE '%{search}%'
+                    OR UPPER(r.Name) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "DESCRIPTION" => "Description",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "r.Name",
+                "DESCRIPTION" => "r.Description",
+                "ISACTIVE" => "r.IsActive",
+                _ => "r.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -220,8 +225,10 @@ public class RoleComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Roles
+                        SELECT r.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM Roles r
+                        LEFT JOIN Company c
+                        ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -247,7 +254,10 @@ public class RoleComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new RoleReadDto
                 {
-                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty, 
+                    Id = row.Field<int>("id"),
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Description = row.Table.Columns.Contains("Description") ? row.Field<string>("Description") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -283,11 +293,13 @@ public class RoleComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Roles
-                WHERE Name = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT r.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM Roles r
+                    LEFT JOIN Company c
+                    ON r.CompanyId = c.Id
+                WHERE r.Name = {code}
+                  AND r.IsActive = True
+                  AND r.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -298,7 +310,10 @@ public class RoleComponent
 
             return new RoleReadDto
             {
+                Id = row.Field<int>("Id"),
                 Name = row.Field<string>("Name"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -355,9 +370,11 @@ public class RoleComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Roles
-            WHERE Name = '{input.Name.Replace("'", "''")}'";
+                SELECT r.*, c.Id AS CompanyId, c.Name AS Company
+                FROM Roles r
+                LEFT JOIN Company c
+                ON r.CompanyId = c.Id
+            WHERE r.Name = '{input.Name.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -368,7 +385,10 @@ public class RoleComponent
 
             return new RoleReadDto
             {
+                Id = row.Field<int>("Id"),
                 Name = row.Field<string>("Name"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

@@ -70,7 +70,7 @@ public class DistributionListComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DistributionLists
-            (
+            (   CompanyId,
                 DocumentRequestId,
                 DivisionCode,
                 DepartmentCode,
@@ -85,6 +85,7 @@ public class DistributionListComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentRequestId}',
                 '{input.DivisionCode.Replace("'", "''")}',
                 '{input.DepartmentCode.Replace("'", "''")}',
@@ -116,6 +117,8 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -232,6 +235,8 @@ public class DistributionListComponent
                 .Select(row => new DistributionListReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") : 0,
                     DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
@@ -315,6 +320,8 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -355,6 +362,8 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -415,7 +424,8 @@ public class DistributionListComponent
             // Return updated record
             string selectQuery = $@"
             SELECT *
-            FROM DistributionLists
+            FROM DistributionLists 
+            
             WHERE Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -427,6 +437,8 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),

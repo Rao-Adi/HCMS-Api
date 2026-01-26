@@ -71,7 +71,7 @@ public class ESignatureComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO ESignatures
-            (
+            (   CompanyId,
                 UserId,
                 SignatureData,
                 SignatureType,
@@ -85,6 +85,7 @@ public class ESignatureComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.UserId}',
                 '{input.SignatureData}',
                 '{input.SignatureType}',
@@ -101,10 +102,12 @@ public class ESignatureComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM ESignatures
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                FROM ESignatures es
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+            WHERE es.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -116,6 +119,8 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
@@ -135,7 +140,7 @@ public class ESignatureComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
@@ -143,7 +148,7 @@ public class ESignatureComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM ESignatures
-                WHERE Id = {code}
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -155,7 +160,7 @@ public class ESignatureComponent
             string deleteQuery = $@"
                 UPDATE ESignatures
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -171,8 +176,8 @@ public class ESignatureComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE es.IsDeleted = False 
+                  AND es.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -180,18 +185,18 @@ public class ESignatureComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(UserId) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(es.UserId) LIKE '%{search}%'
+                    OR UPPER(es.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "UserId",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "UserId"
+                "NAME" => "es.UserId",
+                "ID" => "es.Id",
+                "ISACTIVE" => "es.IsActive",
+                _ => "es.UserId"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -199,8 +204,10 @@ public class ESignatureComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM ESignatures
+                        SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM ESignatures es
+                        LEFT JOIN Company c
+                        ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -227,6 +234,8 @@ public class ESignatureComponent
                 .Select(row => new ESignatureReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -257,16 +266,18 @@ public class ESignatureComponent
         }
     }
      
-    public async Task<ESignatureReadDto> GetByIdAsync(string code)
+    public async Task<ESignatureReadDto> GetByIdAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM ESignatures
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                FROM ESignatures es
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+                WHERE es.Id = {id}
+                  AND es.IsActive = True
+                  AND es.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -278,6 +289,8 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),
@@ -336,9 +349,11 @@ public class ESignatureComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM ESignatures
-            WHERE Id = '{input.Id}'";
+            SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                FROM ESignatures es
+                LEFT JOIN Company c
+                ON d.CompanyId = c.Id
+            WHERE es.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -350,6 +365,8 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
                 SignatureType = row.Field<int>("SignatureType"),

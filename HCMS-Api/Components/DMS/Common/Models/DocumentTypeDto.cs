@@ -7,6 +7,11 @@ public class DocumentTypeDto
 public class DocumentType : BaseEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     public string Code { get; set; } = null!;
     public string Name { get; set; } = null!;
     public string Description { get; set; } = null!;
@@ -15,13 +20,18 @@ public class DocumentType : BaseEntity
 }
 
 public class DocumentTypeCreateDto
-{ 
+{
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
     public string Name { get; set; }
     public string Description { get; set; }
 }
 
 public class DocumentTypeUpdateDto
 {
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
     public string Code { get; set; }
     public string Name { get; set; }
 
@@ -34,6 +44,10 @@ public class DocumentTypeUpdateDto
 public class DocumentTypeReadDto : AuditableEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
     public string Code { get; set; }
     public string Name { get; set; }
 

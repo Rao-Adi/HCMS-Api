@@ -69,7 +69,7 @@ public class UserComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Users
-            (
+            (   CompanyId,
                 EmployeeCode,
                 EmployeeName,
                 Email, 
@@ -87,6 +87,7 @@ public class UserComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.EmployeeCode}',
                 '{input.EmployeeName}',
                 '{input.Email}', 
@@ -108,9 +109,20 @@ public class UserComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Users
-            WHERE Id = {newId}";
+            SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
+			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
+					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
+                        FROM Users u
+                        LEFT JOIN Divisions div 
+						ON u.divisionCode = div.Code
+						LEFT JOIN Departments dep
+						ON u.DepartmentCode = dep.Code
+						LEFT JOIN SubDepartments sdep
+						ON u.SubdepartmentCode = sdep.Code
+                        LEFT JOIN Company c
+                        ON u.CompanyId = c.Id
+            WHERE u.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -122,6 +134,8 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),
@@ -257,7 +271,7 @@ public class UserComponent
                         SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
 			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
 					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
-					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName
+					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
                         FROM Users u
                         LEFT JOIN Divisions div 
 						ON u.divisionCode = div.Code
@@ -265,6 +279,8 @@ public class UserComponent
 						ON u.DepartmentCode = dep.Code
 						LEFT JOIN SubDepartments sdep
 						ON u.SubdepartmentCode = sdep.Code
+                        LEFT JOIN Company c
+                        ON u.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -290,7 +306,9 @@ public class UserComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new UserReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     EmployeeName = row.Table.Columns.Contains("EmployeeName") ? row.Field<string>("EmployeeName") : string.Empty,
                     Email = row.Table.Columns.Contains("Email") ? row.Field<string>("Email") : string.Empty,
@@ -337,11 +355,22 @@ public class UserComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Users
-                WHERE Id = {id}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+               SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
+			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
+					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
+                        FROM Users u
+                        LEFT JOIN Divisions div 
+						ON u.divisionCode = div.Code
+						LEFT JOIN Departments dep
+						ON u.DepartmentCode = dep.Code
+						LEFT JOIN SubDepartments sdep
+						ON u.SubdepartmentCode = sdep.Code
+                        LEFT JOIN Company c
+                        ON u.CompanyId = c.Id
+                WHERE u.Id = {id}
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -353,6 +382,8 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),
@@ -423,9 +454,20 @@ public class UserComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Users
-            WHERE Id = '{input.Id}'";
+            SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
+			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
+					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
+                        FROM Users u
+                        LEFT JOIN Divisions div 
+						ON u.divisionCode = div.Code
+						LEFT JOIN Departments dep
+						ON u.DepartmentCode = dep.Code
+						LEFT JOIN SubDepartments sdep
+						ON u.SubdepartmentCode = sdep.Code
+                        LEFT JOIN Company c
+                        ON u.CompanyId = c.Id
+            WHERE u.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -437,6 +479,8 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),

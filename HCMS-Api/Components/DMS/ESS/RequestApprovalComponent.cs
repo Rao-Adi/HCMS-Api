@@ -51,26 +51,13 @@ public class RequestApprovalComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("RequestApproval code is required.", 400);
-
-            // Check duplicate by Id OR DocumentRequestId
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM RequestApprovals
-            WHERE (Id = '{input.Id}'
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("RequestApproval already exists", 409);
+            
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO RequestApprovals
             (
-                Id,
+                CompanyId,
                 DocumentRequestId,
                 WorkflowStepId,
                 ApproverUserId,
@@ -86,7 +73,7 @@ public class RequestApprovalComponent
             )
             VALUES
             (
-                '{input.Id}',
+                '{input.CompanyId}',
                 '{input.DocumentRequestId}',
                 '{input.WorkflowStepId}',
                 '{input.ApproverUserId}',
@@ -106,9 +93,11 @@ public class RequestApprovalComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM RequestApprovals
-            WHERE Id = {newId}";
+            SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
+                     FROM RequestApprovals ra
+                     LEFT JOIN Company c
+                     ON d.CompanyId = c.Id
+            WHERE ra.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -120,6 +109,8 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),
@@ -177,8 +168,8 @@ public class RequestApprovalComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE ra.IsDeleted = False 
+                  AND ra.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -186,18 +177,18 @@ public class RequestApprovalComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DocumentRequestId) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(ra.DocumentRequestId) LIKE '%{search}%'
+                    OR UPPER(ra.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "DocumentRequestId",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "DocumentRequestId"
+                "NAME" => "ra.DocumentRequestId",
+                "CODE" => "ra.Id",
+                "ISACTIVE" => "ra.IsActive",
+                _ => "ra.DocumentRequestId"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -205,8 +196,10 @@ public class RequestApprovalComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM RequestApprovals
+                        SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
+                             FROM RequestApprovals ra
+                             LEFT JOIN Company c
+                             ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -233,6 +226,8 @@ public class RequestApprovalComponent
                 .Select(row => new RequestApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") :0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
                     ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
@@ -275,11 +270,13 @@ public class RequestApprovalComponent
         try
         {
             string query = $@"
-                SELECT Id, DocumentRequestId, Id,WorkflowStepId, IsActive
-                FROM RequestApprovals
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
+                     FROM RequestApprovals ra
+                     LEFT JOIN Company c
+                     ON d.CompanyId = c.Id
+                WHERE ra.Id = {code}
+                  AND ra.IsActive = True
+                  AND ra.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -291,6 +288,8 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),
@@ -311,49 +310,7 @@ public class RequestApprovalComponent
         }
     }
 
-
-    public async Task<RequestApprovalReadDto> GetByWorkflowStepIdAsync(string dId)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM RequestApprovals
-                WHERE Division = {dId}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("RequestApproval not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new RequestApprovalReadDto
-            {
-                Id = row.Field<int>("Id"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                WorkflowStepId = row.Field<int>("WorkflowStepId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                Status = row.Field<int>("Status"),
-                Observation = row.Field<string>("Observation"),
-                ActionDate = row.Field<DateTime>("ActionDate"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<RequestApprovalReadDto> UpdateAsync(RequestApprovalUpdateDto input)
     {
         try
@@ -392,10 +349,12 @@ public class RequestApprovalComponent
                 throw new Exception("Update failed");
 
             // Return updated record
-            string selectQuery = $@"
-            SELECT *
-            FROM RequestApprovals
-            WHERE Id = '{input.Id}'";
+            string selectQuery = $@" 
+                 SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
+                     FROM RequestApprovals ra
+                     LEFT JOIN Company c
+                     ON d.CompanyId = c.Id
+            WHERE ta.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -407,6 +366,8 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
                 ApproverUserId = row.Field<int>("ApproverUserId"),

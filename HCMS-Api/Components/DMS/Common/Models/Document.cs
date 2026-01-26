@@ -10,6 +10,11 @@ public class Document : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
+
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;
 
@@ -37,6 +42,11 @@ public class DocumentReadDto : AuditableEntity
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
+
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;
 
@@ -63,6 +73,9 @@ public class DocumentReadDto : AuditableEntity
 
 public class DocumentCreateDto
 {
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string DocumentNumber { get; set; } = null!;
 
     public string DocumentTypeCode { get; set; } = null!;
@@ -85,6 +98,10 @@ public class DocumentCreateDto
 public class DocumentUpdateDto : AuditableEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
 
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;

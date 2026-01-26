@@ -70,7 +70,7 @@ public class DocumentTrainingComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentTraining
-            (
+            (   CompanyId,
                 DocumentId,
                 TrainingMode,
                 DocumentId,
@@ -91,6 +91,7 @@ public class DocumentTrainingComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentId}',
                 '{input.TrainingMode}',
                 '{input.DocumentId}',
@@ -111,9 +112,11 @@ public class DocumentTrainingComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = {newId}";
+            SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+            FROM DocumentTraining dt
+            LEFT JOIN Company c
+            ON d.CompanyId = c.Id
+            WHERE dt.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -125,6 +128,8 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
@@ -146,27 +151,27 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM Documents
-                WHERE Id = {code}
+                FROM DocumentTraining
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentTraining not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE Documents
+                UPDATE DocumentTraining
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -182,8 +187,8 @@ public class DocumentTrainingComponent
         try
         {
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
-                  AND dep.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dt.IsDeleted = False 
+                  AND dt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -191,18 +196,18 @@ public class DocumentTrainingComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(dep.Name) LIKE '%{search}%'
-                    OR UPPER(dep.Id) LIKE '%{search}%'
+                    UPPER(dt.Name) LIKE '%{search}%'
+                    OR UPPER(dt.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dep.Name",
-                "CODE" => "dep.Id",
-                "ISACTIVE" => "dep.IsActive",
-                _ => "dep.Name"
+                "NAME" => "dt.Name",
+                "CODE" => "dt.Id",
+                "ISACTIVE" => "dt.IsActive",
+                _ => "dt.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -210,16 +215,16 @@ public class DocumentTrainingComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Documents dep
-                        LEFT JOIN Documents div
-						ON dep.DocumentId = div.Id
+                        SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM DocumentTraining dt
+                        LEFT JOIN Company c
+                        ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Documents dep
+                        FROM DocumentTraining dep
                         {whereClause};
                     ";
 
@@ -240,6 +245,8 @@ public class DocumentTrainingComponent
                 .Select(row => new DocumentTrainingReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     TrainingMode = row.Table.Columns.Contains("TrainingMode") ? row.Field<int>("TrainingMode") : 0,
                     TrainingProofURL = row.Table.Columns.Contains("TrainingProofURL") ? row.Field<string>("TrainingProofURL") : string.Empty,
@@ -282,7 +289,7 @@ public class DocumentTrainingComponent
         {
             string query = @"
             SELECT Id, Name
-            FROM Documents
+            FROM DocumentTraining
             WHERE IsActive = True
               AND IsDeleted = False
             ORDER BY Name";
@@ -306,27 +313,31 @@ public class DocumentTrainingComponent
     }
 
 
-    public async Task<DocumentTrainingReadDto> GetByCodeAsync(string code)
+    public async Task<DocumentTrainingReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM Documents
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM DocumentTraining dt
+                        LEFT JOIN Company c
+                        ON d.CompanyId = c.Id
+                WHERE dt.Id = {id}
+                  AND dt.IsActive = True
+                  AND dt.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentTraining not found", 200);
 
             DataRow row = dt.Rows[0];
 
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),
@@ -347,48 +358,7 @@ public class DocumentTrainingComponent
         }
     }
 
-
-    public async Task<DocumentTrainingReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM Documents
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new DocumentTrainingReadDto
-            {
-                Id = row.Field<int>("Id"),
-                DocumentId = row.Field<int>("DocumentId"),
-                TrainingMode = row.Field<int>("TrainingMode"),
-                TrainingProofURL = row.Field<string>("TrainingProofURL"),
-                AssessmentScore = row.Field<decimal>("AssessmentScore"),
-                ValidationStatus = row.Field<int>("ValidationStatus"),
-                ReadyForAuthorization = row.Field<bool>("ReadyForAuthorization"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
+ 
 
     public async Task<DocumentTrainingReadDto> UpdateAsync(DocumentTrainingUpdateDto input)
     {
@@ -403,18 +373,18 @@ public class DocumentTrainingComponent
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Documents
+            FROM DocumentTraining
             WHERE Id = '{input.Id}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentTraining not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE Documents
+            UPDATE DocumentTraining
             SET 
                 DocumentId = '{input.DocumentId}',
                 TrainingMode = '{input.TrainingMode}',
@@ -434,9 +404,11 @@ public class DocumentTrainingComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Documents
-            WHERE Id = '{input.Id}'";
+                    SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM DocumentTraining dt
+                    LEFT JOIN Company c
+                    ON d.CompanyId = c.Id
+            WHERE dt.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -448,6 +420,8 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
                 TrainingProofURL = row.Field<string>("TrainingProofURL"),

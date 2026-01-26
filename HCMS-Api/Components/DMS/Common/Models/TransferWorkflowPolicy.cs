@@ -9,6 +9,12 @@ public class TransferWorkflowPolicy : AuditableEntity
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
+
+
     [MaxLength(10)]
     public string DivisionCode { get; set; } = null!;
 
@@ -20,6 +26,10 @@ public class TransferWorkflowPolicy : AuditableEntity
 public class TransferWorkflowPolicyReadDto : AuditableEntity
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
 
     [MaxLength(10)]
     public string DivisionCode { get; set; } = null!;
@@ -33,6 +43,11 @@ public class TransferWorkflowPolicyCreateDto
 {
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
+
     [MaxLength(10)]
     public string DivisionCode { get; set; } = null!;
 
@@ -44,6 +59,11 @@ public class TransferWorkflowPolicyCreateDto
 public class TransferWorkflowPolicyUpdateDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
 
     [MaxLength(10)]
     public string DivisionCode { get; set; } = null!;

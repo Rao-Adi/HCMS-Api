@@ -91,15 +91,15 @@ public class DMSDocumentTrainingController : Controller
     }
 
 
-    [HttpGet("get-document-training-by-code/{code}")]
-    public async Task<IActionResult> GetDocumentTrainingById(string code)
+    [HttpGet("get-document-training-by-id/{id}")]
+    public async Task<IActionResult> GetDocumentTrainingById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<DocumentTrainingReadDto>()
             {
                 Success = true,
-                Data = await _documentTrainingComponent.GetByCodeAsync(code),
+                Data = await _documentTrainingComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -179,27 +179,16 @@ public class DMSDocumentTrainingController : Controller
         }
     }
 
-    [HttpDelete("delete-document-training/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-document-training/{id}")]
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
         {
-            var existingRecord = await _documentTrainingComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Document Training not found",
-                    Code = 404
-                });
-            }
-
+             
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentTrainingComponent.DeleteAsync(code),
+                Data = await _documentTrainingComponent.DeleteAsync(id),
                 Message = "Document Training deleted successfully.",
                 Code = 200
             });

@@ -73,6 +73,7 @@ public class DesignationComponent
             string insertQuery = $@"
             INSERT INTO Designations
             (
+                CompanyId,
                 Code,
                 Name,
                 IsActive,
@@ -84,6 +85,7 @@ public class DesignationComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.Code.Replace("'", "''")}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
@@ -99,9 +101,11 @@ public class DesignationComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM Designations
-            WHERE Id = {newId}";
+            SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+            FROM Designations d
+            LEFT JOIN Company 
+            ON d.CompanyId = c.Id
+            WHERE d.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -112,6 +116,8 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -168,8 +174,8 @@ public class DesignationComponent
 
 
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False 
+                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -177,18 +183,18 @@ public class DesignationComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    UPPER(d.Name) LIKE '%{search}%'
+                    OR UPPER(d.Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Code",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "d.Name",
+                "CODE" => "d.Code",
+                "ISACTIVE" => "d.IsActive",
+                _ => "d.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -196,8 +202,10 @@ public class DesignationComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM Designations
+                        SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                        FROM Designations d
+                        LEFT JOIN Company 
+                        ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -223,6 +231,8 @@ public class DesignationComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DesignationReadDto
                 {
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -290,11 +300,13 @@ public class DesignationComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM Designations
-                WHERE Code = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+                    FROM Designations d
+                    LEFT JOIN Company 
+                    ON d.CompanyId = c.Id
+                WHERE d.Code = {code}
+                  AND d.IsActive = True
+                  AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -305,6 +317,8 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -334,8 +348,8 @@ public class DesignationComponent
 
             // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Designations
+                    SELECT COUNT(1)
+                    FROM Designations
             WHERE Code = '{input.Code.Replace("'", "''")}'
               AND IsDeleted = FALSE";
 
@@ -361,9 +375,11 @@ public class DesignationComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM Designations
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            SELECT d.*,c.Id AS CompanyId, c.Name AS Company
+            FROM Designations d
+            LEFT JOIN Company 
+            ON d.CompanyId = c.Id
+            WHERE d.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -374,6 +390,8 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

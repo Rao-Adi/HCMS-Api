@@ -6,7 +6,7 @@ public class BaseEntity
 {
     [Key]
     public int Id { get; set; }
-
+     
     public Boolean IsDeleted { get; set; }
 
     public Boolean IsActive { get; set; }

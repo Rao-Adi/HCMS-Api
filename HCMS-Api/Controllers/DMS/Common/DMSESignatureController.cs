@@ -62,15 +62,15 @@ public class DMSESignatureController : Controller
     }
 
 
-    [HttpGet("get-esignature-by-code/{code}")]
-    public async Task<IActionResult> GetESignatureById(string code)
+    [HttpGet("get-esignature-by-id/{id}")]
+    public async Task<IActionResult> GetESignatureById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<ESignatureReadDto>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.GetByIdAsync(code),
+                Data = await _eSignatureComponent.GetByIdAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -149,27 +149,15 @@ public class DMSESignatureController : Controller
         }
     }
 
-    [HttpDelete("delete-esignature/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-esignature/{id}")]
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
-        {
-            var existingRecord = await _eSignatureComponent.GetByIdAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "DocumentType not found",
-                    Code = 404
-                });
-            }
-
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.DeleteAsync(code),
+                Data = await _eSignatureComponent.DeleteAsync(id),
                 Message = "DocumentType deleted successfully.",
                 Code = 200
             });

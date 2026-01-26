@@ -69,7 +69,7 @@ public class DistributionTypeComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DistributionTypes
-            (
+            (   CompanyId,
                 Name, 
                 IsActive,
                 IsDeleted,
@@ -80,6 +80,7 @@ public class DistributionTypeComponent
             )
             VALUES
             (
+                '{input.CompanyId}',  
                 '{input.Name.Replace("'", "''")}',  
                 TRUE,
                 FALSE,
@@ -94,8 +95,10 @@ public class DistributionTypeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM DistributionTypes
+                        SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
+                        FROM DistributionTypes dt
+                        LEFT JOIN Company
+                        ON dt.CompanyId = c.Id
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -108,6 +111,8 @@ public class DistributionTypeComponent
             return new DistributionTypeReadDto
             {
                 Id = row.Field<int>("id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"), 
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -190,8 +195,8 @@ public class DistributionTypeComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dt.IsDeleted = False 
+                  AND dt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -199,18 +204,18 @@ public class DistributionTypeComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Name) LIKE '%{search}%'
+                    UPPER(dt.Name) LIKE '%{search}%'
+                    OR UPPER(dt.Name) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "DESCRIPTION" => "Description",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "dt.Name",
+                "DESCRIPTION" => "dt.Description",
+                "ISACTIVE" => "dt.IsActive",
+                _ => "dt.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -218,8 +223,10 @@ public class DistributionTypeComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM DistributionTypes
+                        SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
+                            FROM DistributionTypes dt
+                            LEFT JOIN Company
+                            ON dt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -245,6 +252,9 @@ public class DistributionTypeComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DistributionTypeReadDto
                 {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty, 
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -280,11 +290,13 @@ public class DistributionTypeComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM DistributionTypes
-                WHERE Id = {id}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
+                        FROM DistributionTypes dt
+                        LEFT JOIN Company
+                        ON dt.CompanyId = c.Id
+                WHERE dt.Id = {id}
+                  AND dt.IsActive = True
+                  AND dt.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -295,6 +307,9 @@ public class DistributionTypeComponent
 
             return new DistributionTypeReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -350,9 +365,11 @@ public class DistributionTypeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM DistributionTypes
-            WHERE Name = '{input.Name.Replace("'", "''")}'";
+            SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
+            FROM DistributionTypes dt
+            LEFT JOIN Company
+            ON dt.CompanyId = c.Id
+            WHERE dt.Name = '{input.Name.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -363,6 +380,9 @@ public class DistributionTypeComponent
 
             return new DistributionTypeReadDto
             {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

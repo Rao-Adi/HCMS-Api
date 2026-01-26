@@ -14,6 +14,10 @@ public class SubDepartment
     [Key]
     public int Id { get; set; }
 
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
     [MaxLength(10)]
     public string DepartmentCode { get; set; } = null!;
 
@@ -37,7 +41,10 @@ public class SubDepartment
 
 
 public class SubDepartmentCreateDto
-{ 
+{
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string DepartmentCode { get; set; }
 
     public string Name { get; set; }
@@ -45,6 +52,9 @@ public class SubDepartmentCreateDto
 
 public class SubDepartmentUpdateDto
 {
+    // 🔑 Tenant
+    public int CompanyId { get; set; } 
+
     public string Code { get; set; }
     public string Name { get; set; }
 
@@ -56,6 +66,11 @@ public class SubDepartmentUpdateDto
 public class SubDepartmentReadDto
 {
     public int Id { get; set; }
+
+    // 🔑 Tenant
+    public int CompanyId { get; set; }
+    public string Company { get; set; } = null!;
+
     public string Code { get; set; }
     public string Name { get; set; }
 

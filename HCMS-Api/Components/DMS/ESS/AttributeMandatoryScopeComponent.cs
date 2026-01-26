@@ -70,6 +70,7 @@ public class AttributeMandatoryScopeComponent
             string insertQuery = $@"
             INSERT INTO AttributeMandatoryScopes
             (
+                CompanyId,
                 DocumentAttributeId,
                 DivisionCode,
                 DepartmentCode,
@@ -84,6 +85,7 @@ public class AttributeMandatoryScopeComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentAttributeId}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
@@ -111,6 +113,8 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c 
+                        ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -123,6 +127,9 @@ public class AttributeMandatoryScopeComponent
             return new AttributeMandatoryScopeReadDto
             {
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -223,6 +230,9 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c 
+                        ON doc.CompanyId = c.Id
+
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -249,6 +259,9 @@ public class AttributeMandatoryScopeComponent
                 .Select(row => new AttributeMandatoryScopeReadDto
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
+
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("CompanyId"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -334,6 +347,8 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c 
+                        ON doc.CompanyId = c.Id
                 WHERE DocumentAttributeId = {id}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -357,6 +372,9 @@ public class AttributeMandatoryScopeComponent
                 .Select(row => new AttributeMandatoryScopeReadDto
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
+
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("CompanyId"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -450,6 +468,8 @@ public class AttributeMandatoryScopeComponent
                             ON doc.DepartmentCode = dep.Code
                             LEFT JOIN SubDepartments subd
                             ON doc.SubDepartmentCode = subd.Code
+                            LEFT JOIN Company c 
+                            ON doc.CompanyId = c.Id
             WHERE id = {updated}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -461,6 +481,9 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("CompanyId"),
+
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
 
                 Division = row.Field<string>("DivisionName"),

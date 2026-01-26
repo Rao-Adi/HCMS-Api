@@ -91,7 +91,7 @@ public class DocumentComponent
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Documents
-            (
+            (   CompanyId,
                 DocumentNumber,
                 DocumentTypeCode,
                 DivisionCode,
@@ -112,6 +112,7 @@ public class DocumentComponent
             )
             VALUES
             (
+                '{input.CompanyId}',
                 '{input.DocumentNumber}',
                 '{input.DocumentTypeCode}',
                 '{input.DivisionCode}',
@@ -137,7 +138,8 @@ public class DocumentComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
                         ON doc.DocumentTypeCode = dt.Code
@@ -147,6 +149,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c
+                        ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -159,6 +163,8 @@ public class DocumentComponent
             return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
@@ -253,7 +259,8 @@ public class DocumentComponent
 
             string query = $@"
                         SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
                         ON doc.DocumentTypeCode = dt.Code
@@ -263,6 +270,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c
+                        ON doc.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -289,6 +298,10 @@ public class DocumentComponent
                 .Select(row => new DocumentReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
 
                     DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
@@ -381,7 +394,8 @@ public class DocumentComponent
         {
             string query = $@"
                 SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
                         ON doc.DocumentTypeCode = dt.Code
@@ -391,6 +405,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c
+                        ON doc.CompanyId = c.Id
                 WHERE doc.DocumentNumber = {documentNumber}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -405,6 +421,10 @@ public class DocumentComponent
             return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
                 DocumentNumber = row.Field<string>("DocumentNumber"),
 
                 Division = row.Field<string>("DivisionName"),
@@ -446,7 +466,8 @@ public class DocumentComponent
         {
             string query = $@"
                 SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
                         ON doc.DocumentTypeCode = dt.Code
@@ -456,6 +477,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c
+                        ON doc.CompanyId = c.Id
                 WHERE doc.DivisionCode = {dCode}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -470,6 +493,10 @@ public class DocumentComponent
             return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
                 DocumentNumber = row.Field<string>("DocumentNumber"),
 
                 Division = row.Field<string>("DivisionName"),
@@ -552,8 +579,9 @@ public class DocumentComponent
 
             // Return updated record
             string selectQuery = $@"
-           SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                    SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
                         ON doc.DocumentTypeCode = dt.Code
@@ -562,7 +590,9 @@ public class DocumentComponent
                         LEFT JOIN Departments dep
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code 
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN Company c
+                        ON doc.CompanyId = c.Id
             WHERE doc.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -575,6 +605,10 @@ public class DocumentComponent
             return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
                 DocumentNumber = row.Field<string>("DocumentNumber"),
 
                 Division = row.Field<string>("DivisionName"),
