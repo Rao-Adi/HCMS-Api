@@ -24,3 +24,47 @@ public class Company
     // Navigation
     public ICollection<Division> Divisions { get; set; } = new List<Division>();
 }
+
+public class CompanyReadDto : AuditableEntity
+{
+    [Key]
+    public int Id { get; set; }
+
+    [MaxLength(10)]
+    public string Code { get; set; } = null!;
+
+    [MaxLength(100)]
+    public string Name { get; set; } = null!;
+     
+     
+}
+
+
+public class CompanyCreateDto
+{ 
+    public int Id { get; set; }
+
+    [MaxLength(10)]
+    public string Code { get; set; } = null!;
+
+    [MaxLength(100)]
+    public string Name { get; set; } = null!;
+     
+}
+
+
+public class CompanyUpdateDto
+{ 
+    public int Id { get; set; }
+
+    [MaxLength(10)]
+    public string Code { get; set; } = null!;
+
+    [MaxLength(100)]
+    public string Name { get; set; } = null!;
+
+    public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+     
+     
+}

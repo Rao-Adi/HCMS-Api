@@ -95,7 +95,7 @@ public class RequestApprovalComponent
             string selectQuery = $@"
             SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
-                     LEFT JOIN Company c
+                     LEFT JOIN Companies c
                      ON d.CompanyId = c.Id
             WHERE ra.Id = {newId}";
 
@@ -198,7 +198,7 @@ public class RequestApprovalComponent
             string query = $@"
                         SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                              FROM RequestApprovals ra
-                             LEFT JOIN Company c
+                             LEFT JOIN Companies c
                              ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -272,7 +272,7 @@ public class RequestApprovalComponent
             string query = $@"
                 SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
-                     LEFT JOIN Company c
+                     LEFT JOIN Companies c
                      ON d.CompanyId = c.Id
                 WHERE ra.Id = {code}
                   AND ra.IsActive = True
@@ -352,7 +352,7 @@ public class RequestApprovalComponent
             string selectQuery = $@" 
                  SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
-                     LEFT JOIN Company c
+                     LEFT JOIN Companies c
                      ON d.CompanyId = c.Id
             WHERE ta.Id = '{input.Id}'";
 

@@ -99,7 +99,7 @@ public class NotificationComponent
             string selectQuery = $@"
              SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Notifications n
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
             WHERE n.Id = {newId}";
 
@@ -198,7 +198,7 @@ public class NotificationComponent
             string query = $@"
                          SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                             FROM Notifications n
-                            LEFT JOIN Company c
+                            LEFT JOIN Companies c
                             ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -265,7 +265,7 @@ public class NotificationComponent
             string query = $@"
                  SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Notifications n
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
                 WHERE n.Id = {code}
                   AND n.IsActive = True
@@ -340,7 +340,7 @@ public class NotificationComponent
             string selectQuery = $@" 
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Notifications n
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
             WHERE n.Id = '{input.Id}'";
 

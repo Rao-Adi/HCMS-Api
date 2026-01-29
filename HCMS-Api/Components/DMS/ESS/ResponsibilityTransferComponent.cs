@@ -133,7 +133,7 @@ public class ResponsibilityTransferComponent
             string selectQuery = $@"
             SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
             FROM ResponsibilityTransfers rt
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON rt.CompanyId = c.Id
             WHERE rt.Id = {newId}";
 
@@ -245,7 +245,7 @@ public class ResponsibilityTransferComponent
             string query = $@"
                          SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
                             FROM ResponsibilityTransfers rt
-                            LEFT JOIN Company c
+                            LEFT JOIN Companies c
                             ON rt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -319,7 +319,7 @@ public class ResponsibilityTransferComponent
             string query = $@"
                  SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM ResponsibilityTransfers rt
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
                 WHERE rt.Id = {code}
                   AND rt.IsActive = True
@@ -408,7 +408,7 @@ public class ResponsibilityTransferComponent
             string selectQuery = $@"
                     SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM ResponsibilityTransfers rt
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
             WHERE rt.Id = '{input.Id}'";
 

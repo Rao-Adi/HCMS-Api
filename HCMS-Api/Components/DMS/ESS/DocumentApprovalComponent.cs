@@ -107,7 +107,7 @@ public class DocumentApprovalComponent
             string selectQuery = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
             WHERE da.Id = {newId}";
 
@@ -210,7 +210,7 @@ public class DocumentApprovalComponent
             string query = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -313,7 +313,7 @@ public class DocumentApprovalComponent
             string query = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
                 WHERE da.Id = {code}
                   AND da.IsActive = True
@@ -359,7 +359,7 @@ public class DocumentApprovalComponent
             string query = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
                 WHERE da.Division = {dCode}
                   AND da.IsActive = True
@@ -444,7 +444,7 @@ public class DocumentApprovalComponent
             string selectQuery = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
             WHERE da.Id = '{input.Id}'";
 

@@ -146,12 +146,12 @@ public class SubDepartmentComponent
 
             // 📥 Fetch inserted record
             string selectQuery = $@"
-                    SELECT s.*, c.Id AS CompanyId, c.Name AS Company
+                    SELECT s.*, c.Id AS CompanyId, c.Name AS Company, d.Code As DepartmentCode, d.Name AS Department
                         FROM SubDepartments s
                         LEFT JOIN Departments d
                         ON s.DepartmentCode = d.Code
-                        LEFT JOIN Company c
-                        ON r.CompanyId = c.Id
+                        LEFT JOIN Companies c
+                        ON s.CompanyId = c.Id
                     WHERE s.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -242,7 +242,7 @@ public class SubDepartmentComponent
             {
                 "NAME" => "subd.Name",
                 "CODE" => "subd.Code",
-                "ISACTIVE" => "IsActive",
+                "ISACTIVE" => "subd.IsActive",
                 _ => "subd.Name"
             };
 
@@ -251,12 +251,12 @@ public class SubDepartmentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT subd.*, c.Id AS CompanyId, c.Name AS Company
+                        SELECT subd.*, c.Id AS CompanyId, c.Name AS Company, d.Code AS DepartmentCode,d.Name AS Department
                         FROM SubDepartments subd
                         LEFT JOIN Departments d
-                        ON s.DepartmentCode = d.Code
-                        LEFT JOIN Company c
-                        ON r.CompanyId = c.Id
+                        ON subd.DepartmentCode = d.Code
+                        LEFT JOIN Companies c
+                        ON subd.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -287,8 +287,8 @@ public class SubDepartmentComponent
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    Department = row.Table.Columns.Contains("Department") ? row.Field<string>("Department") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode1") ? row.Field<string>("DepartmentCode1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -354,12 +354,12 @@ public class SubDepartmentComponent
         try
         {
             string query = $@"
-                SELECT subd.*, c.Id AS CompanyId, c.Name AS Company
+                SELECT subd.*, c.Id AS CompanyId, c.Name AS Company, d.Code AS DepartmentCode,d.Name AS Department
                         FROM SubDepartments subd
                         LEFT JOIN Departments d
-                        ON s.DepartmentCode = d.Code
-                        LEFT JOIN Company c
-                        ON r.CompanyId = c.Id
+                        ON subd.DepartmentCode = d.Code
+                        LEFT JOIN Companies c
+                        ON subd.CompanyId = c.Id
                 WHERE subd.Code = '{code}'
                   AND subd.IsActive = True
                   AND subd.IsDeleted = False";
@@ -378,8 +378,8 @@ public class SubDepartmentComponent
                 Company = row.Field<string>("Company"),
                 Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                 Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                Department = row.Table.Columns.Contains("Department") ? row.Field<string>("Department") : string.Empty,
+                DepartmentCode = row.Table.Columns.Contains("DepartmentCode1") ? row.Field<string>("DepartmentCode1") : string.Empty,
                 IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                 IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                 CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -401,12 +401,12 @@ public class SubDepartmentComponent
         try
         {
             string query = $@"
-                SELECT subd.*, c.Id AS CompanyId, c.Name AS Company
+                SELECT subd.*, c.Id AS CompanyId, c.Name AS Company, d.Code AS DepartmentCode,d.Name AS Department
                         FROM SubDepartments subd
                         LEFT JOIN Departments d
-                        ON s.DepartmentCode = d.Code
-                        LEFT JOIN Company c
-                        ON r.CompanyId = c.Id
+                        ON subd.DepartmentCode = d.Code
+                        LEFT JOIN Companies c
+                        ON subd.CompanyId = c.Id
                 WHERE subd.DepartmentCode = '{departmentCode}'
                   AND subd.IsActive = True
                   AND subd.IsDeleted = False";
@@ -428,8 +428,8 @@ public class SubDepartmentComponent
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    Department = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    Department = row.Table.Columns.Contains("Department") ? row.Field<string>("Department") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode1") ? row.Field<string>("DepartmentCode1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -526,11 +526,11 @@ public class SubDepartmentComponent
 
             // 📥 Fetch updated record (no incorrect JOINs)
             string selectQuery = $@"
-                    SELECT s.*, c.Id AS CompanyId, c.Name AS Company
+                    SELECT subd.*, c.Id AS CompanyId, c.Name AS Company, d.Code AS DepartmentCode,d.Name AS Department
                         FROM SubDepartments s
                         LEFT JOIN Departments d
                         ON s.DepartmentCode = d.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                     WHERE s.Code = '{input.Code.Replace("'", "''")}'";
 

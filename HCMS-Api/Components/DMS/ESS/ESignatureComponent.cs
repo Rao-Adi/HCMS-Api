@@ -105,7 +105,7 @@ public class ESignatureComponent
             string selectQuery = $@" 
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
             WHERE es.Id = {newId}";
 
@@ -206,7 +206,7 @@ public class ESignatureComponent
             string query = $@"
                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM ESignatures es
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -273,7 +273,7 @@ public class ESignatureComponent
             string query = $@"
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 WHERE es.Id = {id}
                   AND es.IsActive = True
@@ -351,7 +351,7 @@ public class ESignatureComponent
             string selectQuery = $@"
             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
             WHERE es.Id = '{input.Id}'";
 

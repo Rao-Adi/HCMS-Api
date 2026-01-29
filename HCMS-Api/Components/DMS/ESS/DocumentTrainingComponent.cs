@@ -114,7 +114,7 @@ public class DocumentTrainingComponent
             string selectQuery = $@"
             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
             FROM DocumentTraining dt
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON d.CompanyId = c.Id
             WHERE dt.Id = {newId}";
 
@@ -217,7 +217,7 @@ public class DocumentTrainingComponent
             string query = $@"
                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -320,7 +320,7 @@ public class DocumentTrainingComponent
             string query = $@"
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
                 WHERE dt.Id = {id}
                   AND dt.IsActive = True
@@ -406,7 +406,7 @@ public class DocumentTrainingComponent
             string selectQuery = $@"
                     SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM DocumentTraining dt
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
             WHERE dt.Id = '{input.Id}'";
 

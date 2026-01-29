@@ -54,15 +54,13 @@ public class BusinessDomainComponent
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Document Type name is required.", 200);
 
-            if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Document Type code is required.", 200);
 
             string normalizedCode = input.Code.Trim().ToUpper();
 
-            // 🔒 Enforce controlled document types
-            if (!AllowedDocumentTypes.Contains(normalizedCode))
-                throw new CustomException(
-                    "Invalid Document Type. Allowed values: SOP, POL, FRM", 400);
+            //// 🔒 Enforce controlled document types
+            //if (!AllowedDocumentTypes.Contains(normalizedCode))
+            //    throw new CustomException(
+            //        "Invalid Document Type. Allowed values: SOP, POL, FRM", 400);
 
             // 🔍 Prevent duplicate Code or Name
             string duplicateCheckQuery = $@"
@@ -78,11 +76,35 @@ public class BusinessDomainComponent
             if (exists > 0)
                 throw new CustomException("Document Type already exists", 409);
 
+            // 🔢 Generate next Division Code
+            string getLastCodeQuery = @"
+                            SELECT Code
+                            FROM BusinessDomains
+                            WHERE Code IS NOT NULL
+                            ORDER BY Id DESC
+                            LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("BSD-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"BSD-{nextNumber:D4}";
+
             // 🧾 Insert (GLOBAL, no hierarchy)
             string insertQuery = $@"
                     INSERT INTO BusinessDomains
                     (
                         CompanyId,
+                        SubDepartmentCode,
                         Code,
                         Name,
                         IsActive,
@@ -95,7 +117,8 @@ public class BusinessDomainComponent
                     VALUES
                     (
                         '{input.CompanyId}',
-                        '{normalizedCode}',
+                        '{input.SubDepartmentCode}',
+                        '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         TRUE,
                         FALSE,
@@ -111,13 +134,13 @@ public class BusinessDomainComponent
 
             // 📥 Fetch inserted record
             string selectQuery = $@"
-                    SELECT bd.*, dep.*, c.Id,c.Name
+                    SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
-                    WHERE Id = {newId}";
+                    WHERE bd.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -130,7 +153,9 @@ public class BusinessDomainComponent
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -195,8 +220,8 @@ public class BusinessDomainComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    UPPER(bd.Name) LIKE '%{search}%'
+                    OR UPPER(bd.Code) LIKE '%{search}%'
                 )";
             }
 
@@ -214,11 +239,11 @@ public class BusinessDomainComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT bd.*, dep.*, c.Id,c.Name
+                        SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -247,11 +272,11 @@ public class BusinessDomainComponent
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    SubDepartment = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                    SubDepartmentCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    SubDepartment = row.Table.Columns.Contains("SubDepartment") ? row.Field<string>("SubDepartment") : string.Empty,
+                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode1") ? row.Field<string>("SubDepartmentCode1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -317,15 +342,15 @@ public class BusinessDomainComponent
         try
         {
             string query = $@"
-                SELECT bd.*, dep.*, c.Id,c.Name
+                SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
-                WHERE Code = '{code}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                WHERE bd.Code = '{code}'
+                  AND bd.IsActive = True
+                  AND bd.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -338,7 +363,7 @@ public class BusinessDomainComponent
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),
@@ -363,15 +388,15 @@ public class BusinessDomainComponent
         try
         {
             string query = $@"
-                SELECT bd.*, dep.*, c.Id,c.Name
+                SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
-                WHERE Division = '{dCode}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                WHERE bd.SubDepartmentCode = '{dCode}'
+                  AND bd.IsActive = True
+                  AND bd.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -384,7 +409,7 @@ public class BusinessDomainComponent
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),
@@ -443,11 +468,11 @@ public class BusinessDomainComponent
 
             // Return updated record
             string selectQuery = $@"
-                        SELECT bd.*, dep.*, c.Id,c.Name
+                        SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
@@ -462,7 +487,7 @@ public class BusinessDomainComponent
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
                 SubDepartment = row.Field<string>("SubDepartment"),

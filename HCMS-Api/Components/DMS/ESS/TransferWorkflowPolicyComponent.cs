@@ -101,7 +101,7 @@ public class TransferWorkflowPolicyComponent
             string selectQuery = $@" 
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TransferWorkflowPolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE t.Id = {newId}";
 
@@ -200,7 +200,7 @@ public class TransferWorkflowPolicyComponent
             string query = $@"
                         SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                         FROM TransferWorkflowPolicies t
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -269,7 +269,7 @@ public class TransferWorkflowPolicyComponent
             string query = $@"
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                 FROM TransferWorkflowPolicies t
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON r.CompanyId = c.Id
                 WHERE t.DivisionCode = {code}
                   AND t.IsActive = True
@@ -346,7 +346,7 @@ public class TransferWorkflowPolicyComponent
             string selectQuery = $@"
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TransferWorkflowPolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 

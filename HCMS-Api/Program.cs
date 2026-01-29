@@ -238,6 +238,7 @@ builder.Services.AddScoped<WorkflowPolicyComponent>();
 builder.Services.AddScoped<WorkflowStepComponent>(); 
 builder.Services.AddScoped<DesignationComponent>(); 
 builder.Services.AddScoped<DistributionTypeComponent>();  
+builder.Services.AddScoped<CompanyComponent>();  
 
 #endregion DMS Service
 

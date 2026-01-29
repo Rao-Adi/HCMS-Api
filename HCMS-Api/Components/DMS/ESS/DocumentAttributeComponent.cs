@@ -103,11 +103,11 @@ public class DocumentAttributeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *,c.Id AS CompanyId, c.Name Company
+            SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
             FROM DocumentAttributes da
                  LEFT JOIN DocumentTypes dt
                  ON da.DocumentTypeCode = dt.Code
-                 LEFT JOIN Company c
+                 LEFT JOIN Companies c
                  ON da.CompanyId = c.Id
             WHERE da.Id = '{newId}'";
 
@@ -210,11 +210,11 @@ public class DocumentAttributeComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *,c.Id AS CompanyId, c.Name Company
+                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
                         FROM DocumentAttributes da
                              LEFT JOIN DocumentTypes dt
                              ON da.DocumentTypeCode = dt.Code
-                             LEFT JOIN Company c
+                             LEFT JOIN Companies c
                              ON da.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -315,11 +315,11 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT *,c.Id AS CompanyId, c.Name Company
+                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
                     FROM DocumentAttributes da
                          LEFT JOIN DocumentTypes dt
                          ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Company c
+                         LEFT JOIN Companies c
                          ON da.CompanyId = c.Id
                 WHERE da.Id = '{code}'
                   AND da.IsActive = True
@@ -365,11 +365,11 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT *,c.Id AS CompanyId, c.Name Company
+                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
                     FROM DocumentAttributes da
                          LEFT JOIN DocumentTypes dt
                          ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Company c
+                         LEFT JOIN Companies c
                          ON da.CompanyId = c.Id
                 WHERE DocumentTypeCode = '{dCode}'
                   AND da.IsActive = True
@@ -450,11 +450,11 @@ public class DocumentAttributeComponent
 
             // Return updated record
             string selectQuery = $@"
-                    SELECT *,c.Id AS CompanyId, c.Name Company
+                    SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
                     FROM DocumentAttributes da
                          LEFT JOIN DocumentTypes dt
                          ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Company c
+                         LEFT JOIN Companies c
                          ON da.CompanyId = c.Id
             WHERE da.Id = '{input.Id}'";
 

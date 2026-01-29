@@ -120,7 +120,7 @@ public class UserComponent
 						ON u.DepartmentCode = dep.Code
 						LEFT JOIN SubDepartments sdep
 						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
             WHERE u.Id = {newId}";
 
@@ -279,7 +279,7 @@ public class UserComponent
 						ON u.DepartmentCode = dep.Code
 						LEFT JOIN SubDepartments sdep
 						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -366,7 +366,7 @@ public class UserComponent
 						ON u.DepartmentCode = dep.Code
 						LEFT JOIN SubDepartments sdep
 						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
                 WHERE u.Id = {id}
                   AND u.IsActive = True
@@ -465,7 +465,7 @@ public class UserComponent
 						ON u.DepartmentCode = dep.Code
 						LEFT JOIN SubDepartments sdep
 						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
             WHERE u.Id = '{input.Id}'";
 

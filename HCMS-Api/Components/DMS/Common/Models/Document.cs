@@ -75,9 +75,7 @@ public class DocumentCreateDto
 {
     // 🔑 Tenant
     public int CompanyId { get; set; } 
-
-    public string DocumentNumber { get; set; } = null!;
-
+      
     public string DocumentTypeCode { get; set; } = null!;
     public string DivisionCode { get; set; } = null!;
     public string DepartmentCode { get; set; } = null!;

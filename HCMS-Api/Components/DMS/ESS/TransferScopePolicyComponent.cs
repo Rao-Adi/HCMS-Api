@@ -99,7 +99,7 @@ public class TransferScopePolicyComponent
             string selectQuery = $@" 
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TransferScopePolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE t.Id = {newId}";
 
@@ -198,7 +198,7 @@ public class TransferScopePolicyComponent
             string query = $@"
                         SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                         FROM TransferScopePolicies t
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -266,7 +266,7 @@ public class TransferScopePolicyComponent
             string query = $@"
                     SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TransferScopePolicies t
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON r.CompanyId = c.Id
                 WHERE t.DivisionCode = {code}
                   AND t.IsActive = True
@@ -342,7 +342,7 @@ public class TransferScopePolicyComponent
             string selectQuery = $@"
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TransferScopePolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE t.DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 

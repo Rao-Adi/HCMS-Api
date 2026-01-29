@@ -101,7 +101,7 @@ public class TrainingPolicyComponent
             string selectQuery = $@" 
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE Id = {newId}";
 
@@ -201,7 +201,7 @@ public class TrainingPolicyComponent
             string query = $@"
                         SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                         FROM TrainingPolicies t
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -270,7 +270,7 @@ public class TrainingPolicyComponent
             string query = $@"
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TrainingPolicies t
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON r.CompanyId = c.Id
                 WHERE Id = {code}
                   AND IsActive = True
@@ -347,7 +347,7 @@ public class TrainingPolicyComponent
             string selectQuery = $@"
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE Id = '{input.Id}'";
 

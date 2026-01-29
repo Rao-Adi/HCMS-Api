@@ -103,7 +103,7 @@ public class UserRoleComponent
             string selectQuery = $@" 
             SELECT u.*, c.Id AS CompanyId, c.Name AS Company
             FROM UserRoles u
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE u.Id = {newId}";
 
@@ -204,7 +204,7 @@ public class UserRoleComponent
             string query = $@"
                         SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                         FROM UserRoles u
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -274,7 +274,7 @@ public class UserRoleComponent
             string query = $@"
                 SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                     FROM UserRoles u
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON r.CompanyId = c.Id
                 WHERE u.UserId = {code}
                   AND u.IsActive = True
@@ -318,7 +318,7 @@ public class UserRoleComponent
             string query = $@"
                 SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                         FROM UserRoles u
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                 WHERE u.UserId = {dUserId}
                   AND u.IsActive = True
@@ -397,7 +397,7 @@ public class UserRoleComponent
             string selectQuery = $@"
             SELECT u.*, c.Id AS CompanyId, c.Name AS Company
             FROM UserRoles u
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE UserId = '{input.UserId}'";
 

@@ -80,13 +80,35 @@ public class DocumentComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Documents
-            WHERE DocumentNumber = '{input.DocumentNumber}' 
+            WHERE DocumentName = '{input.DocumentName}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
                 throw new CustomException("Documents already exists", 409);
+
+            string getLastCodeQuery = @"
+                SELECT DocumentNumber
+                FROM Documents
+                WHERE DocumentNumber IS NOT NULL
+                ORDER BY Id DESC
+                LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("DIV-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"DIV-{nextNumber:D4}";
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -113,7 +135,7 @@ public class DocumentComponent
             VALUES
             (
                 '{input.CompanyId}',
-                '{input.DocumentNumber}',
+                '{generatedCode}',
                 '{input.DocumentTypeCode}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
@@ -149,7 +171,7 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
 
@@ -270,7 +292,7 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -405,7 +427,7 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                 WHERE doc.DocumentNumber = {documentNumber}
                   AND doc.IsActive = True
@@ -477,7 +499,7 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                 WHERE doc.DivisionCode = {dCode}
                   AND doc.IsActive = True
@@ -591,7 +613,7 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = '{input.Id}'";
 

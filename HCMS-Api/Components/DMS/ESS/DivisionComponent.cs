@@ -69,8 +69,8 @@ public class DivisionComponent
             if (exists > 0)
                 throw new CustomException("Division already exists", 409);
 
-                                // 🔢 Generate next Division Code
-             string getLastCodeQuery = @"
+             // 🔢 Generate next Division Code
+            string getLastCodeQuery = @"
                             SELECT Code
                             FROM Divisions
                             WHERE Code IS NOT NULL
@@ -125,7 +125,7 @@ public class DivisionComponent
             string selectQuery = $@"
             SELECT d.*, c.Id AS CompanyId, c.Name AS Company
             FROM Divisions d
-            LEFT JOIN Company 
+            LEFT JOIN Companies c
             ON d.CompanyId = c.Id
             WHERE d.Id = {newId}";
 
@@ -225,14 +225,14 @@ public class DivisionComponent
             string query = $@"
                         SELECT d.*, c.Id AS CompanyId, c.Name AS Company
                         FROM Divisions d
-                        LEFT JOIN Company 
+                        LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Divisions
+                        FROM Divisions d
                         {whereClause};
                     ";
 
@@ -324,7 +324,7 @@ public class DivisionComponent
             string query = $@"
                 SELECT d.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Divisions d
-                    LEFT JOIN Company 
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
                 WHERE d.Code = {code}
                   AND d.IsActive = True
@@ -416,7 +416,7 @@ public class DivisionComponent
             string selectQuery = $@"
                         SELECT d.*, c.Id AS CompanyId, c.Name AS Company
                         FROM Divisions d
-                        LEFT JOIN Company 
+                        LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
                         WHERE d.Code = '{input.Code.Replace("'", "''")}'";
 

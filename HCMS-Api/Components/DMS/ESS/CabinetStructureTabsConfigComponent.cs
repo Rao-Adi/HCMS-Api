@@ -97,9 +97,11 @@ public class CabinetStructureTabsConfigComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT *
-            FROM CabinetStructureTabsConfig
-            WHERE Id = {newId}";
+            SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+                   FROM CabinetStructureTabsConfig cst
+                   LEFT JOIN Companies c
+                   ON cst.CompanyId = c.Id
+            WHERE cst.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -112,7 +114,7 @@ public class CabinetStructureTabsConfigComponent
             {
                 Id = row.Field<int>("ID"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -165,8 +167,8 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE cst.IsDeleted = False 
+                  AND cst.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -174,18 +176,18 @@ public class CabinetStructureTabsConfigComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(ID) LIKE '%{search}%'
+                    UPPER(cst.Name) LIKE '%{search}%'
+                    OR UPPER(cst.ID) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "ID",
-                "ISACTIVE" => "IsActive",
-                _ => "ID"
+                "NAME" => "cst.Name",
+                "CODE" => "cst.ID",
+                "ISACTIVE" => "cst.IsActive",
+                _ => "cst.ID"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -193,14 +195,16 @@ public class CabinetStructureTabsConfigComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM CabinetStructureTabsConfig
+                        SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM CabinetStructureTabsConfig cst
+                        LEFT JOIN Companies c
+                               ON cst.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM CabinetStructureTabsConfig dep
+                        FROM CabinetStructureTabsConfig cst
                         {whereClause};
                     ";
 
@@ -222,7 +226,7 @@ public class CabinetStructureTabsConfigComponent
                 {
                     Id = row.Table.Columns.Contains("ID") ? row.Field<int>("ID") : 0,
                     CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("CompanyId"),
+                    Company = row.Field<string>("Company"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -289,11 +293,13 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM CabinetStructureTabsConfig
-                WHERE ID = {id}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM CabinetStructureTabsConfig cst
+                        LEFT JOIN Companies c
+                        ON cst.CompanyId = c.Id
+                WHERE cst.ID = {id}
+                  AND cst.IsActive = True
+                  AND cst.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -306,7 +312,7 @@ public class CabinetStructureTabsConfigComponent
             {
                 Id = row.Field<int>("ID"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -329,54 +335,91 @@ public class CabinetStructureTabsConfigComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Invalid Id.", 200);
+            int finalId;
+            // 1️ Check existence ONLY if Id > 0
+            int exists=0;
 
-            // Check existence (ID is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM CabinetStructureTabsConfig
-            WHERE ID = '{input.Id}'
-              AND IsDeleted = FALSE";
+            if (input.Id > 0)
+            {
+                string existsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM CabinetStructureTabsConfig
+                    WHERE Id = {input.Id} AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+                exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
+            }
+            // 2️⃣ INSERT
+            if (exists <= 0)
+            {
+                string insertQuery = $@"
+                        INSERT INTO CabinetStructureTabsConfig
+                        (   
+                            CompanyId,
+                            Name,
+                            IsActive,
+                            IsDeleted,
+                            CreatedAt,
+                            CreatedBy,
+                            LastModifiedAt,
+                            LastModifiedBy
+                        )
+                        VALUES
+                        ( 
+                            '{input.CompanyId}',
+                            '{input.Name.Replace("'", "''")}',
+                            TRUE,
+                            FALSE,
+                            NOW(),
+                            '{userId.Replace("'", "''")}',
+                            NOW(),
+                            '{userId.Replace("'", "''")}'
+                        )
+                        RETURNING Id;";
 
-            if (exists == 0)
-                throw new CustomException("CabinetStructureTabsConfig not found", 200);
+                finalId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            }
+            // 3️ UPDATE
+            else
+            {
+                string updateQuery = $@" 
+                        UPDATE CabinetStructureTabsConfig 
+                        SET 
+                            Name = '{input.Name.Replace("'", "''")}', 
+                            IsActive = {(input.IsActive ? "TRUE" : "FALSE")}, 
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = '{userId.Replace("'", "''")}' 
+                        WHERE ID = '{input.Id}'";
 
-            // Update (PostgreSQL boolean + timestamp)
-            string updateQuery = $@"
-            UPDATE CabinetStructureTabsConfig
-            SET 
-                Name = '{input.Name.Replace("'", "''")}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE ID = '{input.Id}'";
+                bool updated = _common.ExecuteNonQuery(updateQuery);
 
-            bool updated = _common.ExecuteNonQuery(updateQuery);
+                if (!updated)
+                    throw new Exception("Update failed.");
 
-            if (!updated)
-                throw new Exception("Update failed");
+                finalId = input.Id;
+            }
 
-            // Return updated record
+            // 4️⃣ FETCH FINAL RECORD
             string selectQuery = $@"
-            SELECT *
-            FROM CabinetStructureTabsConfig
-            WHERE ID = '{input.Id}'";
+                        SELECT
+                            cst.*,
+                            c.Id AS CompanyId,
+                            c.Name AS Company
+                        FROM CabinetStructureTabsConfig cst
+                        LEFT JOIN Companies c ON cst.CompanyId = c.Id
+                        WHERE cst.Id = {finalId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated Id");
+                throw new Exception("Failed to fetch saved record.");
 
             DataRow row = dt.Rows[0];
 
             return new CabinetStructureTabsConfigReadDto
             {
-                Id = row.Field<int>("ID"),
+                Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -385,6 +428,103 @@ public class CabinetStructureTabsConfigComponent
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
             };
+
+
+            //if (input.Id < 0)
+            //    throw new CustomException("Invalid Id.", 200);
+
+            //// Check existence (ID is VARCHAR → must be quoted)
+            //string checkQuery = $@"
+            //SELECT COUNT(1)
+            //FROM CabinetStructureTabsConfig
+            //WHERE ID = '{input.Id}'
+            //  AND IsDeleted = FALSE";
+
+            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+            //if (exists == 0)
+            //{
+            //    string insertQuery = $@"
+            //        INSERT INTO CabinetStructureTabsConfig
+            //        (   
+            //            CompanyId,
+            //            Name,
+            //            IsActive,
+            //            IsDeleted,
+            //            CreatedAt,
+            //            CreatedBy,
+            //            LastModifiedAt,
+            //            LastModifiedBy
+            //        )
+            //        VALUES
+            //        ( 
+            //            '{input.CompanyId}',
+            //            '{input.Name.Replace("'", "''")}',
+            //            TRUE,
+            //            FALSE,
+            //            NOW(),
+            //            '{userId.Replace("'", "''")}',
+            //            NOW(),
+            //            '{userId.Replace("'", "''")}'
+            //        )
+            //        RETURNING Id;";
+
+            //    int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+
+            //    // Fetch inserted record
+            //    selectQuery = $@"
+            //            SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+            //                   FROM CabinetStructureTabsConfig cst
+            //                   LEFT JOIN Companies c
+            //                   ON cst.CompanyId = c.Id
+            //            WHERE cst.Id = {newId}";
+
+            //    DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
+            //}
+
+            //// Update (PostgreSQL boolean + timestamp)
+            //string updateQuery = $@"
+            //UPDATE CabinetStructureTabsConfig
+            //SET 
+            //    Name = '{input.Name.Replace("'", "''")}',
+            //    IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+            //    LastModifiedAt = NOW(),
+            //    LastModifiedBy = '{userId.Replace("'", "''")}'
+            //WHERE ID = '{input.Id}'";
+
+            //bool updated = _common.ExecuteNonQuery(updateQuery);
+
+            //if (!updated)
+            //    throw new Exception("Update failed");
+
+            //// Return updated record
+            //string selectQuery = $@"
+            //SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+            //            FROM CabinetStructureTabsConfig cst
+            //            LEFT JOIN Companies c
+            //                   ON cst.CompanyId = c.Id
+            //WHERE cst.ID = '{input.Id}'";
+
+            //DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
+
+            //if (dt == null || dt.Rows.Count == 0)
+            //    throw new Exception("Failed to fetch updated Id");
+
+            //DataRow row = dt.Rows[0];
+
+            //return new CabinetStructureTabsConfigReadDto
+            //{
+            //    Id = row.Field<int>("ID"),
+            //    CompanyId = row.Field<int>("CompanyId"),
+            //    Company = row.Field<string>("Company"),
+            //    Name = row.Field<string>("Name"),
+            //    IsDeleted = row.Field<bool>("IsDeleted"),
+            //    IsActive = row.Field<bool>("IsActive"),
+            //    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+            //    CreatedBy = row.Field<string>("CreatedBy"),
+            //    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+            //    LastModifiedBy = row.Field<string>("LastModifiedBy")
+            //};
         }
         catch
         {

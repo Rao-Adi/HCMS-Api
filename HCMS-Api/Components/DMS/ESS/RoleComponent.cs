@@ -99,7 +99,7 @@ public class RoleComponent
             string selectQuery = $@" 
             SELECT r.*, c.Id AS CompanyId, c.Name AS Company
             FROM Roles r
-            LEFT JOIN Company c
+            LEFT JOIN Companies c
             ON r.CompanyId = c.Id
             WHERE r.Id = {newId}";
 
@@ -227,7 +227,7 @@ public class RoleComponent
             string query = $@"
                         SELECT r.*, c.Id AS CompanyId, c.Name AS Company
                         FROM Roles r
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON r.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -295,7 +295,7 @@ public class RoleComponent
             string query = $@"
                 SELECT r.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Roles r
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON r.CompanyId = c.Id
                 WHERE r.Name = {code}
                   AND r.IsActive = True
@@ -372,7 +372,7 @@ public class RoleComponent
             string selectQuery = $@"
                 SELECT r.*, c.Id AS CompanyId, c.Name AS Company
                 FROM Roles r
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON r.CompanyId = c.Id
             WHERE r.Name = '{input.Name.Replace("'", "''")}'";
 

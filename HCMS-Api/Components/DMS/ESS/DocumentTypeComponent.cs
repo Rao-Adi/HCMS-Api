@@ -56,30 +56,40 @@ public class DocumentTypeComponent
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Document type name is required.", 400);
 
-            // 🔐 Normalize & map Code
-            string normalizedName = input.Name.Trim().ToUpper();
-            string generatedCode = normalizedName switch
-            {
-                "SOP" or "STANDARD OPERATING PROCEDURE" => "SOP",
-                "POLICY" => "POL",
-                "FORM" => "FRM",
-                _ => throw new CustomException(
-                    "Invalid document type. Allowed values: SOP, Policy, Form.", 400)
-            };
-
-            // 🔍 Prevent duplicates (by Code or Name)
+            // 🔍 Check duplicate by NAME only
             string duplicateCheckQuery = $@"
-                    SELECT COUNT(1)
-                    FROM DocumentTypes
-                    WHERE (Code = '{generatedCode}'
-                           OR UPPER(Name) = '{normalizedName}')
-                      AND IsDeleted = FALSE";
+                            SELECT COUNT(1)
+                            FROM DocumentTypes
+                            WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND IsDeleted = FALSE";
 
-            int exists =
-                Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("Document type already exists", 409);
+                throw new CustomException("Document Type already exists", 409);
+
+            // 🔢 Generate next Division Code
+            string getLastCodeQuery = @"
+                            SELECT Code
+                            FROM DocumentTypes
+                            WHERE Code IS NOT NULL
+                            ORDER BY Id DESC
+                            LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("DT-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"DT-{nextNumber:D4}";
 
             // 🧾 Insert
             string insertQuery = $@"
@@ -115,9 +125,11 @@ public class DocumentTypeComponent
 
             // 📥 Fetch inserted record
             string selectQuery = $@"
-                SELECT *
-                FROM DocumentTypes
-                WHERE Id = {newId}";
+                SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                FROM DocumentTypes d
+                LEFT JOIN Companies c
+                ON d.CompanyId = c.Id
+                WHERE d.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -188,8 +200,8 @@ public class DocumentTypeComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False 
+                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -197,18 +209,18 @@ public class DocumentTypeComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Code) LIKE '%{search}%'
+                    UPPER(d.Name) LIKE '%{search}%'
+                    OR UPPER(d.Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Code",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "d.Name",
+                "CODE" => "d.Code",
+                "ISACTIVE" => "d.IsActive",
+                _ => "d.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -216,14 +228,16 @@ public class DocumentTypeComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM DocumentTypes
+                        SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM DocumentTypes d
+                        LEFT JOIN Companies c
+                        ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DocumentTypes
+                        FROM DocumentTypes d
                         {whereClause};
                     ";
 
@@ -314,11 +328,13 @@ public class DocumentTypeComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM DocumentTypes
-                WHERE Code = '{code}'
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                FROM DocumentTypes d
+                LEFT JOIN Companies c
+                ON d.CompanyId = c.Id
+                WHERE d.Code = '{code}'
+                  AND d.IsActive = True
+                  AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -390,8 +406,10 @@ public class DocumentTypeComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM DocumentTypes
+            SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                FROM DocumentTypes d
+                LEFT JOIN Companies c
+                ON d.CompanyId = c.Id
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);

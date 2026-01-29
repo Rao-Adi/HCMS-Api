@@ -8,8 +8,8 @@ using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
-
-public class WorkflowStepComponent
+ 
+public class CompanyComponent
 {
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
@@ -19,7 +19,7 @@ public class WorkflowStepComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public WorkflowStepComponent(
+    public CompanyComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -44,37 +44,59 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<WorkflowStepReadDto> CreateAsync(WorkflowStepCreateDto input)
+
+
+    public async Task<CompanyReadDto> CreateAsync(CompanyCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("WorkflowStep ID is required.", 400);
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Company name is required.", 400);
 
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM WorkflowPolicies
-            WHERE (Id = '{input.Id}' 
-              AND IsDeleted = FALSE";
+            // 🔍 Check duplicate by NAME only
+            string duplicateCheckQuery = $@"
+                            SELECT COUNT(1)
+                            FROM Companies
+                            WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
             if (exists > 0)
-                throw new CustomException("WorkflowStep already exists", 409);
+                throw new CustomException("Company already exists", 409);
+
+            // 🔢 Generate next Company Code
+            string getLastCodeQuery = @"
+                            SELECT Code
+                            FROM Companies
+                            WHERE Code IS NOT NULL
+                            ORDER BY Id DESC
+                            LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("COM-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"COM-{nextNumber:D4}";
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO WorkflowSteps
-            (   CompanyId,
-                WorkflowPolicyId, 
-                Sequence,
-                ApproverRoleId,
-                ApproverUserId,
-                ApprovalLevel, 
+            INSERT INTO Companies
+            (
+                Code,
+                Name,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -84,12 +106,8 @@ public class WorkflowStepComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
-                '{input.WorkflowPolicyId}', 
-                '{input.Sequence}', 
-                '{input.ApproverRoleId}', 
-                '{input.ApproverUserId}', 
-                '{input.ApprovalLevel}', 
+                '{generatedCode}',
+                '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -103,10 +121,8 @@ public class WorkflowStepComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-                        SELECT u.*, c.Id AS CompanyId, c.Name AS Company
-                        FROM WorkflowSteps w
-                        LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+            SELECT *
+            FROM Companies
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -116,16 +132,11 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStepReadDto
+            return new CompanyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
-                Sequence = row.Field<int>("Sequence"),
-                ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                ApprovalLevel = row.Field<int>("ApprovalLevel"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -148,20 +159,20 @@ public class WorkflowStepComponent
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM WorkflowSteps
-                WHERE Id = {code}
+                FROM Companies
+                WHERE Code = {code}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowSteps not found", 200);
+                throw new CustomException("Company not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE WorkflowSteps
+                UPDATE Companies
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Code = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -172,13 +183,14 @@ public class WorkflowStepComponent
     }
 
 
-    public async Task<PaginationResult<WorkflowStepReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<CompanyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
+
             var whereClause = @"
-                WHERE w.IsDeleted = False 
-                  AND w.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE IsDeleted = False 
+                  AND IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -186,18 +198,18 @@ public class WorkflowStepComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(w.Name) LIKE '%{search}%'
-                    OR UPPER(w.Id) LIKE '%{search}%'
+                    UPPER(Name) LIKE '%{search}%'
+                    OR UPPER(Code) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "w.Name",
-                "CODE" => "w.Id",
-                "ISACTIVE" => "w.IsActive",
-                _ => "w.Name"
+                "NAME" => "Name",
+                "CODE" => "Code",
+                "ISACTIVE" => "IsActive",
+                _ => "Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -205,43 +217,36 @@ public class WorkflowStepComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT u.*, c.Id AS CompanyId, c.Name AS Company
-                        FROM WorkflowSteps w
-                        LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+                        SELECT *
+                        FROM Companies
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM WorkflowSteps
+                        FROM Companies
                         {whereClause};
                     ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
             DataTable countTable = ds.Tables[1];      // second result set (count)
-                                                      // ✅ SAFETY CHECKS
+            // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<WorkflowStepReadDto>
+                return new PaginationResult<CompanyReadDto>
                 {
-                    Items = new List<WorkflowStepReadDto>(),
+                    Items = new List<CompanyReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new WorkflowStepReadDto
+                .Select(row => new CompanyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
-                    CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("Company"),
-                    WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
-                    Sequence = row.Table.Columns.Contains("Sequence") ? row.Field<int>("Sequence") : 0,
-                    ApproverRoleId = row.Table.Columns.Contains("ApproverRoleId") ? row.Field<int>("ApproverRoleId") : 0,
-                    ApproverUserId = row.Table.Columns.Contains("ApproverUserId") ? row.Field<int>("ApproverUserId") : 0,
-                    ApprovalLevel = row.Table.Columns.Contains("ApprovalLevel") ? row.Field<int>("ApprovalLevel") : 0,
+                    Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -259,7 +264,7 @@ public class WorkflowStepComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<WorkflowStepReadDto>
+            return new PaginationResult<CompanyReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -271,36 +276,60 @@ public class WorkflowStepComponent
         }
     }
 
-    public async Task<WorkflowStepReadDto> GetByCodeAsync(string code)
+
+    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT *
+            FROM Companies
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Name";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectListDto
+                {
+                    Code = row.Field<string>("Code"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<CompanyReadDto> GetByCodeAsync(string code)
     {
         try
         {
             string query = $@"
-                    SELECT u.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM WorkflowSteps w
-                    LEFT JOIN Companies c
-                    ON r.CompanyId = c.Id
-                WHERE w.Id = {code}
-                  AND w.IsActive = True
-                  AND w.IsDeleted = False";
+                SELECT *
+                    FROM Companies
+                WHERE Code = {code}
+                  AND IsActive = True
+                  AND IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("WorkflowSteps not found", 200);
+                throw new CustomException("Company not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStepReadDto
+            return new CompanyReadDto
             {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
-                Sequence = row.Field<int>("Sequence"),
-                ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                ApprovalLevel = row.Field<int>("ApprovalLevel"),
+                Id = row.Field<int>("Id"), 
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -315,55 +344,67 @@ public class WorkflowStepComponent
         }
     }
 
-     
-    public async Task<WorkflowStepReadDto> UpdateAsync(WorkflowStepUpdateDto input)
+
+    public async Task<CompanyReadDto> UpdateAsync(CompanyUpdateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Invalid division code.", 200);
+            if (string.IsNullOrWhiteSpace(input.Code))
+                throw new CustomException("Company code is required.", 400);
 
-            // Check existence (Id is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM WorkflowSteps
-            WHERE Id = '{input.Id}'
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("Company name is required.", 400);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔍 Check division exists
+            string existsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM Companies
+                    WHERE Code = '{input.Code.Replace("'", "''")}'
+                      AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowSteps not found", 200);
+                throw new CustomException("Company not found", 404);
 
-            // Update (PostgreSQL boolean + timestamp)
+            // 🚫 Prevent duplicate NAME (excluding current division)
+            string duplicateNameQuery = $@"
+                        SELECT COUNT(1)
+                        FROM Companies
+                        WHERE Name = '{input.Name.Replace("'", "''")}'
+                          AND Code <> '{input.Code.Replace("'", "''")}'
+                          AND IsDeleted = FALSE";
+
+            int duplicate = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
+
+            if (duplicate > 0)
+                throw new CustomException("Company name already exists", 409);
+
+            // ✏️ Update mutable fields ONLY
             string updateQuery = $@"
-            UPDATE WorkflowSteps
-            SET 
-                WorkflowPolicyId = '{input.WorkflowPolicyId}', 
-                Sequence = '{input.Sequence}',
-                ApproverRoleId = '{input.ApproverRoleId}',
-                ApproverUserId = '{input.ApproverUserId}',
-                ApprovalLevel = '{input.ApprovalLevel}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+                        UPDATE Companies
+                        SET 
+                            Name = '{input.Name.Replace("'", "''")}',
+                            IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = '{userId.Replace("'", "''")}'
+                        WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
-            string selectQuery = $@" 
-            SELECT u.*, c.Id AS CompanyId, c.Name AS Company
-            FROM WorkflowSteps w
-            LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
-            WHERE w.Id = '{input.Id}'";
+            // 📥 Fetch updated record
+            string selectQuery = $@"
+                        SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM Companies d
+                        LEFT JOIN Company 
+                        ON d.CompanyId = c.Id
+                        WHERE d.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -372,16 +413,11 @@ public class WorkflowStepComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowStepReadDto
+            return new CompanyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
-                Sequence = row.Field<int>("Sequence"),
-                ApproverRoleId = row.Field<int>("ApproverRoleId"),
-                ApproverUserId = row.Field<int>("ApproverUserId"),
-                ApprovalLevel = row.Field<int>("ApprovalLevel"),
+                Code = row.Field<string>("Code"),
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -395,4 +431,22 @@ public class WorkflowStepComponent
             throw;
         }
     }
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM Companies 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 }

@@ -150,7 +150,7 @@ public class DepartmentComponent
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
                     WHERE dep.Id = {newId}";
 
@@ -249,11 +249,11 @@ public class DepartmentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                        SELECT dep.*,c.Id as CompanyId, c.Name As Company, div.Code AS DivisionCode, div.Name AS Division
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
@@ -285,8 +285,8 @@ public class DepartmentComponent
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("DivisionCode1") ? row.Field<string>("DivisionCode1") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -356,7 +356,7 @@ public class DepartmentComponent
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
                 WHERE dep.Code = '{code}'
                   AND dep.IsActive = True
@@ -402,7 +402,7 @@ public class DepartmentComponent
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
                 WHERE dep.DivisionCode = '{dCode}'
                   AND dep.IsActive = True
@@ -524,7 +524,7 @@ public class DepartmentComponent
                         FROM Departments dep
                         LEFT JOIN Divisions div
 						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Company c
+                        LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
                     WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
 

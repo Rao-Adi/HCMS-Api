@@ -113,7 +113,7 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c 
+                        LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
 
@@ -129,7 +129,7 @@ public class AttributeMandatoryScopeComponent
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
 
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -230,7 +230,7 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c 
+                        LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
 
                         {whereClause}
@@ -261,7 +261,7 @@ public class AttributeMandatoryScopeComponent
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
                     CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("CompanyId"),
+                    Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -347,7 +347,7 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN Company c 
+                        LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
                 WHERE DocumentAttributeId = {id}
                   AND doc.IsActive = True
@@ -374,7 +374,7 @@ public class AttributeMandatoryScopeComponent
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
                     CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("CompanyId"),
+                    Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -468,7 +468,7 @@ public class AttributeMandatoryScopeComponent
                             ON doc.DepartmentCode = dep.Code
                             LEFT JOIN SubDepartments subd
                             ON doc.SubDepartmentCode = subd.Code
-                            LEFT JOIN Company c 
+                            LEFT JOIN Companies c 
                             ON doc.CompanyId = c.Id
             WHERE id = {updated}";
 
@@ -482,7 +482,7 @@ public class AttributeMandatoryScopeComponent
             return new AttributeMandatoryScopeReadDto
             {
                 CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("CompanyId"),
+                Company = row.Field<string>("Company"),
 
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
 

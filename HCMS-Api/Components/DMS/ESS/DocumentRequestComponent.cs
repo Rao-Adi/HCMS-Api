@@ -117,7 +117,7 @@ public class DocumentRequestComponent
             string selectQuery = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                 FROM Documents d
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
@@ -228,7 +228,7 @@ public class DocumentRequestComponent
             string query = $@"
                         SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                             FROM Documents d
-                            LEFT JOIN Company c
+                            LEFT JOIN Companies c
                             ON d.CompanyId = c.Id
                             LEFT JOIN Divisions div
                             ON d.DivisionCode = div.Code
@@ -342,7 +342,7 @@ public class DocumentRequestComponent
             string query = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                 FROM Documents d
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
@@ -396,7 +396,7 @@ public class DocumentRequestComponent
             string query = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                 FROM Documents d
-                LEFT JOIN Company c
+                LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
@@ -493,7 +493,7 @@ public class DocumentRequestComponent
             string selectQuery = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                     FROM Documents d
-                    LEFT JOIN Company c
+                    LEFT JOIN Companies c
                     ON d.CompanyId = c.Id
                     LEFT JOIN Divisions div
                     ON d.DivisionCode = div.Code
