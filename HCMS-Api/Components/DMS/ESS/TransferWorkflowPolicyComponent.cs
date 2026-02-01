@@ -54,23 +54,15 @@ public class TransferWorkflowPolicyComponent
             if (input.Id < 0)
                 throw new CustomException("TransferWorkflowPolicy is required.", 400);
 
-            // Check duplicate by DivisionCode OR DivisionCode
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM TransferWorkflowPolicies
-            WHERE (DivisionCode = '{input.DivisionCode.Replace("'", "''")}' 
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("TransferWorkflowPolicy already exists", 409);
-
+             
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TransferWorkflowPolicies
             (   CompanyId,
                 DivisionCode,
+                DepartmentCode,
+                SubDepartmentCode,
+                BusinessDomainCode,
                 ApprovalRoleId,
                 ApprovalUserId, 
                 IsActive,
@@ -83,7 +75,10 @@ public class TransferWorkflowPolicyComponent
             VALUES
             (
                 '{input.CompanyId}', 
-                '{input.DivisionCode.Replace("'", "''")}', 
+                '{input.DivisionCode!.Replace("'", "''")}', 
+                '{input.DepartmentCode!.Replace("'", "''")}', 
+                '{input.SubDepartmentCode!.Replace("'", "''")}', 
+                '{input.BusinessDomainCode!.Replace("'", "''")}', 
                 '{input.ApprovalRoleId}',
                 '{input.ApprovalUserId}',
                 TRUE,
@@ -98,11 +93,19 @@ public class TransferWorkflowPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@" 
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"  
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM TransferWorkflowPolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
             WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -117,7 +120,19 @@ public class TransferWorkflowPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -198,10 +213,18 @@ public class TransferWorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                         FROM TransferWorkflowPolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code
+                        LEFT JOIN Departments d
+                        ON t.DepartmentCode = d.Code
+                        LEFT JOIN SubDepartments sd
+                        ON t.SubDepartmentCode = sd.Code
                         LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+                        ON d.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON d.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -230,7 +253,19 @@ public class TransferWorkflowPolicyComponent
                     Id = row.Field<int>("Id"),
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
                     ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<int>("ApprovalUserId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -267,10 +302,18 @@ public class TransferWorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT t.*, c.Id AS CompanyId, c.Name AS Company
-                FROM TransferWorkflowPolicies t
-                LEFT JOIN Companies c
-                ON r.CompanyId = c.Id
+                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+                    FROM TransferWorkflowPolicies t
+                    LEFT JOIN Divisions div
+                    ON t.DivisionCode = div.Code
+                    LEFT JOIN Departments d
+                    ON t.DepartmentCode = d.Code
+                    LEFT JOIN SubDepartments sd
+                    ON t.SubDepartmentCode = sd.Code
+                    LEFT JOIN Companies c
+                    ON d.CompanyId = c.Id
+                    LEFT JOIN BusinessDomains bd
+                    ON d.BusinessDomainCode = bd.Code
                 WHERE t.DivisionCode = {code}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
@@ -287,7 +330,19 @@ public class TransferWorkflowPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<int>("ApprovalUserId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -331,6 +386,9 @@ public class TransferWorkflowPolicyComponent
             UPDATE TransferWorkflowPolicies
             SET 
                 DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
+                DepartmentCode = '{input.DepartmentCode!.Replace("'", "''")}',
+                SubDepartmentCode = '{input.SubDepartmentCode!.Replace("'", "''")}',
+                BusinessDomainCode = '{input.BusinessDomainCode!.Replace("'", "''")}',
                 ApprovalRoleId = '{input.ApprovalRoleId}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
@@ -344,11 +402,19 @@ public class TransferWorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM TransferWorkflowPolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
+            WHERE t.Id = {updated}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -362,7 +428,19 @@ public class TransferWorkflowPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
                 ApprovalUserId = row.Field<int>("ApprovalUserId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

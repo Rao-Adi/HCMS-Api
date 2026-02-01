@@ -75,6 +75,7 @@ public class WorkflowPolicyComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
+                BusinessDomainCode,
                 DocumentTypeCode,
                 SharingType,
                 IsDefault, 
@@ -94,6 +95,7 @@ public class WorkflowPolicyComponent
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}', 
+                '{input.BusinessDomainCode}', 
                 '{input.DocumentTypeCode}',
                 '{input.SharingType}',
                 TRUE,
@@ -108,10 +110,20 @@ public class WorkflowPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM WorkflowPolicies
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+            FROM WorkflowPolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
+            LEFT JOIN Companies c
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
+            WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -126,9 +138,19 @@ public class WorkflowPolicyComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -182,8 +204,8 @@ public class WorkflowPolicyComponent
         try
         {
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False 
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -191,18 +213,18 @@ public class WorkflowPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(Name) LIKE '%{search}%'
-                    OR UPPER(Id) LIKE '%{search}%'
+                    UPPER(t.Name) LIKE '%{search}%'
+                    OR UPPER(t.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "Name",
-                "CODE" => "Id",
-                "ISACTIVE" => "IsActive",
-                _ => "Name"
+                "NAME" => "t.Name",
+                "CODE" => "t.Id",
+                "ISACTIVE" => "t.IsActive",
+                _ => "t.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -210,14 +232,24 @@ public class WorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
-                        FROM WorkflowPolicies
+                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+                        FROM WorkflowPolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code
+                        LEFT JOIN Departments d
+                        ON t.DepartmentCode = d.Code
+                        LEFT JOIN SubDepartments sd
+                        ON t.SubDepartmentCode = sd.Code
+                        LEFT JOIN Companies c
+                        ON d.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON d.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM WorkflowPolicies
+                        FROM WorkflowPolicies t
                         {whereClause};
                     ";
 
@@ -241,9 +273,19 @@ public class WorkflowPolicyComponent
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     PolicyType = row.Table.Columns.Contains("PolicyType") ? row.Field<int>("PolicyType") : 0,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
-                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     SharingType = row.Table.Columns.Contains("SharingType") ? row.Field<int>("SharingType") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -280,11 +322,21 @@ public class WorkflowPolicyComponent
         try
         {
             string query = $@"
-                SELECT *
-                FROM WorkflowPolicies
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+                    FROM WorkflowPolicies t
+                    LEFT JOIN Divisions div
+                    ON t.DivisionCode = div.Code
+                    LEFT JOIN Departments d
+                    ON t.DepartmentCode = d.Code
+                    LEFT JOIN SubDepartments sd
+                    ON t.SubDepartmentCode = sd.Code
+                    LEFT JOIN Companies c
+                    ON d.CompanyId = c.Id
+                    LEFT JOIN BusinessDomains bd
+                    ON d.BusinessDomainCode = bd.Code
+                WHERE t.Id = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -299,9 +351,19 @@ public class WorkflowPolicyComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -317,52 +379,7 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
-
-
-    public async Task<WorkflowPolicyReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM WorkflowPolicies
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new WorkflowPolicyReadDto
-            {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                PolicyType = row.Field<int>("PolicyType"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                SharingType = row.Field<int>("SharingType"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<WorkflowPolicyReadDto> UpdateAsync(WorkflowPolicyUpdateDto input)
     {
         try
@@ -393,6 +410,7 @@ public class WorkflowPolicyComponent
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
+                BusinessDomainCode = '{input.BusinessDomainCode}',
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 SharingType = '{input.SharingType}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -407,9 +425,19 @@ public class WorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM WorkflowPolicies
-            WHERE Id = '{input.Id}'";
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+            FROM WorkflowPolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
+            LEFT JOIN Companies c
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
+            WHERE t.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -424,9 +452,19 @@ public class WorkflowPolicyComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 SharingType = row.Field<int>("SharingType"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

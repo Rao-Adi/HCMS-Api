@@ -28,7 +28,8 @@ public class User : AuditableEntity
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
-    public string? SubDepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }
@@ -50,12 +51,16 @@ public class UserReadDto : AuditableEntity
     [MaxLength(255)]
     public string Email { get; set; } = null!;
 
+    public string? Division { get; set; }
     public string? DivisionCode { get; set; }
-    public string? DivisionName { get; set; }
+    public string? Department { get; set; }
     public string? DepartmentCode { get; set; }
-    public string? DepartmentName { get; set; }
+
+    public string? SubDepartment { get; set; }
     public string? SubDepartmentCode { get; set; }
-    public string? SubDepartmentName { get; set; }
+
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
     public string? ReportingTo { get; set; }
     public string? DateOfJoining { get; set; }
 
@@ -77,10 +82,11 @@ public class UserCreateDto
 
     [MaxLength(255)]
     public string Email { get; set; } = null!;
-
-    public string? DivisionCode { get; set; }
-    public string? DepartmentCode { get; set; }
-    public string? SubDepartmentCode { get; set; }
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     public string? ReportingTo { get; set; }
     public DateTime? DateOfJoining { get; set; }
@@ -103,10 +109,13 @@ public class UserUpdateDto
 
     [MaxLength(255)]
     public string Email { get; set; } = null!;
-
-    public string? DivisionCode { get; set; }
+     
+    public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; }
+     
     public string? SubDepartmentCode { get; set; }
+     
+    public string? BusinessDomainCode { get; set; }
     public string? ReportingTo { get; set; }
     public DateTime? DateOfJoining { get; set; }
     public bool IsActive { get; set; }

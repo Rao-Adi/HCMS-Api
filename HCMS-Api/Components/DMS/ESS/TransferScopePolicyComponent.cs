@@ -71,6 +71,9 @@ public class TransferScopePolicyComponent
             INSERT INTO TransferScopePolicies
             (   CompanyId,
                 DivisionCode,
+                DepartmentCode,
+                SubDepartmentCode,
+                BusinessDomainCode,
                 ReportingToLevel,
                 IsActive,
                 IsDeleted,
@@ -83,6 +86,9 @@ public class TransferScopePolicyComponent
             (
                 '{input.CompanyId}', 
                 '{input.DivisionCode.Replace("'", "''")}', 
+                '{input.DepartmentCode!.Replace("'", "''")}', 
+                '{input.SubDepartmentCode!.Replace("'", "''")}', 
+                '{input.BusinessDomainCode.Replace("'", "''")}', 
                 '{input.ReportingToLevel}',
                 TRUE,
                 FALSE,
@@ -96,11 +102,19 @@ public class TransferScopePolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@" 
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"  
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM TransferScopePolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
             WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -115,7 +129,18 @@ public class TransferScopePolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -196,10 +221,18 @@ public class TransferScopePolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                         FROM TransferScopePolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code
+                        LEFT JOIN Departments d
+                        ON t.DepartmentCode = d.Code
+                        LEFT JOIN SubDepartments sd
+                        ON t.SubDepartmentCode = sd.Code
                         LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+                        ON d.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON d.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -228,7 +261,19 @@ public class TransferScopePolicyComponent
                     Id = row.Field<int>("Id"),
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     ReportingToLevel = row.Table.Columns.Contains("ReportingToLevel") ? row.Field<int>("ReportingToLevel") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
@@ -264,10 +309,18 @@ public class TransferScopePolicyComponent
         try
         {
             string query = $@"
-                    SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                    SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                     FROM TransferScopePolicies t
+                    LEFT JOIN Divisions div
+                    ON t.DivisionCode = div.Code
+                    LEFT JOIN Departments d
+                    ON t.DepartmentCode = d.Code
+                    LEFT JOIN SubDepartments sd
+                    ON t.SubDepartmentCode = sd.Code
                     LEFT JOIN Companies c
-                    ON r.CompanyId = c.Id
+                    ON d.CompanyId = c.Id
+                    LEFT JOIN BusinessDomains bd
+                    ON d.BusinessDomainCode = bd.Code
                 WHERE t.DivisionCode = {code}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
@@ -284,7 +337,18 @@ public class TransferScopePolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -327,6 +391,9 @@ public class TransferScopePolicyComponent
             UPDATE TransferScopePolicies
             SET 
                 DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
+                DepartmentCode = '{input.DepartmentCode!.Replace("'", "''")}',
+                SubDepartmentCode = '{input.SubDepartmentCode!.Replace("'", "''")}',
+                BusinessDomainCode = '{input.BusinessDomainCode!.Replace("'", "''")}',
                 ReportingToLevel = '{input.ReportingToLevel}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
@@ -340,10 +407,18 @@ public class TransferScopePolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM TransferScopePolicies t
+            LEFT JOIN Divisions div
+            ON t.DivisionCode = div.Code
+            LEFT JOIN Departments d
+            ON t.DepartmentCode = d.Code
+            LEFT JOIN SubDepartments sd
+            ON t.SubDepartmentCode = sd.Code
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
             WHERE t.DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -358,7 +433,18 @@ public class TransferScopePolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ReportingToLevel = row.Field<int>("ReportingToLevel"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),

@@ -77,6 +77,7 @@ public class DocumentRequestComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
+                BusinessDomainCode,
                 DocumentName, 
                 Justification, 
                 Status,  
@@ -98,6 +99,7 @@ public class DocumentRequestComponent
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}', 
+                '{input.BusinessDomainCode}', 
                 '{input.DocumentName}', 
                 '{input.Justification}', 
                 '{input.Status}', 
@@ -115,14 +117,16 @@ public class DocumentRequestComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
-                FROM Documents d
+                SELECT d.*, c.Name AS Company,div.Name AS Division, dep.Name AS Department, bd.Name BusinessDomain
+                FROM DocumentRequests d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
                 LEFT JOIN Department dep
                 ON d.DepartmentCode = dep.Code
+                LEFT JOIN BusinessDomains bd
+                ON d.BusinessDomainCode = bd.Code
             WHERE d.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -140,9 +144,19 @@ public class DocumentRequestComponent
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
@@ -169,18 +183,18 @@ public class DocumentRequestComponent
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM Documents
+                FROM DocumentRequests
                 WHERE Id = {code}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentRequests not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE Documents
+                UPDATE DocumentRequests
                 SET IsDeleted = False
                 WHERE Id = {code}";
 
@@ -226,20 +240,22 @@ public class DocumentRequestComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT d.*,c.Id AS CompanyId, c.Name AS Company
-                            FROM Documents d
+                        SELECT d.*, c.Name AS Company,div.Name AS Division, dep.Name AS Department, bd.Name BusinessDomain
+                            FROM DocumentRequests d
                             LEFT JOIN Companies c
                             ON d.CompanyId = c.Id
                             LEFT JOIN Divisions div
                             ON d.DivisionCode = div.Code
                             LEFT JOIN Department dep
                             ON d.DepartmentCode = dep.Code
+                            LEFT JOIN BusinessDomains bd
+                            ON d.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Documents dep
+                        FROM DocumentRequests dep
                         {whereClause};
                     ";
 
@@ -268,9 +284,19 @@ public class DocumentRequestComponent
                     RequestType = row.Table.Columns.Contains("RequestType") ? row.Field<int>("RequestType") : 0,
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
-                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     DocumentName = row.Table.Columns.Contains("DocumentName") ? row.Field<string>("DocumentName") : string.Empty,
                     Justification = row.Table.Columns.Contains("Justification") ? row.Field<string>("Justification") : string.Empty,
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
@@ -311,7 +337,7 @@ public class DocumentRequestComponent
         {
             string query = @"
             SELECT Id, Name
-            FROM Documents
+            FROM DocumentRequests
             WHERE IsActive = True
               AND IsDeleted = False
             ORDER BY Name";
@@ -340,14 +366,16 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
-                FROM Documents d
+                SELECT d.*, c.Name AS Company,div.Name AS Division, dep.Name AS Department, bd.Name BusinessDomain
+                FROM DocumentRequests d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
                 LEFT JOIN Department dep
                 ON d.DepartmentCode = dep.Code
+                LEFT JOIN BusinessDomains bd
+                ON d.BusinessDomainCode = bd.Code
                 WHERE d.Id = {code}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
@@ -355,7 +383,7 @@ public class DocumentRequestComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentRequests not found", 200);
 
             DataRow row = dt.Rows[0];
 
@@ -367,9 +395,19 @@ public class DocumentRequestComponent
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
@@ -394,14 +432,16 @@ public class DocumentRequestComponent
         try
         {
             string query = $@"
-                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
-                FROM Documents d
+                SELECT d.*, c.Name AS Company,div.Name AS Division, dep.Name AS Department, bd.Name BusinessDomain
+                FROM DocumentRequests d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 LEFT JOIN Divisions div
                 ON d.DivisionCode = div.Code
                 LEFT JOIN Department dep
                 ON d.DepartmentCode = dep.Code
+                LEFT JOIN BusinessDomains bd
+                ON d.BusinessDomainCode = bd.Code
                 WHERE d.DivisionCode = {dCode}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
@@ -409,7 +449,7 @@ public class DocumentRequestComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentRequests not found", 200);
 
             DataRow row = dt.Rows[0];
 
@@ -421,9 +461,19 @@ public class DocumentRequestComponent
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),
@@ -456,18 +506,18 @@ public class DocumentRequestComponent
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM Documents
+            FROM DocumentRequests
             WHERE Id = '{input.Id}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("DocumentRequests not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE Documents
+            UPDATE DocumentRequests
             SET 
                 RequestNumber = '{input.RequestNumber}',
                 RequestType = '{input.RequestType}',
@@ -475,6 +525,7 @@ public class DocumentRequestComponent
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
+                BusinessDomainCode = '{input.BusinessDomainCode}',
                 DocumentName = '{input.DocumentName}',
                 Justification = '{input.Justification}',
                 Status = '{input.Status}',
@@ -491,14 +542,16 @@ public class DocumentRequestComponent
 
             // Return updated record
             string selectQuery = $@"
-                SELECT d.*,c.Id AS CompanyId, c.Name AS Company
-                    FROM Documents d
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
-                    LEFT JOIN Divisions div
-                    ON d.DivisionCode = div.Code
-                    LEFT JOIN Department dep
-                    ON d.DepartmentCode = dep.Code
+                SELECT d.*, c.Name AS Company,div.Name AS Division, dep.Name AS Department, bd.Name BusinessDomain
+                FROM DocumentRequests d
+                LEFT JOIN Companies c
+                ON d.CompanyId = c.Id
+                LEFT JOIN Divisions div
+                ON d.DivisionCode = div.Code
+                LEFT JOIN Department dep
+                ON d.DepartmentCode = dep.Code
+                LEFT JOIN BusinessDomains bd
+                ON d.BusinessDomainCode = bd.Code
             WHERE d.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -516,9 +569,19 @@ public class DocumentRequestComponent
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
                 Justification = row.Field<string>("Justification"),
                 Status = row.Field<int>("Status"),

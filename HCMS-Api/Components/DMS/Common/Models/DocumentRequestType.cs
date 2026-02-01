@@ -1,10 +1,10 @@
-﻿namespace HCMS_Api.Components.DMS.Common.Models;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
-public class DocumentTypeDto
-{
-}
+namespace HCMS_Api.Components.DMS.Common.Models;
 
-public class DocumentType : BaseEntity
+
+[Table("DocumentRequestTypes")]
+public class DocumentRequestType : BaseEntity
 {
     public int Id { get; set; }
 
@@ -19,19 +19,19 @@ public class DocumentType : BaseEntity
     public ICollection<Document> Documents { get; set; } = new HashSet<Document>();
 }
 
-public class DocumentTypeCreateDto
+public class DocumentRequestTypeCreateDto
 {
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int CompanyId { get; set; }
     public string Name { get; set; }
     public string? Description { get; set; }
 }
 
-public class DocumentTypeUpdateDto
+public class DocumentRequestTypeUpdateDto
 {
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int CompanyId { get; set; }
     public string Code { get; set; }
     public string Name { get; set; }
 
@@ -41,16 +41,15 @@ public class DocumentTypeUpdateDto
     public bool IsDeleted { get; set; }
 }
 
-public class DocumentTypeReadDto : AuditableEntity
+public class DocumentRequestTypeReadDto : AuditableEntity
 {
     public int Id { get; set; }
 
     // 🔑 Tenant
     public int CompanyId { get; set; }
-    public string Company { get; set; } = null!; 
-    public string? Description { get; set; }
+    public string Company { get; set; } = null!;
     public string Code { get; set; }
     public string Name { get; set; }
+    public string? Description { get; set; }
 
-     
 }

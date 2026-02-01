@@ -12,11 +12,11 @@ public class TransferWorkflowPolicy : AuditableEntity
     // 🔑 Tenant
     public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
-
-
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     public int ApprovalRoleId { get; set; }
     public int ApprovalUserId { get; set; }
@@ -31,8 +31,16 @@ public class TransferWorkflowPolicyReadDto : AuditableEntity
     public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
+
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
+
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public int ApprovalRoleId { get; set; }
     public int ApprovalUserId { get; set; }
@@ -46,10 +54,11 @@ public class TransferWorkflowPolicyCreateDto
     // 🔑 Tenant
     public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
-
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     public int ApprovalRoleId { get; set; }
     public int ApprovalUserId { get; set; }
@@ -62,11 +71,11 @@ public class TransferWorkflowPolicyUpdateDto
 
     // 🔑 Tenant
     public int CompanyId { get; set; }
-    public string Company { get; set; } = null!;
-
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
+    public string Company { get; set; } = null!;  
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     public int ApprovalRoleId { get; set; }
     public int ApprovalUserId { get; set; }

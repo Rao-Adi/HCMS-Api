@@ -18,10 +18,12 @@ public class Document : AuditableEntity
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;
 
-    public string DocumentTypeCode { get; set; } = null!;
-    public string DivisionCode { get; set; } = null!;
-    public string DepartmentCode { get; set; } = null!;
-    public string SubDepartmentCode { get; set; } = null!;
+    public string DocumentTypeCode { get; set; } = null!; 
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; }
+     
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
@@ -52,17 +54,21 @@ public class DocumentReadDto : AuditableEntity
 
     public string DocumentType { get; set; } = null!;
     public string DocumentTypeCode { get; set; } = null!;
-    public string Division { get; set; } = null!;
-    public string DivisionCode { get; set; } = null!;
-    public string Department { get; set; } = null!;
-    public string DepartmentCode { get; set; } = null!;
-    public string SubDepartment { get; set; } = null!;
-    public string SubDepartmentCode { get; set; } = null!;
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
+
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
+
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 
-    public int Status { get; set; }
+    public string Version { get; set; }
 
     public string? EffectiveFrom { get; set; }
     public string? EffectiveTo { get; set; }
@@ -76,15 +82,16 @@ public class DocumentCreateDto
     // 🔑 Tenant
     public int CompanyId { get; set; } 
       
-    public string DocumentTypeCode { get; set; } = null!;
-    public string DivisionCode { get; set; } = null!;
-    public string DepartmentCode { get; set; } = null!;
-    public string SubDepartmentCode { get; set; } = null!;
+    public string DocumentTypeCode { get; set; } = null!; 
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 
-    public int Status { get; set; }
+    public string Version { get; set; }
 
     public DateTime? EffectiveFrom { get; set; }
     public DateTime? EffectiveTo { get; set; }
@@ -104,15 +111,17 @@ public class DocumentUpdateDto : AuditableEntity
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;
 
-    public string DocumentTypeCode { get; set; } = null!;
-    public string DivisionCode { get; set; } = null!;
-    public string DepartmentCode { get; set; } = null!;
-    public string SubDepartmentCode { get; set; } = null!;
+    public string DocumentTypeCode { get; set; } = null!; 
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; }
+     
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 
-    public int Status { get; set; }
+    public string Version { get; set; }
 
     public string? EffectiveFrom { get; set; }
     public string? EffectiveTo { get; set; }

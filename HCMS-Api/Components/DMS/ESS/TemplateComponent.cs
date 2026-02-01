@@ -80,6 +80,7 @@ public class TemplateComponent
                             DivisionCode,
                             DepartmentCode,
                             SubDepartmentCode,
+                            BusinessDomainCode,
                             IsDefault, 
                             TemplateContent,
                             IsActive,
@@ -98,6 +99,7 @@ public class TemplateComponent
                             @DivisionCode,
                             @DepartmentCode,
                             @SubDepartmentCode,
+                            @BusinessDomainCode,
                             @IsDefault,
                             @TemplateContent,
                             TRUE,
@@ -123,6 +125,7 @@ public class TemplateComponent
                         { "@DivisionCode",        input.DivisionCode        ?? (object)DBNull.Value },
                         { "@DepartmentCode",      input.DepartmentCode      ?? (object)DBNull.Value },
                         { "@SubDepartmentCode",   input.SubDepartmentCode   ?? (object)DBNull.Value },
+                        { "@BusinessDomainCode",   input.BusinessDomainCode   ?? (object)DBNull.Value },
                         { "@IsDefault",           input.IsDefault           },  // bool → true/false (no quotes)
                         { "@TemplateContent",     input.TemplateContent     ?? (object)DBNull.Value },
                         { "@CreatedBy",           userId                    },
@@ -133,7 +136,7 @@ public class TemplateComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM Templates t
             LEFT JOIN Divisions div
             ON t.DivisionCode = div.Code
@@ -141,6 +144,10 @@ public class TemplateComponent
             ON t.DepartmentCode = d.Code
             LEFT JOIN SubDepartments sd
             ON t.SubDepartmentCode = sd.Code
+            LEFT JOIN Companies c
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
             WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -159,9 +166,19 @@ public class TemplateComponent
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 IsDefault = row.Field<bool>("IsDefault"),
                 TemplateContent = row.Field<string>("TemplateContent"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -243,7 +260,7 @@ public class TemplateComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                         FROM Templates t
                         LEFT JOIN Divisions div
                         ON t.DivisionCode = div.Code
@@ -251,6 +268,10 @@ public class TemplateComponent
                         ON t.DepartmentCode = d.Code
                         LEFT JOIN SubDepartments sd
                         ON t.SubDepartmentCode = sd.Code
+                        LEFT JOIN Companies c
+                        ON d.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON d.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -283,9 +304,19 @@ public class TemplateComponent
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
                     TemplateFileUrl = row.Table.Columns.Contains("TemplateFileUrl") ? row.Field<string>("TemplateFileUrl") : string.Empty,
                     TemplateType = row.Table.Columns.Contains("TemplateType") ? row.Field<int>("TemplateType") : 0,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
-                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     TemplateContent = row.Table.Columns.Contains("TemplateContent") ? row.Field<string>("TemplateContent") : string.Empty,
                     IsDefault = row.Table.Columns.Contains("IsDefault") ? row.Field<bool>("IsDefault") : false,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -322,7 +353,7 @@ public class TemplateComponent
         try
         {
             string query = $@"
-                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                     FROM Templates t
                     LEFT JOIN Divisions div
                     ON t.DivisionCode = div.Code
@@ -330,6 +361,10 @@ public class TemplateComponent
                     ON t.DepartmentCode = d.Code
                     LEFT JOIN SubDepartments sd
                     ON t.SubDepartmentCode = sd.Code
+                    LEFT JOIN Companies c
+                    ON d.CompanyId = c.Id
+                    LEFT JOIN BusinessDomains bd
+                    ON d.BusinessDomainCode = bd.Code
                 WHERE t.Id = {code}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
@@ -350,9 +385,19 @@ public class TemplateComponent
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 TemplateContent = row.Field<string>("TemplateContent"),
                 IsDefault = row.Field<bool>("IsDefault"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -403,6 +448,7 @@ public class TemplateComponent
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
+                BusinessDomainCode = '{input.BusinessDomainCode}',
                 TemplateContent = '{input.TemplateContent}',
                 IsDefault = '{input.IsDefault}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -417,7 +463,7 @@ public class TemplateComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM Templates t
             LEFT JOIN Divisions div
             ON t.DivisionCode = div.Code
@@ -425,6 +471,10 @@ public class TemplateComponent
             ON t.DepartmentCode = d.Code
             LEFT JOIN SubDepartments sd
             ON t.SubDepartmentCode = sd.Code
+            LEFT JOIN Companies c
+            ON d.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON d.BusinessDomainCode = bd.Code
             WHERE t.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -443,9 +493,19 @@ public class TemplateComponent
                 TemplateName = row.Field<string>("TemplateName"),
                 TemplateFileUrl = row.Field<string>("TemplateFileUrl"),
                 TemplateType = row.Field<int>("TemplateType"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 TemplateContent = row.Field<string>("TemplateContent"),
                 IsDefault = row.Field<bool>("IsDefault"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

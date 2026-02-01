@@ -66,6 +66,30 @@ public class UserComponent
             if (exists > 0)
                 throw new CustomException("User already exists", 409);
 
+            // 🔢 Generate next Division Code
+            string getLastCodeQuery = @"
+                            SELECT EmployeeCode
+                            FROM users
+                            WHERE EmployeeCode IS NOT NULL
+                            ORDER BY Id DESC
+                            LIMIT 1";
+
+            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
+
+            int nextNumber = 1;
+
+            if (lastCodeObj != null)
+            {
+                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
+                var numericPart = lastCode.Replace("EMP-", "");
+
+                if (int.TryParse(numericPart, out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            string generatedCode = $"EMP-{nextNumber:D4}";
+
+
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Users
@@ -76,6 +100,7 @@ public class UserComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
+                BusinessDomainCode,
                 ReportingTo,
                 DateOfJoining, 
                 IsActive,
@@ -88,12 +113,13 @@ public class UserComponent
             VALUES
             (
                 '{input.CompanyId}',
-                '{input.EmployeeCode}',
+                '{generatedCode}',
                 '{input.EmployeeName}',
                 '{input.Email}', 
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}',
+                '{input.BusinessDomainCode}',
                 '{input.ReportingTo}',
                 '{input.DateOfJoining}',
                 TRUE,
@@ -109,19 +135,21 @@ public class UserComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
-			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
-					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
-                        FROM Users u
-                        LEFT JOIN Divisions div 
-						ON u.divisionCode = div.Code
-						LEFT JOIN Departments dep
-						ON u.DepartmentCode = dep.Code
-						LEFT JOIN SubDepartments sdep
-						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Companies c
-                        ON u.CompanyId = c.Id
+             SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
+   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+		                   div.Name as Division, dep.Name as Department,
+		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
+            FROM Users u
+            LEFT JOIN Divisions div 
+			ON u.divisionCode = div.Code
+			LEFT JOIN Departments dep
+			ON u.DepartmentCode = dep.Code
+			LEFT JOIN SubDepartments sdep
+			ON u.SubdepartmentCode = sdep.Code
+            LEFT JOIN Companies c
+            ON u.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd
+            ON u.BusinessDomainCode = bd.Code
             WHERE u.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -139,9 +167,19 @@ public class UserComponent
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -241,6 +279,7 @@ public class UserComponent
                     OR UPPER(u.DivisionCode) LIKE '%{search}%'
                     OR UPPER(u.DepartmentCode) LIKE '%{search}%'
                     OR UPPER(u.SubDepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.BusinessDomain) LIKE '%{search}%'
                     OR UPPER(u.Email) LIKE '%{search}%'
                     OR UPPER(u.DateOfJoining) LIKE '%{search}%'
                     OR UPPER(u.ReportingTo) LIKE '%{search}%'
@@ -253,9 +292,10 @@ public class UserComponent
                 "Id" => "u.Id",
                 "EMPLOYEECODE" => "u.EmployeeCode",
                 "USERNAME" => "u.EmployeeName",
-                "DIVISIONCODE" => "u.DivisionCode",
-                "DEPARTMENTCODE" => "u.DepartmentCode",
-                "SUBDEPARTMENTCODE" => "u.SubDepartmentCode",
+                "level1Id" => "u.DivisionCode",
+                "level2Id" => "u.DepartmentCode",
+                "level3Id" => "u.SubDepartmentCode",
+                "level4Id" => "u.BusinessDomainCode",
                 "EMAIL" => "u.Email",
                 "DATEOFJOINING" => "u.DateOfJoining",
                 "REPORTINGTO" => "u.ReportingTo",
@@ -268,19 +308,21 @@ public class UserComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
-			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
-					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
+                         SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
+   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+		                   div.Name as Division, dep.Name as Department,
+		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
                         FROM Users u
                         LEFT JOIN Divisions div 
-						ON u.divisionCode = div.Code
-						LEFT JOIN Departments dep
-						ON u.DepartmentCode = dep.Code
-						LEFT JOIN SubDepartments sdep
-						ON u.SubdepartmentCode = sdep.Code
+			            ON u.divisionCode = div.Code
+			            LEFT JOIN Departments dep
+			            ON u.DepartmentCode = dep.Code
+			            LEFT JOIN SubDepartments sdep
+			            ON u.SubdepartmentCode = sdep.Code
                         LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON u.BusinessDomainCode = bd.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -312,12 +354,19 @@ public class UserComponent
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     EmployeeName = row.Table.Columns.Contains("EmployeeName") ? row.Field<string>("EmployeeName") : string.Empty,
                     Email = row.Table.Columns.Contains("Email") ? row.Field<string>("Email") : string.Empty,
-                    DivisionName = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
-                    DepartmentName = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
-                    SubDepartmentName = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
-                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                     ReportingTo = row.Table.Columns.Contains("ReportingTo") ? row.Field<string>("ReportingTo") : string.Empty,
                     DateOfJoining = (row.Table.Columns.Contains("DateOfJoining") && !row.IsNull("DateOfJoining"))
                                 ? row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -355,19 +404,21 @@ public class UserComponent
         try
         {
             string query = $@"
-               SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
-			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
-					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
-                        FROM Users u
-                        LEFT JOIN Divisions div 
-						ON u.divisionCode = div.Code
-						LEFT JOIN Departments dep
-						ON u.DepartmentCode = dep.Code
-						LEFT JOIN SubDepartments sdep
-						ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Companies c
-                        ON u.CompanyId = c.Id
+                    SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
+   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+		                   div.Name as Division, dep.Name as Department,
+		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
+                    FROM Users u
+                    LEFT JOIN Divisions div 
+			        ON u.divisionCode = div.Code
+			        LEFT JOIN Departments dep
+			        ON u.DepartmentCode = dep.Code
+			        LEFT JOIN SubDepartments sdep
+			        ON u.SubdepartmentCode = sdep.Code
+                    LEFT JOIN Companies c
+                    ON u.CompanyId = c.Id
+                    LEFT JOIN BusinessDomains bd
+                    ON u.BusinessDomainCode = bd.Code
                 WHERE u.Id = {id}
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
@@ -387,9 +438,19 @@ public class UserComponent
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -440,6 +501,7 @@ public class UserComponent
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}', 
+                BusinessDomainCode = '{input.BusinessDomainCode}', 
                 ReportingTo = '{input.ReportingTo}', 
                 DateOfJoining = '{input.DateOfJoining}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -454,19 +516,21 @@ public class UserComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT u.Id,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,
-			   		           u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-					           div.Code as DivisionCode2,div.Name as DivisionName, dep.Code as DepartmentCode2,dep.Name as DepartmentName,
-					           sdep.Code as SubDepartmentCode2, sdep.Name SubDepartmentName, c.Id AS CompanyId, c.Name Company
+                         SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
+   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
+		                   div.Name as Division, dep.Name as Department,
+		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
                         FROM Users u
                         LEFT JOIN Divisions div 
-						ON u.divisionCode = div.Code
-						LEFT JOIN Departments dep
-						ON u.DepartmentCode = dep.Code
-						LEFT JOIN SubDepartments sdep
-						ON u.SubdepartmentCode = sdep.Code
+			            ON u.divisionCode = div.Code
+			            LEFT JOIN Departments dep
+			            ON u.DepartmentCode = dep.Code
+			            LEFT JOIN SubDepartments sdep
+			            ON u.SubdepartmentCode = sdep.Code
                         LEFT JOIN Companies c
                         ON u.CompanyId = c.Id
+                        LEFT JOIN BusinessDomains bd
+                        ON u.BusinessDomainCode = bd.Code
             WHERE u.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -484,9 +548,19 @@ public class UserComponent
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
                 Email = row.Field<string>("Email"),
+
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

@@ -22,10 +22,13 @@ public class Template : AuditableEntity
     public string TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
-
-    public string? DivisionCode { get; set; }
+     
+    public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; }
+     
     public string? SubDepartmentCode { get; set; }
+     
+    public string? BusinessDomainCode { get; set; }
 
     public bool IsDefault { get; set; }
 
@@ -50,9 +53,16 @@ public class TemplateReadDto : AuditableEntity
 
     public int TemplateType { get; set; }
 
+    public string? Division { get; set; }
     public string? DivisionCode { get; set; }
+    public string? Department { get; set; }
     public string? DepartmentCode { get; set; }
+
+    public string? SubDepartment { get; set; }
     public string? SubDepartmentCode { get; set; }
+
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public string? TemplateContent { get; set; }
 
@@ -76,10 +86,12 @@ public class TemplateCreateDto
     public string TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
-
-    public string? DivisionCode { get; set; }
+     
+    public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; }
-    public string? SubDepartmentCode { get; set; }
+     
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
     public string? TemplateContent { get; set; }
 
     public bool IsDefault { get; set; }
@@ -107,6 +119,8 @@ public class TemplateUpdateDto
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
+    public string? Division { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public string? TemplateContent { get; set; }
 

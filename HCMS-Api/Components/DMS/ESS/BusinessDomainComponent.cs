@@ -229,7 +229,7 @@ public class BusinessDomainComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "bd.Name",
-                "CODE" => "db.Code",
+                "CODE" => "bd.Code",
                 "ISACTIVE" => "bd.IsActive",
                 _ => "bd.Name"
             };

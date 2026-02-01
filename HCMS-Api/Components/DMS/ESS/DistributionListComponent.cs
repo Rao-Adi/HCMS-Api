@@ -51,15 +51,13 @@ public class DistributionListComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("DistributionList code is required.", 400);
-
+            
             // Check duplicate by Code OR DivisionCode
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DistributionLists
-            WHERE (DocumentRequestId = '{input.DocumentRequestId}'
-                   OR DivisionCode = '{input.DivisionCode.Replace("'", "''")}')
+            WHERE (DocumentRequestTypeCode = '{input.DocumentRequestTypeCode}'
+                   OR DivisionCode = '{input.DivisionCode!.Replace("'", "''")}')
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -71,9 +69,11 @@ public class DistributionListComponent
             string insertQuery = $@"
             INSERT INTO DistributionLists
             (   CompanyId,
-                DocumentRequestId,
+                DocumentRequestTypeCode,
                 DivisionCode,
                 DepartmentCode,
+                SubDepartmentCode,
+                BusinessDomainCode,
                 RoleId,
                 DistributionType,
                 IsActive,
@@ -86,9 +86,11 @@ public class DistributionListComponent
             VALUES
             (
                 '{input.CompanyId}',
-                '{input.DocumentRequestId}',
-                '{input.DivisionCode.Replace("'", "''")}',
-                '{input.DepartmentCode.Replace("'", "''")}',
+                '{input.DocumentRequestTypeCode}',
+                '{input.DivisionCode!.Replace("'", "''")}',
+                '{input.DepartmentCode!.Replace("'", "''")}',
+                '{input.SubDepartmentCode!.Replace("'", "''")}',
+                '{input.BusinessDomainCode!.Replace("'", "''")}',
                 '{input.RoleId}',
                 '{input.DistributionType}',
                 TRUE,
@@ -103,10 +105,28 @@ public class DistributionListComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@"
-            SELECT *
-            FROM DistributionLists
-            WHERE Id = {newId}";
+            string selectQuery = $@" 
+                        SELECT dl.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
+                        FROM DistributionLists dl
+                        LEFT JOIN Divisions div
+                        ON dl.DivisionCode = div.Code
+                        LEFT JOIN DocumentRequestTypes drt
+                        ON dl.DocumentRequestTypeCode = drt.Code
+                        LEFT JOIN Departments dep
+                        ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r
+                        ON dl.RoleId = r.Id
+                        LEFT JOIN DistributionTypes dt
+                        ON dl.DistributionType = dt.Id
+            WHERE dl.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -117,13 +137,31 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+
+                DocumentRequestType = row.Field<string>("DocumentRequestType"),
+                DocumentRequestTypeCode = row.Field<string>("DocumentRequestTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
+
+                Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
+
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -139,7 +177,7 @@ public class DistributionListComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string GId)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
@@ -147,7 +185,7 @@ public class DistributionListComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DistributionLists
-                WHERE Id = {GId}
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -159,7 +197,7 @@ public class DistributionListComponent
             string deleteQuery = $@"
                 UPDATE DistributionLists
                 SET IsDeleted = False
-                WHERE Id = {GId}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -185,7 +223,7 @@ public class DistributionListComponent
                 whereClause += $@"
                 AND (
                     UPPER(dl.DivisionCode) LIKE '%{search}%'
-                    OR UPPER(dep.DepartmentCode) LIKE '%{search}%'
+                    OR UPPER(dl.DepartmentCode) LIKE '%{search}%'
                 )";
             }
 
@@ -193,7 +231,7 @@ public class DistributionListComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "dl.DivisionCode",
-                "DepartmentCode" => "dep.DepartmentCode",
+                "DepartmentCode" => "dl.DepartmentCode",
                 "ISACTIVE" => "dl.IsActive",
                 _ => "dl.DivisionCode"
             };
@@ -203,12 +241,26 @@ public class DistributionListComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT *
+                        SELECT dl.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
                         FROM DistributionLists dl
                         LEFT JOIN Divisions div
-						ON dl.DivisionCode = dl.Code
-                        LEFT JOIN Department dep
-						ON dl.DepartmentCode = dep.Code
+                        ON dl.DivisionCode = div.Code
+                        LEFT JOIN DocumentRequestTypes drt
+                        ON dl.DocumentRequestTypeCode = drt.Code
+                        LEFT JOIN Departments dep
+                        ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r
+                        ON dl.RoleId = r.Id
+                        LEFT JOIN DistributionTypes dt
+                        ON dl.DistributionType = dt.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -234,20 +286,37 @@ public class DistributionListComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DistributionListReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Id = row.Field<int>("Id"),
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") : 0,
-                    DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
-                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
-                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+
+                    DocumentRequestType = row.Field<string>("DocumentRequestType"),
+                    DocumentRequestTypeCode = row.Field<string>("DocumentRequestTypeCode"),
+
+                    Division = row.Field<string>("DivisionName"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("DepartmentName"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartmentName"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                    Role = row.Field<string>("RoleName"),
+                    RoleId = row.Field<int>("RoleId"),
+
+                    Distribution = row.Field<string>("DistributionTypeName"),
+                    DistributionType = row.Field<int>("DistributionType"),
+
+                    IsDeleted = row.Field<bool>("IsDeleted"),
+                    IsActive = row.Field<bool>("IsActive"),
+                    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    CreatedBy = row.Field<string>("CreatedBy"),
+                    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    LastModifiedBy = row.Field<string>("LastModifiedBy")
                 })
                 .ToList();
 
@@ -300,16 +369,34 @@ public class DistributionListComponent
     }
 
 
-    public async Task<DistributionListReadDto> GetByCodeAsync(string code)
+    public async Task<DistributionListReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT *
-                FROM DistributionLists
-                WHERE Code = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                SELECT dl.*, div.Name AS DivisionName,
+                    dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                    drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
+                    FROM DistributionLists dl
+                    LEFT JOIN Divisions div
+                    ON dl.DivisionCode = div.Code
+                    LEFT JOIN DocumentRequestTypes drt
+                    ON dl.DocumentRequestTypeCode = drt.Code
+                    LEFT JOIN Departments dep
+                    ON dl.DepartmentCode = dep.Code
+                    LEFT JOIN SubDepartments subd
+                    ON dl.SubDepartmentCode = subd.Code
+                    LEFT JOIN BusinessDomains bd
+                    ON dl.BusinessDomainCode = bd.Code
+                    LEFT JOIN Companies c 
+                    ON dl.CompanyId = c.Id
+                    LEFT JOIN Roles r
+                    ON dl.RoleId = r.Id
+                    LEFT JOIN DistributionTypes dt
+                    ON dl.DistributionType = dt.Id
+                WHERE dl.Id = {id}
+                  AND dl.IsActive = True
+                  AND dl.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -320,13 +407,31 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+
+                DocumentRequestType = row.Field<string>("DocumentRequestType"),
+                DocumentRequestTypeCode = row.Field<string>("DocumentRequestTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
+
+                Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
+
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -341,48 +446,7 @@ public class DistributionListComponent
         }
     }
 
-
-    public async Task<DistributionListReadDto> GetByDivisionCodeAsync(string dCode)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM DistributionLists
-                WHERE Division = {dCode}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("DistributionList not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new DistributionListReadDto
-            {
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-                RoleId = row.Field<int>("RoleId"),
-                DistributionType = row.Field<int>("DistributionType"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
+ 
 
     public async Task<DistributionListReadDto> UpdateAsync(DistributionListUpdateDto input)
     {
@@ -410,7 +474,7 @@ public class DistributionListComponent
             string updateQuery = $@"
             UPDATE DistributionLists
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
+                DivisionCode = '{input.DivisionCode!.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -423,10 +487,27 @@ public class DistributionListComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT *
-            FROM DistributionLists 
-            
-            WHERE Id = '{input.Id}'";
+            SELECT dl.*, div.Name AS DivisionName,
+                dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
+                FROM DistributionLists dl
+                LEFT JOIN Divisions div
+                ON dl.DivisionCode = div.Code
+                LEFT JOIN DocumentRequestTypes drt
+                ON dl.DocumentRequestTypeCode = drt.Code
+                LEFT JOIN Departments dep
+                ON dl.DepartmentCode = dep.Code
+                LEFT JOIN SubDepartments subd
+                ON dl.SubDepartmentCode = subd.Code
+                LEFT JOIN BusinessDomains bd
+                ON dl.BusinessDomainCode = bd.Code
+                LEFT JOIN Companies c 
+                ON dl.CompanyId = c.Id
+                LEFT JOIN Roles r
+                ON dl.RoleId = r.Id
+                LEFT JOIN DistributionTypes dt
+                ON dl.DistributionType = dt.Id
+            WHERE dl.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -437,13 +518,32 @@ public class DistributionListComponent
 
             return new DistributionListReadDto
             {
+                Id = row.Field<int>("Id"),
+
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                DocumentRequestId = row.Field<int>("DocumentRequestId"),
+
+                DocumentRequestType = row.Field<string>("DocumentRequestType"),
+                DocumentRequestTypeCode = row.Field<string>("DocumentRequestTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
+
+                Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
+
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

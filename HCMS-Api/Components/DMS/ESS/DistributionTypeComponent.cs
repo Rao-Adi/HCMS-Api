@@ -97,9 +97,9 @@ public class DistributionTypeComponent
             string selectQuery = $@"
                         SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
                         FROM DistributionTypes dt
-                        LEFT JOIN Company
+                        LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
-            WHERE Id = {newId}";
+            WHERE dt.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -225,14 +225,14 @@ public class DistributionTypeComponent
             string query = $@"
                         SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
                             FROM DistributionTypes dt
-                            LEFT JOIN Company
+                            LEFT JOIN Companies c
                             ON dt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DistributionTypes
+                        FROM DistributionTypes dt
                         {whereClause};
                     ";
 
@@ -292,7 +292,7 @@ public class DistributionTypeComponent
             string query = $@"
                 SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
                         FROM DistributionTypes dt
-                        LEFT JOIN Company
+                        LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
                 WHERE dt.Id = {id}
                   AND dt.IsActive = True
@@ -367,7 +367,7 @@ public class DistributionTypeComponent
             string selectQuery = $@"
             SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
             FROM DistributionTypes dt
-            LEFT JOIN Company
+            LEFT JOIN Companies c
             ON dt.CompanyId = c.Id
             WHERE dt.Name = '{input.Name.Replace("'", "''")}'";
 

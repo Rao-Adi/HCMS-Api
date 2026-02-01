@@ -15,8 +15,10 @@ public class AttributeMandatoryScope : AuditableEntity
     public Company Company { get; set; } = null!;
 
     public int DocumentAttributeId { get; set; }
-    public string DivisionCode { get; set; }
-    public string DepartmentCode { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public bool IsMandatory { get; set; }
 
@@ -32,9 +34,10 @@ public class AttributeMandatoryScopeCreateDto
     // 🔑 Tenant
     public int CompanyId { get; set; } 
     public int DocumentAttributeId { get; set; }
-    public string DivisionCode { get; set; }
-    public string DepartmentCode { get; set; }
-    public string SubDepartmentCode { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public bool IsMandatory { get; set; }
 
@@ -48,10 +51,10 @@ public class AttributeMandatoryScopeUpdateDto
     public int CompanyId { get; set; } 
 
     public int DocumentAttributeId { get; set; }
-    public string DivisionCode { get; set; }
-    public string DepartmentCode { get; set; }
-
-    public string SubDepartmentCode { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public bool IsMandatory { get; set; }
 
@@ -69,13 +72,16 @@ public class AttributeMandatoryScopeReadDto
     public string Company { get; set; } = null!;
 
     public int DocumentAttributeId { get; set; }
-    public string Division { get; set; }
-    public string DivisionCode { get; set; }
-    public string Department { get; set; }
-    public string DepartmentCode { get; set; }
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
 
-    public string SubDepartment { get; set; }
-    public string SubDepartmentCode { get; set; }
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
+     
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     public bool IsMandatory { get; set; }
     public bool IsActive { get; set; }

@@ -102,13 +102,13 @@ public class DocumentComponent
             if (lastCodeObj != null)
             {
                 var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
-                var numericPart = lastCode.Replace("DIV-", "");
+                var numericPart = lastCode.Replace("DOC-", "");
 
                 if (int.TryParse(numericPart, out int lastNumber))
                     nextNumber = lastNumber + 1;
             }
 
-            string generatedCode = $"DIV-{nextNumber:D4}";
+            string generatedCode = $"DOC-{nextNumber:D4}";
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -119,8 +119,9 @@ public class DocumentComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
+                BusinessDomainCode,
                 DocumentName,
-                Status,
+                Version,
                 EffectiveFrom, 
                 EffectiveTo, 
                 NextReviewdate, 
@@ -140,8 +141,9 @@ public class DocumentComponent
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
                 '{input.SubDepartmentCode}', 
+                '{input.BusinessDomainCode}', 
                 '{input.DocumentName}', 
-                '{input.Status}', 
+                '{input.Version}', 
                 {(input.EffectiveFrom.HasValue ? $"'{input.EffectiveFrom:yyyy-MM-dd}'" : "NULL")}, 
                 {(input.EffectiveTo.HasValue ? $"'{input.EffectiveTo:yyyy-MM-dd}'" : "NULL")}, 
                 '{input.NextReviewDate:yyyy-MM-dd}', 
@@ -160,7 +162,7 @@ public class DocumentComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
@@ -171,6 +173,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
@@ -189,10 +193,21 @@ public class DocumentComponent
                 Company = row.Field<string>("Company"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
-                Status = row.Field<int>("Status"),
+                Version = row.Field<string>("Version"),
                 EffectiveFrom = row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss"),
                 EffectiveTo = row.Field<DateTime>("EffectiveTo").ToString("yyyy-MM-dd HH:mm:ss"),
                 NextReviewDate = row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -270,6 +285,7 @@ public class DocumentComponent
                 "DepartmentCode" => "doc.DepartmentCode",
                 "DivisionCode" => "doc.DivisionCode",
                 "SubDepartmentCode" => "doc.SubDepartmentCode",
+                "BusinessDomainCode" => "doc.BusinessDomainCode",
                 "DocumentName" => "doc.DocumentName",
                 "ISACTIVE" => "doc.IsActive",
                 _ => "doc.DocumentNumber"
@@ -281,7 +297,7 @@ public class DocumentComponent
 
             string query = $@"
                         SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
@@ -292,6 +308,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                         {whereClause}
@@ -338,8 +356,11 @@ public class DocumentComponent
                     SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
 
+                    BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
+                    BusinessDomainCode = row.Table.Columns.Contains("BusinessDomainCode") ? row.Field<string>("BusinessDomainCode") : string.Empty,
+
                     DocumentName = row.Table.Columns.Contains("DocumentName") ? row.Field<string>("DocumentName") : string.Empty,
-                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
+                    Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
                     EffectiveFrom = (row.Table.Columns.Contains("EffectiveFrom") && !row.IsNull("EffectiveFrom"))
                                 ? row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                      
@@ -416,7 +437,7 @@ public class DocumentComponent
         {
             string query = $@"
                 SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
@@ -427,6 +448,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                 WHERE doc.DocumentNumber = {documentNumber}
@@ -452,17 +475,17 @@ public class DocumentComponent
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                DocumentType = row.Field<string>("DocumentTypeName"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
                 Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
                 SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
-                Status = row.Field<int>("Status"),
+                Version = row.Field<string>("Version"),
                 EffectiveFrom = row.Field<string>("EffectiveFrom"),
                 EffectiveTo = row.Field<string>("EffectiveTo"),
                 NextReviewDate = row.Field<string>("NextReviewDate"),
@@ -488,7 +511,7 @@ public class DocumentComponent
         {
             string query = $@"
                 SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
@@ -499,6 +522,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
                 WHERE doc.DivisionCode = {dCode}
@@ -524,16 +549,17 @@ public class DocumentComponent
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                DocumentType = row.Field<string>("DocumentTypeName"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
                 Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
                 SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
-                Status = row.Field<int>("Status"),
+                Version = row.Field<string>("Version"),
                 EffectiveFrom = row.Field<string>("EffectiveFrom"),
                 EffectiveTo = row.Field<string>("EffectiveTo"),
                 NextReviewDate = row.Field<string>("NextReviewDate"),
@@ -583,8 +609,9 @@ public class DocumentComponent
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
+                BusinessDomainCode = '{input.BusinessDomainCode}',
                 DocumentName = '{input.DocumentName}',
-                Status = '{input.Status}',
+                Version = '{input.Version}',
                 EffectiveFrom = '{input.EffectiveFrom}',
                 EffectiveTo = '{input.EffectiveTo}',
                 NextReviewDate = '{input.NextReviewDate}',
@@ -602,7 +629,7 @@ public class DocumentComponent
             // Return updated record
             string selectQuery = $@"
                     SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
@@ -613,6 +640,8 @@ public class DocumentComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = '{input.Id}'";
@@ -636,16 +665,17 @@ public class DocumentComponent
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                DocumentType = row.Field<string>("DocumentTypeName"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
                 Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
                 SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 DocumentName = row.Field<string>("DocumentName"),
-                Status = row.Field<int>("Status"),
+                Version = row.Field<string>("Version"),
                 EffectiveFrom = row.Field<string>("EffectiveFrom"),
                 EffectiveTo = row.Field<string>("EffectiveTo"),
                 NextReviewDate = row.Field<string>("NextReviewDate"),

@@ -23,15 +23,11 @@ public class DocumentRequest : AuditableEntity
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DepartmentCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string SubDepartmentCode { get; set; } = null!;
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
@@ -65,14 +61,16 @@ public class DocumentRequestReadDto : AuditableEntity
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
 
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
 
-    [MaxLength(10)]
-    public string DepartmentCode { get; set; } = null!;
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
 
-    [MaxLength(10)]
-    public string SubDepartmentCode { get; set; } = null!;
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
@@ -102,15 +100,11 @@ public class DocumentRequestCreateDto
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DepartmentCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string SubDepartmentCode { get; set; } = null!;
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; } 
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
@@ -140,15 +134,12 @@ public class DocumentRequestUpdateDto
 
     [MaxLength(10)]
     public string DocumentTypeCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DivisionCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string DepartmentCode { get; set; } = null!;
-
-    [MaxLength(10)]
-    public string SubDepartmentCode { get; set; } = null!;
+     
+    public string? DivisionCode { get; set; } 
+    public string? DepartmentCode { get; set; }
+     
+    public string? SubDepartmentCode { get; set; } 
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;

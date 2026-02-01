@@ -75,6 +75,7 @@ public class AttributeMandatoryScopeComponent
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
+                BusinessDomainCode,
                 IsMandatory,
                 IsActive,
                 IsDeleted,
@@ -90,6 +91,7 @@ public class AttributeMandatoryScopeComponent
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
                 '{input.SubDepartmentCode}',
+                '{input.BusinessDomainCode}',
                 '{input.IsMandatory}',
                 TRUE,
                 FALSE,
@@ -105,7 +107,7 @@ public class AttributeMandatoryScopeComponent
             // Fetch inserted record
             string selectQuery = $@"
             SELECT doc.*, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
                         FROM AttributeMandatoryScopes doc
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
@@ -113,6 +115,8 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
             WHERE doc.Id = {newId}";
@@ -136,6 +140,9 @@ public class AttributeMandatoryScopeComponent
 
                 Department = row.Field<string>("DepartmentName"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
                 SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -212,6 +219,7 @@ public class AttributeMandatoryScopeComponent
                 "DivisionCode" => "doc.DivisionCode",
                 "DepartmentCode" => "doc.DepartmentCode",
                 "SubDepartmentCode" => "doc.SubDepartmentCode",
+                "BusinessDomainCode" => "bd.BusinessDomainCode",
                 "ISACTIVE" => "doc.IsActive",
                 _ => "doc.DocumentAttributeId"
             };
@@ -222,7 +230,7 @@ public class AttributeMandatoryScopeComponent
 
             string query = $@"
                        SELECT doc.*, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
                         FROM AttributeMandatoryScopes doc
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
@@ -230,6 +238,8 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
 
@@ -271,6 +281,9 @@ public class AttributeMandatoryScopeComponent
 
                     SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
+                    BusinessDomainCode = row.Table.Columns.Contains("BusinessDomainCode") ? row.Field<string>("BusinessDomainCode") : string.Empty,
 
                     IsMandatory = row.Table.Columns.Contains("IsMandatory") && row.Field<bool?>("IsMandatory") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -339,7 +352,7 @@ public class AttributeMandatoryScopeComponent
         {
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
                         FROM AttributeMandatoryScopes doc
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
@@ -347,6 +360,8 @@ public class AttributeMandatoryScopeComponent
                         ON doc.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd
                         ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
                 WHERE DocumentAttributeId = {id}
@@ -384,6 +399,9 @@ public class AttributeMandatoryScopeComponent
 
                     SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
+                    BusinessDomainCode = row.Table.Columns.Contains("BusinessDomainCode") ? row.Field<string>("BusinessDomainCode") : string.Empty,
 
                     IsMandatory = row.Table.Columns.Contains("IsMandatory") && row.Field<bool?>("IsMandatory") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -460,16 +478,18 @@ public class AttributeMandatoryScopeComponent
             // Return updated record
             string selectQuery = $@"
                         SELECT doc.*, div.Name AS DivisionName,
-                            dep.Name AS DepartmentName, subd.Name AS SubDepartmentName
-                            FROM AttributeMandatoryScopes doc
-                            LEFT JOIN Divisions div
-                            ON doc.DivisionCode = div.Code
-                            LEFT JOIN Departments dep
-                            ON doc.DepartmentCode = dep.Code
-                            LEFT JOIN SubDepartments subd
-                            ON doc.SubDepartmentCode = subd.Code
-                            LEFT JOIN Companies c 
-                            ON doc.CompanyId = c.Id
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
+                        FROM AttributeMandatoryScopes doc
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON doc.CompanyId = c.Id
             WHERE id = {updated}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -494,6 +514,9 @@ public class AttributeMandatoryScopeComponent
 
                 SubDepartment = row.Field<string>("SubDepartmentName"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
                 IsMandatory = row.Field<bool>("IsMandatory"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

@@ -17,14 +17,10 @@ public class WorkflowPolicy : AuditableEntity
 
     public int PolicyType { get; set; }
 
-    [MaxLength(10)]
     public string? DivisionCode { get; set; }
-
-    [MaxLength(10)]
     public string? DepartmentCode { get; set; }
-
-    [MaxLength(10)]
     public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(10)]
     public string? DocumentTypeCode { get; set; }
@@ -35,7 +31,7 @@ public class WorkflowPolicy : AuditableEntity
 }
 
 public class WorkflowPolicyReadDto : AuditableEntity
-{ 
+{
     public int Id { get; set; }
 
     // 🔑 Tenant
@@ -44,64 +40,60 @@ public class WorkflowPolicyReadDto : AuditableEntity
 
     public int PolicyType { get; set; }
 
-    [MaxLength(10)]
+    public string? Division { get; set; }
     public string? DivisionCode { get; set; }
-
-    [MaxLength(10)]
+    public string? Department { get; set; }
     public string? DepartmentCode { get; set; }
 
-    [MaxLength(10)]
+    public string? SubDepartment { get; set; }
     public string? SubDepartmentCode { get; set; }
+
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(10)]
     public string? DocumentTypeCode { get; set; }
 
     public int? SharingType { get; set; }
-     
+
 }
 
 public class WorkflowPolicyCreateDto
-{ 
+{
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int CompanyId { get; set; }
 
     public int PolicyType { get; set; }
 
-    [MaxLength(10)]
     public string? DivisionCode { get; set; }
-
-    [MaxLength(10)]
     public string? DepartmentCode { get; set; }
 
-    [MaxLength(10)]
     public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(10)]
     public string? DocumentTypeCode { get; set; }
 
     public int? SharingType { get; set; }
-     
+
 }
 
 public class WorkflowPolicyUpdateDto
-{ 
+{
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int CompanyId { get; set; }
 
     public int PolicyType { get; set; }
 
-    [MaxLength(10)]
     public string? DivisionCode { get; set; }
-
-    [MaxLength(10)]
     public string? DepartmentCode { get; set; }
-
-    [MaxLength(10)]
     public string? SubDepartmentCode { get; set; }
+
+    public string? BusinessDomainCode { get; set; }
 
     [MaxLength(10)]
     public string? DocumentTypeCode { get; set; }
