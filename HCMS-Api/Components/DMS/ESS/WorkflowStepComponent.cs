@@ -119,7 +119,7 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
@@ -235,7 +235,7 @@ public class WorkflowStepComponent
                 .Select(row => new WorkflowStepReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     WorkflowPolicyId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
                     Sequence = row.Table.Columns.Contains("Sequence") ? row.Field<int>("Sequence") : 0,
@@ -294,7 +294,7 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),
@@ -375,7 +375,7 @@ public class WorkflowStepComponent
             return new WorkflowStepReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
                 Sequence = row.Field<int>("Sequence"),

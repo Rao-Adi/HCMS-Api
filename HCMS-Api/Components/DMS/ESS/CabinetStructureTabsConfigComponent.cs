@@ -113,7 +113,7 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("ID"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -225,7 +225,7 @@ public class CabinetStructureTabsConfigComponent
                 .Select(row => new CabinetStructureTabsConfigReadDto
                 {
                     Id = row.Table.Columns.Contains("ID") ? row.Field<int>("ID") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -311,7 +311,7 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("ID"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -418,7 +418,7 @@ public class CabinetStructureTabsConfigComponent
             return new CabinetStructureTabsConfigReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -515,7 +515,7 @@ public class CabinetStructureTabsConfigComponent
             //return new CabinetStructureTabsConfigReadDto
             //{
             //    Id = row.Field<int>("ID"),
-            //    CompanyId = row.Field<int>("CompanyId"),
+            //    CompanyId = row.Field<Int64>("CompanyId"),
             //    Company = row.Field<string>("Company"),
             //    Name = row.Field<string>("Name"),
             //    IsDeleted = row.Field<bool>("IsDeleted"),

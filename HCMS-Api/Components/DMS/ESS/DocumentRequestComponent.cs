@@ -5,7 +5,9 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using Npgsql;
 using System.Data;
+using static Dapper.SqlMapper;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -73,7 +75,7 @@ public class DocumentRequestComponent
                 RequestNumber,
                 RequestType,
                 DocumentId,
-                DocumentTypeCode,
+                DocumentTypeId,
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
@@ -95,7 +97,7 @@ public class DocumentRequestComponent
                 '{input.RequestNumber}',
                 '{input.RequestType}',
                 '{input.DocumentId}',
-                '{input.DocumentTypeCode}',
+                '{input.DocumentTypeId}',
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}', 
@@ -139,11 +141,11 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -277,13 +279,13 @@ public class DocumentRequestComponent
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     RequestNumber = row.Table.Columns.Contains("RequestNumber") ? row.Field<string>("RequestNumber") : string.Empty,
                     RequestType = row.Table.Columns.Contains("RequestType") ? row.Field<int>("RequestType") : 0,
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
-                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    DocumentTypeId = row.Table.Columns.Contains("DocumentTypeId") ? row.Field<int>("DocumentTypeId") : 0,
 
                     Division = row.Field<string>("Division"),
                     DivisionCode = row.Field<string>("DivisionCode"),
@@ -390,11 +392,11 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -456,11 +458,11 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -521,7 +523,7 @@ public class DocumentRequestComponent
             SET 
                 RequestNumber = '{input.RequestNumber}',
                 RequestType = '{input.RequestType}',
-                DocumentTypeCode = '{input.DocumentTypeCode}',
+                DocumentTypeId = '{input.DocumentTypeId}',
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
@@ -564,11 +566,11 @@ public class DocumentRequestComponent
             return new DocumentRequestReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 RequestNumber = row.Field<string>("RequestNumber"),
                 RequestType = row.Field<int>("RequestType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -599,5 +601,215 @@ public class DocumentRequestComponent
             throw;
         }
     }
+
+
+
+    public async Task<long> SubmitDocumentRequestAsync(DocumentRequestCreateDto input)
+    {
+        //await using var conn = new NpgsqlConnection(_connectionString);
+        //await conn.OpenAsync();
+
+        //await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await _common.BeginTransactionAsync();
+        try
+        {
+            //var companyId = _tenantProvider.CompanyId;
+            //var userId = _currentUserProvider.UserId;
+            var userId = "";
+            var companyId = "";
+            //------------------------------------------------
+            // ✅ 1. Resolve ACTIVE Workflow Policy Version
+            //------------------------------------------------
+
+            var workflowVersionId = await _common.ExecuteScalarAsync<long?>(
+            @"
+                SELECT wpv.Id
+                FROM WorkflowPolicyVersions wpv
+                JOIN WorkflowPolicies wp 
+                    ON wp.Id = wpv.WorkflowPolicyId
+                WHERE wp.CompanyId = @CompanyId
+                  AND wp.DocumentTypeId = @DocumentTypeId
+                  AND wpv.IsActive = TRUE
+                LIMIT 1;
+                ",
+            new
+            {
+                CompanyId = companyId,
+                input.DocumentTypeId
+            }, tx);
+
+            if (workflowVersionId == null)
+                throw new CustomException("No active workflow configured for this document type.");
+
+            //------------------------------------------------
+            // ✅ 2. Insert DocumentRequest
+            //------------------------------------------------
+
+            var requestId = await _common.ExecuteScalarAsync<long>(
+            @"
+                INSERT INTO DocumentRequests
+                (
+                    CompanyId,
+                    DocumentTypeId,
+                    RequestType,
+                    DocumentName,
+                    Justification,
+                    Status,
+                    CreatedBy,
+                    CreatedAt
+                )
+                VALUES
+                (
+                    @CompanyId,
+                    @DocumentTypeId,
+                    @RequestType,
+                    @DocumentName,
+                    @Justification,
+                    'Submitted',
+                    @UserId,
+                    NOW()
+                )
+                RETURNING Id;
+                ",
+            new
+            {
+                CompanyId = companyId,
+                input.DocumentTypeId,
+                input.RequestType, // Creation / Revision / Obsoletion
+                input.DocumentName,
+                input.Justification,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // ✅ 3. Insert STATE HISTORY (CRITICAL)
+            //------------------------------------------------
+
+            await _common.ExecuteAsync(
+            @"
+                INSERT INTO RequestStateHistory
+                (
+                    CompanyId,
+                    RequestId,
+                    State,
+                    ChangedBy
+                )
+                VALUES
+                (
+                    @CompanyId,
+                    @RequestId,
+                    'Submitted',
+                    @UserId
+                );
+                ",
+            new
+            {
+                CompanyId = companyId,
+                RequestId = requestId,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // ✅ 4. Start Workflow Execution
+            //------------------------------------------------
+
+            var executionId = await _common.ExecuteScalarAsync<long>(
+            @"
+                INSERT INTO WorkflowExecutions
+                (
+                    CompanyId,
+                    WorkflowPolicyVersionId,
+                    EntityType,
+                    EntityId,
+                    Status,
+                    StartedBy,
+                    StartedAt
+                )
+                VALUES
+                (
+                    @CompanyId,
+                    @WorkflowVersionId,
+                    'Request',
+                    @RequestId,
+                    'Running',
+                    @UserId,
+                    NOW()
+                )
+                RETURNING Id;
+                ",
+            new
+            {
+                CompanyId = companyId,
+                WorkflowVersionId = workflowVersionId,
+                RequestId = requestId,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // ✅ 5. Insert Domain Event (Audit Power)
+            //------------------------------------------------
+
+            await _common.ExecuteAsync(
+            @"
+                INSERT INTO DocumentEvents
+                (
+                    CompanyId,
+                    EventType,
+                    Metadata,
+                    PerformedBy
+                )
+                VALUES
+                (
+                    @CompanyId,
+                    'DocumentRequestSubmitted',
+                    jsonb_build_object('RequestId', @RequestId),
+                    @UserId
+                );
+                ",
+            new
+            {
+                CompanyId = companyId,
+                RequestId = requestId,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // ✅ COMMIT
+            //------------------------------------------------
+
+            await tx.CommitAsync();
+
+            return requestId;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    //public async Task<IEnumerable<WorkflowTaskDto>> GetPendingRequestStepsAsync()
+    //{
+    //    WorkflowExecutionSteps
+    //WHERE AssignedUserId = @User
+    //AND Decision IS NULL
+    //}
+
+
+    //public async Task ApproveWorkflowStepAsync(ApproveStepDto input)
+    //{
+    //    using var tx = await _common.BeginTransactionAsync();
+
+    //    // Validate step ownership
+    //    // Insert decision row
+    //    // Move to next step
+
+    //    if (finalStep)
+    //    {
+    //        await TransitionState(entity);
+    //    }
+
+    //    await tx.CommitAsync();
+    //}
 
 }

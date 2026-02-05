@@ -128,7 +128,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -245,7 +245,7 @@ public class DocumentTrainingComponent
                 .Select(row => new DocumentTrainingReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     TrainingMode = row.Table.Columns.Contains("TrainingMode") ? row.Field<int>("TrainingMode") : 0,
@@ -336,7 +336,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -420,7 +420,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),

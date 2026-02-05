@@ -111,7 +111,7 @@ public class DistributionTypeComponent
             return new DistributionTypeReadDto
             {
                 Id = row.Field<int>("id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"), 
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -253,7 +253,7 @@ public class DistributionTypeComponent
                 .Select(row => new DistributionTypeReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty, 
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -308,7 +308,7 @@ public class DistributionTypeComponent
             return new DistributionTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -381,7 +381,7 @@ public class DistributionTypeComponent
             return new DistributionTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

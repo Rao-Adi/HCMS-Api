@@ -60,37 +60,7 @@ public class DMSAuditLogController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
-
-    [HttpGet("get-all-audit-log-list")]
-    public async Task<IActionResult> GetAllSelectList()
-    {
-        try
-        {
-            var selectList = await _auditLogComponent.GetAllSelectList();
-            return Ok(new HttpApiResponse<IList<SelectListDto>>()
-            {
-                Success = true,
-                Data = selectList.ToList(),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
+     
     [HttpGet("get-audit-log-by-code/{code}")]
     public async Task<IActionResult> GetAuditLogById(string code)
     {

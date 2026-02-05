@@ -152,7 +152,7 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
@@ -271,7 +271,7 @@ public class BusinessDomainComponent
                 .Select(row => new BusinessDomainReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
@@ -362,7 +362,7 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -408,7 +408,7 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -486,7 +486,7 @@ public class BusinessDomainComponent
             return new BusinessDomainReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),

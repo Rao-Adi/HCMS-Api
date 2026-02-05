@@ -1,4 +1,5 @@
 ﻿
+using Dapper;
 using global::HCMS_Api.Models;
 using HCMS_Api.Models;
 using Microsoft.AspNetCore.Http;
@@ -19,6 +20,29 @@ public class DMSCommon
         _connectionString = configuration.GetConnectionString("DMSConnectionString");
         _httpContextAccessor = httpContextAccessor;
     }
+
+    //------------------------------------------------
+    // CONNECTION FACTORY
+    //------------------------------------------------
+
+    public async Task<NpgsqlConnection> CreateOpenConnectionAsync()
+    {
+        var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync();
+        return conn;
+    }
+
+    //------------------------------------------------
+    // TRANSACTION FACTORY
+    //------------------------------------------------
+
+    public async Task<NpgsqlTransaction> BeginTransactionAsync()
+    {
+        var conn = await CreateOpenConnectionAsync();
+        return await conn.BeginTransactionAsync();
+    }
+
+
 
     // ============================
     // DataTable → JSON Helper
@@ -70,7 +94,7 @@ public class DMSCommon
         catch (Exception ex)
         {
             throw ex;
-        }        
+        }
     }
 
 
@@ -260,5 +284,186 @@ public class DMSCommon
 
         return dt.Year >= 1900 && dt.Year <= 2099;
     }
+
+
+
+    //------------------------------------------------
+    // EXECUTE SCALAR
+    //------------------------------------------------
+
+    public async Task<T> ExecuteScalarAsync<T>(
+        string query,
+        object parameters = null,
+        IDbTransaction tx = null)
+    {
+        try
+        {
+            if (tx != null)
+                return await tx.Connection.ExecuteScalarAsync<T>(query, parameters, tx);
+
+            await using var conn = await CreateOpenConnectionAsync();
+            return await conn.ExecuteScalarAsync<T>(query, parameters);
+        }
+        catch
+        {
+            throw; // NEVER use throw ex;
+        }
+    }
+
+    //------------------------------------------------
+    // EXECUTE (INSERT/UPDATE/DELETE)
+    //------------------------------------------------
+
+    public async Task<int> ExecuteAsync(
+        string query,
+        object parameters = null,
+        IDbTransaction tx = null)
+    {
+        try
+        {
+            if (tx != null)
+                return await tx.Connection.ExecuteAsync(query, parameters, tx);
+
+            await using var conn = await CreateOpenConnectionAsync();
+            return await conn.ExecuteAsync(query, parameters);
+        }
+        catch
+        {
+            throw;
+        }
+    }
+
+    //------------------------------------------------
+    // QUERY SINGLE
+    //------------------------------------------------
+
+    public async Task<T> QuerySingleAsync<T>(
+        string query,
+        object parameters = null,
+        IDbTransaction tx = null)
+    {
+        try
+        {
+            if (tx != null)
+                return await tx.Connection.QuerySingleAsync<T>(query, parameters, tx);
+
+            await using var conn = await CreateOpenConnectionAsync();
+            return await conn.QuerySingleAsync<T>(query, parameters);
+        }
+        catch
+        {
+            throw;
+        }
+    }
+
+    //------------------------------------------------
+    // QUERY FIRST OR DEFAULT
+    //------------------------------------------------
+
+    public async Task<T> QueryFirstOrDefaultAsync<T>(
+        string query,
+        object parameters = null,
+        IDbTransaction tx = null)
+    {
+        try
+        {
+            if (tx != null)
+                return await tx.Connection.QueryFirstOrDefaultAsync<T>(query, parameters, tx);
+
+            await using var conn = await CreateOpenConnectionAsync();
+            return await conn.QueryFirstOrDefaultAsync<T>(query, parameters);
+        }
+        catch
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<IEnumerable<T>> QueryAsync<T>(
+    string query,
+    object parameters = null,
+    IDbTransaction tx = null)
+    {
+        try
+        {
+            if (tx != null)
+                return await tx.Connection.QueryAsync<T>(query, parameters, tx);
+
+            await using var conn = await CreateOpenConnectionAsync();
+            return await conn.QueryAsync<T>(query, parameters);
+        }
+        catch
+        {
+            throw;
+        }
+    }
+
+
+
+    //public async Task<T> ExecuteScalarAsync<T>(
+    //string query,
+    //object parameters = null,
+    //NpgsqlTransaction transaction = null)
+    //{
+    //    try
+    //    {
+    //        var connection = transaction?.Connection
+    //                         ?? new NpgsqlConnection(_connectionString);
+
+    //        if (connection.State != ConnectionState.Open)
+    //            await connection.OpenAsync();
+
+    //        using var command = new NpgsqlCommand(query, connection);
+
+    //        if (transaction != null)
+    //            command.Transaction = transaction;
+
+    //        if (parameters != null)
+    //        {
+    //            foreach (var prop in parameters.GetType().GetProperties())
+    //            {
+    //                var value = prop.GetValue(parameters) ?? DBNull.Value;
+    //                command.Parameters.AddWithValue(prop.Name, value);
+    //            }
+    //        }
+
+    //        var result = await command.ExecuteScalarAsync();
+
+    //        if (result == null || result == DBNull.Value)
+    //            return default;
+
+    //        return (T)Convert.ChangeType(result, typeof(T));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        throw ex;
+    //        // DO NOT swallow exceptions in governance systems
+    //        //throw new DataAccessException("ExecuteScalarAsync failed.", ex);
+    //    }
+    //}
+
+
+    //public async Task<T> ExecuteScalarAsync<T>(
+    //string query,
+    //object parameters = null,
+    //IDbTransaction tx = null)
+    //{
+    //    try
+    //    {
+    //        if (tx != null)
+    //            return await tx.Connection.ExecuteScalarAsync<T>(query, parameters, tx);
+
+    //        await using var conn = new NpgsqlConnection(_connectionString);
+    //        return await conn.ExecuteScalarAsync<T>(query, parameters);
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        throw ex;
+    //        //throw new DataAccessException("Database scalar execution failed.", ex);
+    //    }
+    //}
+
+
 }
 

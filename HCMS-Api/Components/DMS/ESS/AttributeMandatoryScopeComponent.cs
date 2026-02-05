@@ -132,7 +132,7 @@ public class AttributeMandatoryScopeComponent
             {
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
 
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("DivisionName"),
@@ -270,7 +270,7 @@ public class AttributeMandatoryScopeComponent
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
@@ -388,7 +388,7 @@ public class AttributeMandatoryScopeComponent
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
@@ -501,7 +501,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),

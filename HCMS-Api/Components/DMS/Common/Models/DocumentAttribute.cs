@@ -11,7 +11,7 @@ public class DocumentAttribute : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     // ⚠️ Matches DB column:
@@ -39,7 +39,7 @@ public class DocumentAttributeReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -65,7 +65,7 @@ public class DocumentAttributeCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
@@ -86,7 +86,7 @@ public class DocumentAttributeUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 

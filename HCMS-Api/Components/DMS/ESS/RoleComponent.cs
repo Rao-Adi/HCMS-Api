@@ -113,7 +113,7 @@ public class RoleComponent
             return new RoleReadDto
             {
                 Name = row.Field<string>("Name"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -256,7 +256,7 @@ public class RoleComponent
                 {
                     Id = row.Field<int>("id"),
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Description = row.Table.Columns.Contains("Description") ? row.Field<string>("Description") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -312,7 +312,7 @@ public class RoleComponent
             {
                 Id = row.Field<int>("Id"),
                 Name = row.Field<string>("Name"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -387,7 +387,7 @@ public class RoleComponent
             {
                 Id = row.Field<int>("Id"),
                 Name = row.Field<string>("Name"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Description = row.Field<string>("Description"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

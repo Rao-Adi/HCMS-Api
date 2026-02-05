@@ -127,7 +127,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -259,7 +259,7 @@ public class TransferScopePolicyComponent
                 .Select(row => new TransferScopePolicyReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Field<string>("Division"),
@@ -335,7 +335,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
@@ -431,7 +431,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),

@@ -119,7 +119,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
@@ -234,7 +234,7 @@ public class ESignatureComponent
                 .Select(row => new ESignatureReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -289,7 +289,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
@@ -365,7 +365,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),

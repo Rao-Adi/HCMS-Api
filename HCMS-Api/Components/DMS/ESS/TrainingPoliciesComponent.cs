@@ -115,7 +115,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -229,7 +229,7 @@ public class TrainingPolicyComponent
                 .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
@@ -286,7 +286,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -361,7 +361,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),

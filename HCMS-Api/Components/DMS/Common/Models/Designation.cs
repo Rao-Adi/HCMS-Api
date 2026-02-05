@@ -12,7 +12,7 @@ public class Designation
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     [MaxLength(10)]
@@ -37,7 +37,7 @@ public class DesignationReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string Code { get; set; } = null!;
@@ -61,7 +61,7 @@ public class DesignationCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string Code { get; set; } = null!;
 
@@ -79,7 +79,7 @@ public class DesignationUpdateDto
 
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string Code { get; set; } = null!;
 

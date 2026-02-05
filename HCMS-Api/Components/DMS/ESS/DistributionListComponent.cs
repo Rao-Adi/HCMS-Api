@@ -108,7 +108,7 @@ public class DistributionListComponent
             string selectQuery = $@" 
                         SELECT dl.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
-                        drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName 
                         FROM DistributionLists dl
                         LEFT JOIN Divisions div
                         ON dl.DivisionCode = div.Code
@@ -123,9 +123,7 @@ public class DistributionListComponent
                         LEFT JOIN Companies c 
                         ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r
-                        ON dl.RoleId = r.Id
-                        LEFT JOIN DistributionTypes dt
-                        ON dl.DistributionType = dt.Id
+                        ON dl.RoleId = r.Id 
             WHERE dl.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -138,7 +136,7 @@ public class DistributionListComponent
             return new DistributionListReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentRequestType = row.Field<string>("DocumentRequestType"),
@@ -159,7 +157,7 @@ public class DistributionListComponent
                 Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
 
-                Distribution = row.Field<string>("DistributionTypeName"),
+                //Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
 
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -243,7 +241,7 @@ public class DistributionListComponent
             string query = $@"
                         SELECT dl.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
-                        drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName 
                         FROM DistributionLists dl
                         LEFT JOIN Divisions div
                         ON dl.DivisionCode = div.Code
@@ -258,9 +256,7 @@ public class DistributionListComponent
                         LEFT JOIN Companies c 
                         ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r
-                        ON dl.RoleId = r.Id
-                        LEFT JOIN DistributionTypes dt
-                        ON dl.DistributionType = dt.Id
+                        ON dl.RoleId = r.Id 
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -287,7 +283,7 @@ public class DistributionListComponent
                 .Select(row => new DistributionListReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     DocumentRequestType = row.Field<string>("DocumentRequestType"),
@@ -308,7 +304,7 @@ public class DistributionListComponent
                     Role = row.Field<string>("RoleName"),
                     RoleId = row.Field<int>("RoleId"),
 
-                    Distribution = row.Field<string>("DistributionTypeName"),
+                    //Distribution = row.Field<string>("DistributionTypeName"),
                     DistributionType = row.Field<int>("DistributionType"),
 
                     IsDeleted = row.Field<bool>("IsDeleted"),
@@ -338,62 +334,30 @@ public class DistributionListComponent
         }
     }
 
-
-    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
-    {
-        try
-        {
-            string query = @"
-            SELECT Code, DivisionCode
-            FROM DistributionLists
-            WHERE IsActive = True
-              AND IsDeleted = False
-            ORDER BY DivisionCode";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            var list = dt.AsEnumerable()
-                .Select(row => new SelectListDto
-                {
-                    Code = row.Field<string>("Code"),
-                    Value = row.Field<string>("DivisionCode")
-                })
-                .ToList();
-
-            return list.AsQueryable();
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<DistributionListReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
                 SELECT dl.*, div.Name AS DivisionName,
-                    dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
-                    drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
-                    FROM DistributionLists dl
-                    LEFT JOIN Divisions div
-                    ON dl.DivisionCode = div.Code
-                    LEFT JOIN DocumentRequestTypes drt
-                    ON dl.DocumentRequestTypeCode = drt.Code
-                    LEFT JOIN Departments dep
-                    ON dl.DepartmentCode = dep.Code
-                    LEFT JOIN SubDepartments subd
-                    ON dl.SubDepartmentCode = subd.Code
-                    LEFT JOIN BusinessDomains bd
-                    ON dl.BusinessDomainCode = bd.Code
-                    LEFT JOIN Companies c 
-                    ON dl.CompanyId = c.Id
-                    LEFT JOIN Roles r
-                    ON dl.RoleId = r.Id
-                    LEFT JOIN DistributionTypes dt
-                    ON dl.DistributionType = dt.Id
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName 
+                        FROM DistributionLists dl
+                        LEFT JOIN Divisions div
+                        ON dl.DivisionCode = div.Code
+                        LEFT JOIN DocumentRequestTypes drt
+                        ON dl.DocumentRequestTypeCode = drt.Code
+                        LEFT JOIN Departments dep
+                        ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r
+                        ON dl.RoleId = r.Id 
                 WHERE dl.Id = {id}
                   AND dl.IsActive = True
                   AND dl.IsDeleted = False";
@@ -408,7 +372,7 @@ public class DistributionListComponent
             return new DistributionListReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentRequestType = row.Field<string>("DocumentRequestType"),
@@ -429,7 +393,7 @@ public class DistributionListComponent
                 Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
 
-                Distribution = row.Field<string>("DistributionTypeName"),
+                //Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
 
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -488,25 +452,23 @@ public class DistributionListComponent
             // Return updated record
             string selectQuery = $@"
             SELECT dl.*, div.Name AS DivisionName,
-                dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
-                drt.Name AS DocumentRequestType, r.Name AS RoleName, dt.Name AS DistributionTypeName
-                FROM DistributionLists dl
-                LEFT JOIN Divisions div
-                ON dl.DivisionCode = div.Code
-                LEFT JOIN DocumentRequestTypes drt
-                ON dl.DocumentRequestTypeCode = drt.Code
-                LEFT JOIN Departments dep
-                ON dl.DepartmentCode = dep.Code
-                LEFT JOIN SubDepartments subd
-                ON dl.SubDepartmentCode = subd.Code
-                LEFT JOIN BusinessDomains bd
-                ON dl.BusinessDomainCode = bd.Code
-                LEFT JOIN Companies c 
-                ON dl.CompanyId = c.Id
-                LEFT JOIN Roles r
-                ON dl.RoleId = r.Id
-                LEFT JOIN DistributionTypes dt
-                ON dl.DistributionType = dt.Id
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company,
+                        drt.Name AS DocumentRequestType, r.Name AS RoleName 
+                        FROM DistributionLists dl
+                        LEFT JOIN Divisions div
+                        ON dl.DivisionCode = div.Code
+                        LEFT JOIN DocumentRequestTypes drt
+                        ON dl.DocumentRequestTypeCode = drt.Code
+                        LEFT JOIN Departments dep
+                        ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r
+                        ON dl.RoleId = r.Id 
             WHERE dl.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -520,7 +482,7 @@ public class DistributionListComponent
             {
                 Id = row.Field<int>("Id"),
 
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentRequestType = row.Field<string>("DocumentRequestType"),
@@ -541,7 +503,7 @@ public class DistributionListComponent
                 Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
 
-                Distribution = row.Field<string>("DistributionTypeName"),
+                //Distribution = row.Field<string>("DistributionTypeName"),
                 DistributionType = row.Field<int>("DistributionType"),
 
                 IsDeleted = row.Field<bool>("IsDeleted"),

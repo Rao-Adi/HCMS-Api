@@ -109,7 +109,7 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -226,7 +226,7 @@ public class RequestApprovalComponent
                 .Select(row => new RequestApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") :0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
@@ -288,7 +288,7 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -366,7 +366,7 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),

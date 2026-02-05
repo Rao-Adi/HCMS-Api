@@ -12,7 +12,7 @@ public class Division
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     [MaxLength(10)]
@@ -38,7 +38,7 @@ public class DivisionReadDto :AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string Code { get; set; } = null!;
@@ -54,7 +54,7 @@ public class DivisionReadDto :AuditableEntity
 public class DivisionCreateDto
 {
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string Name { get; set; } = null!; 
 }
@@ -66,7 +66,7 @@ public class DivisionUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string Code { get; set; } = null!;
      

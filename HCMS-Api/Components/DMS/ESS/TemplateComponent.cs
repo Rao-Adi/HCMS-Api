@@ -160,7 +160,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
@@ -298,7 +298,7 @@ public class TemplateComponent
                 .Select(row => new TemplateReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
@@ -379,7 +379,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
@@ -487,7 +487,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),

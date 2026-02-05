@@ -113,7 +113,7 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
@@ -226,7 +226,7 @@ public class NotificationComponent
                 .Select(row => new NotificationReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
@@ -281,7 +281,7 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),
@@ -354,7 +354,7 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Title = row.Field<string>("Title"),

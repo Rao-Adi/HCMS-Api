@@ -1,10 +1,12 @@
-﻿using HCMS_Api.Common;
+﻿using Dapper;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using Npgsql;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -38,8 +40,8 @@ public class DocumentComponent
         _clientContextService = clientContextService;
         _dapperService = dapper;
         _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
+        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
+        //_dataservice.BeginProcess(connectionString);
 
     }
 
@@ -80,7 +82,7 @@ public class DocumentComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Documents
-            WHERE DocumentName = '{input.DocumentName}' 
+            WHERE Title = '{input.Title}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -115,15 +117,13 @@ public class DocumentComponent
             INSERT INTO Documents
             (   CompanyId,
                 DocumentNumber,
-                DocumentTypeCode,
+                DocumentTypeId,
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
                 BusinessDomainCode,
-                DocumentName,
-                Version,
-                EffectiveFrom, 
-                EffectiveTo, 
+                Title,
+                Version, 
                 NextReviewdate, 
                 DocumentURL,
                 IsActive,
@@ -137,15 +137,13 @@ public class DocumentComponent
             (
                 '{input.CompanyId}',
                 '{generatedCode}',
-                '{input.DocumentTypeCode}',
+                '{input.DocumentTypeId}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
                 '{input.SubDepartmentCode}', 
                 '{input.BusinessDomainCode}', 
-                '{input.DocumentName}', 
-                '{input.Version}', 
-                {(input.EffectiveFrom.HasValue ? $"'{input.EffectiveFrom:yyyy-MM-dd}'" : "NULL")}, 
-                {(input.EffectiveTo.HasValue ? $"'{input.EffectiveTo:yyyy-MM-dd}'" : "NULL")}, 
+                '{input.Title}', 
+                '{input.Version}',  
                 '{input.NextReviewDate:yyyy-MM-dd}', 
                 '{documentUrl}',
                 TRUE,
@@ -166,7 +164,7 @@ public class DocumentComponent
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
+                        ON doc.DocumentTypeId = dt.Code
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
                         LEFT JOIN Departments dep
@@ -189,10 +187,10 @@ public class DocumentComponent
             return new DocumentReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentNumber = row.Field<string>("DocumentNumber"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -206,10 +204,8 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
-                DocumentName = row.Field<string>("DocumentName"),
-                Version = row.Field<string>("Version"),
-                EffectiveFrom = row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss"),
-                EffectiveTo = row.Field<DateTime>("EffectiveTo").ToString("yyyy-MM-dd HH:mm:ss"),
+                Title = row.Field<string>("Title"),
+                Version = row.Field<string>("Version"), 
                 NextReviewDate = row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss"),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -281,12 +277,12 @@ public class DocumentComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "DocumentNumber" => "doc.DocumentNumber",
-                "DocumentTypeCode" => "doc.DocumentTypeCode",
+                "DocumentTypeId" => "doc.DocumentTypeId",
                 "DepartmentCode" => "doc.DepartmentCode",
                 "DivisionCode" => "doc.DivisionCode",
                 "SubDepartmentCode" => "doc.SubDepartmentCode",
                 "BusinessDomainCode" => "doc.BusinessDomainCode",
-                "DocumentName" => "doc.DocumentName",
+                "Title" => "doc.Title",
                 "ISACTIVE" => "doc.IsActive",
                 _ => "doc.DocumentNumber"
             };
@@ -301,7 +297,7 @@ public class DocumentComponent
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
+                        ON doc.DocumentTypeId = dt.Code
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
                         LEFT JOIN Departments dep
@@ -339,13 +335,13 @@ public class DocumentComponent
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
-
-                    DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
-                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                  
+                    //DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
+                    DocumentTypeId = row.Table.Columns.Contains("DocumentTypeId") ? row.Field<int>("DocumentTypeId") : 0,
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
@@ -359,13 +355,9 @@ public class DocumentComponent
                     BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
                     BusinessDomainCode = row.Table.Columns.Contains("BusinessDomainCode") ? row.Field<string>("BusinessDomainCode") : string.Empty,
 
-                    DocumentName = row.Table.Columns.Contains("DocumentName") ? row.Field<string>("DocumentName") : string.Empty,
+                    Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
-                    EffectiveFrom = (row.Table.Columns.Contains("EffectiveFrom") && !row.IsNull("EffectiveFrom"))
-                                ? row.Field<DateTime>("EffectiveFrom").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                      
-                    EffectiveTo = (row.Table.Columns.Contains("EffectiveTo") && !row.IsNull("EffectiveTo"))
-                                ? row.Field<DateTime>("EffectiveTo").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                      
                     NextReviewDate = (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate"))
                                 ? row.Field<DateOnly>("NextReviewDate").ToString("yyyy-MM-dd") : string.Empty,
@@ -441,7 +433,7 @@ public class DocumentComponent
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
+                        ON doc.DocumentTypeId = dt.Code
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
                         LEFT JOIN Departments dep
@@ -467,10 +459,11 @@ public class DocumentComponent
             {
                 Id = row.Field<int>("Id"),
 
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -484,10 +477,9 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
-                DocumentName = row.Field<string>("DocumentName"),
+                Title = row.Field<string>("Title"),
                 Version = row.Field<string>("Version"),
-                EffectiveFrom = row.Field<string>("EffectiveFrom"),
-                EffectiveTo = row.Field<string>("EffectiveTo"),
+
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -515,7 +507,7 @@ public class DocumentComponent
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
+                        ON doc.DocumentTypeId = dt.Code
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
                         LEFT JOIN Departments dep
@@ -541,10 +533,11 @@ public class DocumentComponent
             {
                 Id = row.Field<int>("Id"),
 
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -558,10 +551,9 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
-                DocumentName = row.Field<string>("DocumentName"),
+                Title = row.Field<string>("Title"),
                 Version = row.Field<string>("Version"),
-                EffectiveFrom = row.Field<string>("EffectiveFrom"),
-                EffectiveTo = row.Field<string>("EffectiveTo"),
+
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -606,14 +598,12 @@ public class DocumentComponent
             UPDATE Documents
             SET 
                 DocumentNumber = '{input.DocumentNumber}',
-                DocumentTypeCode = '{input.DocumentTypeCode}',
+                DocumentTypeId = '{input.DocumentTypeId}',
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
                 BusinessDomainCode = '{input.BusinessDomainCode}',
-                DocumentName = '{input.DocumentName}',
+                Title = '{input.Title}',
                 Version = '{input.Version}',
-                EffectiveFrom = '{input.EffectiveFrom}',
-                EffectiveTo = '{input.EffectiveTo}',
                 NextReviewDate = '{input.NextReviewDate}',
                 DocumentURL = '{input.DocumentFile}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -633,7 +623,7 @@ public class DocumentComponent
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
                         LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
+                        ON doc.DocumentTypeId = dt.Code
                         LEFT JOIN Divisions div
                         ON doc.DivisionCode = div.Code
                         LEFT JOIN Departments dep
@@ -657,10 +647,11 @@ public class DocumentComponent
             {
                 Id = row.Field<int>("Id"),
 
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentNumber = row.Field<string>("DocumentNumber"),
+                DocumentTypeId = row.Field<int>("DocumentTypeId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -674,10 +665,9 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
-                DocumentName = row.Field<string>("DocumentName"),
+                Title = row.Field<string>("Title"),
                 Version = row.Field<string>("Version"),
-                EffectiveFrom = row.Field<string>("EffectiveFrom"),
-                EffectiveTo = row.Field<string>("EffectiveTo"),
+
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -693,5 +683,389 @@ public class DocumentComponent
             throw;
         }
     }
+
+
+
+
+    //public async Task<DocumentReadDto> CreateDraftFromApprovedRequestAsync2(DocumentCreateDto input)
+    //{
+    //    //await using var conn = new NpgsqlConnection(_connectionString);
+    //    //await conn.OpenAsync();
+
+    //    await using var tx = await conn.BeginTransactionAsync();
+
+    //    try
+    //    {
+    //        //var userId = _currentUserService.UserId;
+    //        //var companyId = _currentUserService.CompanyId;
+    //        var userId = "";
+    //        var companyId = "";
+    //        //------------------------------------------------
+    //        // ✅ 1. Validate Request is APPROVED
+    //        //------------------------------------------------
+
+    //        var requestStatus = await _common.ExecuteScalarAsync<string>(
+    //            @"SELECT Status
+    //          FROM DocumentRequests
+    //          WHERE CompanyId = @CompanyId
+    //          AND Id = @RequestId",
+    //            new { CompanyId = companyId, input.RequestId }, tx);
+
+    //        if (requestStatus != "Approved")
+    //            throw new CustomException("Document can only be created from an approved request.");
+
+    //        //------------------------------------------------
+    //        // ✅ 2. Generate Document Number SAFELY
+    //        //------------------------------------------------
+
+    //        var documentNumber = await _common.ExecuteScalarAsync<string>(
+    //            @"SELECT generate_document_number(@CompanyId);",
+    //            new { CompanyId = companyId }, tx);
+
+    //        //------------------------------------------------
+    //        // ✅ 3. Upload File FIRST
+    //        //------------------------------------------------
+
+    //        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/documents");
+    //        Directory.CreateDirectory(uploadsRoot);
+
+    //        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(input.DocumentFile.FileName)}";
+    //        var filePath = Path.Combine(uploadsRoot, fileName);
+
+    //        await using (var stream = new FileStream(filePath, FileMode.Create))
+    //        {
+    //            await input.DocumentFile.CopyToAsync(stream);
+    //        }
+
+    //        var documentUrl = $"/uploads/documents/{fileName}";
+
+    //        //------------------------------------------------
+    //        // ✅ 4. Insert Document (DRAFT STATE)
+    //        //------------------------------------------------
+
+    //        var documentId = await _common.ExecuteScalarAsync<long>(
+    //        @"
+    //    INSERT INTO Documents
+    //    (
+    //        CompanyId,
+    //        DocumentNumber,
+    //        DocumentTypeId,
+    //        Title,
+    //        DocumentURL,
+    //        CreatedBy
+    //    )
+    //    VALUES
+    //    (
+    //        @CompanyId,
+    //        @DocumentNumber,
+    //        @DocumentTypeId,
+    //        @Title,
+    //        @Url,
+    //        @UserId
+    //    )
+    //    RETURNING Id;
+    //    ",
+    //        new
+    //        {
+    //            CompanyId = companyId,
+    //            DocumentNumber = documentNumber,
+    //            input.DocumentTypeId,
+    //            Title = input.Title,
+    //            Url = documentUrl,
+    //            UserId = userId
+    //        }, tx);
+
+    //        //------------------------------------------------
+    //        // ✅ 5. Insert Version (MANDATORY)
+    //        //------------------------------------------------
+
+    //        await _common.ExecuteAsync(
+    //        @"
+    //                INSERT INTO DocumentVersions
+    //                (
+    //                    CompanyId,
+    //                    DocumentId,
+    //                    Version,
+    //                    CreatedBy
+    //                )
+    //                VALUES
+    //                (
+    //                    @CompanyId,
+    //                    @DocumentId,
+    //                    '1.0',
+    //                    @UserId
+    //                )",
+    //        new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+
+    //        //------------------------------------------------
+    //        // ✅ 6. Insert STATE HISTORY
+    //        //------------------------------------------------
+
+    //        await conn.ExecuteAsync(
+    //        @"
+    //                INSERT INTO DocumentStateHistory
+    //                (
+    //                    CompanyId,
+    //                    DocumentId,
+    //                    ToStateId,
+    //                    ChangedBy
+    //                )
+    //                SELECT
+    //                    @CompanyId,
+    //                    @DocumentId,
+    //                    Id,
+    //                    @UserId
+    //                FROM DocumentStates
+    //                WHERE Code = 'Draft';
+    //                ",
+    //        new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+
+    //        //------------------------------------------------
+    //        // ✅ 7. START WORKFLOW EXECUTION
+    //        //------------------------------------------------
+
+    //        var workflowVersionId = await conn.ExecuteScalarAsync<long>(
+    //        @"
+    //                SELECT Id
+    //                FROM WorkflowPolicyVersions
+    //                WHERE CompanyId = @CompanyId
+    //                AND DocumentTypeId = @DocumentTypeId
+    //                AND IsActive = TRUE
+    //                LIMIT 1;
+    //                ",
+    //        new { CompanyId = companyId, input.DocumentTypeId }, tx);
+
+    //        var executionId = await _common.ExecuteScalarAsync<long>(
+    //        @"
+    //                INSERT INTO WorkflowExecutions
+    //                (
+    //                    CompanyId,
+    //                    WorkflowPolicyVersionId,
+    //                    EntityType,
+    //                    EntityId,
+    //                    Status,
+    //                    StartedBy
+    //                )
+    //                VALUES
+    //                (
+    //                    @CompanyId,
+    //                    @WorkflowVersionId,
+    //                    'Document',
+    //                    @DocumentId,
+    //                    'Running',
+    //                    @UserId
+    //                )
+    //                RETURNING Id;
+    //                ",
+    //                new
+    //                {
+    //                    CompanyId = companyId,
+    //                    WorkflowVersionId = workflowVersionId,
+    //                    DocumentId = documentId,
+    //                    UserId = userId
+    //                }, tx);
+
+    //        //------------------------------------------------
+    //        // ✅ 8. COMMIT
+    //        //------------------------------------------------
+
+    //        await tx.CommitAsync();
+
+    //        return new DocumentReadDto
+    //        {
+    //            Id = (int)documentId,
+    //            DocumentNumber = documentNumber,
+    //            DocumentURL = documentUrl
+    //        };
+    //    }
+    //    catch
+    //    {
+    //        await tx.RollbackAsync();
+    //        throw;
+    //    }
+    //}
+
+
+
+    public async Task<DocumentReadDto> CreateDraftFromApprovedRequestAsync(DocumentCreateDto input)
+    {
+        await using var tx = await _common.BeginTransactionAsync();
+
+        try
+        {
+            var conn = tx.Connection;
+
+            var userId = "";
+            var companyId = "";
+
+            //------------------------------------------------
+            // 1. Validate Request
+            //------------------------------------------------
+
+            var requestStatus = await _common.ExecuteScalarAsync<string>(
+                @"SELECT Status
+              FROM DocumentRequests
+              WHERE CompanyId = @CompanyId
+              AND Id = @RequestId",
+                new { CompanyId = companyId, input.RequestId }, tx);
+
+            if (requestStatus != "Approved")
+                throw new CustomException("Document can only be created from an approved request.");
+
+            //------------------------------------------------
+            // 2. Generate Document Number
+            //------------------------------------------------
+
+            var documentNumber = await _common.ExecuteScalarAsync<string>(
+                @"SELECT generate_document_number(@CompanyId);",
+                new { CompanyId = companyId }, tx);
+
+            //------------------------------------------------
+            // 3. Upload File
+            //------------------------------------------------
+
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/documents");
+            Directory.CreateDirectory(uploadsRoot);
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(input.DocumentFile.FileName)}";
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await input.DocumentFile.CopyToAsync(stream);
+            }
+
+            var documentUrl = $"/uploads/documents/{fileName}";
+
+            //------------------------------------------------
+            // 4. Insert Document
+            //------------------------------------------------
+
+            var documentId = await _common.ExecuteScalarAsync<long>(
+            @"
+        INSERT INTO Documents
+        (
+            CompanyId,
+            DocumentNumber,
+            DocumentTypeId,
+            Title,
+            DocumentURL,
+            CreatedBy
+        )
+        VALUES
+        (
+            @CompanyId,
+            @DocumentNumber,
+            @DocumentTypeId,
+            @Title,
+            @Url,
+            @UserId
+        )
+        RETURNING Id;",
+            new
+            {
+                CompanyId = companyId,
+                DocumentNumber = documentNumber,
+                input.DocumentTypeId,
+                Title = input.Title,
+                Url = documentUrl,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // 5. Version
+            //------------------------------------------------
+
+            await _common.ExecuteAsync(
+            @"INSERT INTO DocumentVersions
+          (CompanyId, DocumentId, Version, CreatedBy)
+          VALUES
+          (@CompanyId, @DocumentId, '1.0', @UserId)",
+            new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+
+            //------------------------------------------------
+            // 6. State History
+            //------------------------------------------------
+
+            await _common.ExecuteAsync(
+            @"
+        INSERT INTO DocumentStateHistory
+        (
+            CompanyId,
+            DocumentId,
+            ToStateId,
+            ChangedBy
+        )
+        SELECT
+            @CompanyId,
+            @DocumentId,
+            Id,
+            @UserId
+        FROM DocumentStates
+        WHERE Code = 'Draft';",
+            new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+
+            //------------------------------------------------
+            // 7. Workflow
+            //------------------------------------------------
+
+            var workflowVersionId = await _common.ExecuteScalarAsync<long>(
+            @"
+        SELECT Id
+        FROM WorkflowPolicyVersions
+        WHERE CompanyId = @CompanyId
+        AND DocumentTypeId = @DocumentTypeId
+        AND IsActive = TRUE
+        LIMIT 1;",
+            new { CompanyId = companyId, input.DocumentTypeId }, tx);
+
+            await _common.ExecuteScalarAsync<long>(
+            @"
+        INSERT INTO WorkflowExecutions
+        (
+            CompanyId,
+            WorkflowPolicyVersionId,
+            EntityType,
+            EntityId,
+            Status,
+            StartedBy
+        )
+        VALUES
+        (
+            @CompanyId,
+            @WorkflowVersionId,
+            'Document',
+            @DocumentId,
+            'Running',
+            @UserId
+        );",
+            new
+            {
+                CompanyId = companyId,
+                WorkflowVersionId = workflowVersionId,
+                DocumentId = documentId,
+                UserId = userId
+            }, tx);
+
+            //------------------------------------------------
+            // COMMIT
+            //------------------------------------------------
+
+            await tx.CommitAsync();
+
+            return new DocumentReadDto
+            {
+                Id = (int)documentId,
+                DocumentNumber = documentNumber,
+                DocumentURL = documentUrl
+            };
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
 
 }

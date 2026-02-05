@@ -11,7 +11,7 @@ public class WorkflowPolicy : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
 
@@ -35,7 +35,7 @@ public class WorkflowPolicyReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int PolicyType { get; set; }
@@ -63,7 +63,7 @@ public class WorkflowPolicyCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
 
     public int PolicyType { get; set; }
 
@@ -85,7 +85,7 @@ public class WorkflowPolicyUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
 
     public int PolicyType { get; set; }
 

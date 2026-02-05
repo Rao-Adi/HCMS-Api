@@ -61,36 +61,7 @@ public class DMSDistributionListController : Controller
         }
     }
 
-
-    [HttpGet("get-all-distribution-list-list")]
-    public async Task<IActionResult> GetAllSelectList()
-    {
-        try
-        {
-            var selectList = await _distributionListComponent.GetAllSelectList();
-            return Ok(new HttpApiResponse<IList<SelectListDto>>()
-            {
-                Success = true,
-                Data = selectList.ToList(),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
-            return StatusCode(response.Code, response);
-        }
-    }
-
-
+ 
     [HttpGet("get-distribution-list-by-id/{id}")]
     public async Task<IActionResult> GetDistributionListById(int id)
     {

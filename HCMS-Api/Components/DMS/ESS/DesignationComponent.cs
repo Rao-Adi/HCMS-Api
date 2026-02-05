@@ -103,7 +103,7 @@ public class DesignationComponent
             string selectQuery = $@"
             SELECT d.*,c.Id AS CompanyId, c.Name AS Company
             FROM Designations d
-            LEFT JOIN Company 
+            LEFT JOIN Companies c 
             ON d.CompanyId = c.Id
             WHERE d.Id = {newId}";
 
@@ -116,7 +116,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -204,14 +204,14 @@ public class DesignationComponent
             string query = $@"
                         SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                         FROM Designations d
-                        LEFT JOIN Company 
+                        LEFT JOIN companies c 
                         ON d.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Designations
+                        FROM Designations d
                         {whereClause};
                     ";
 
@@ -231,7 +231,7 @@ public class DesignationComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DesignationReadDto
                 {
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
@@ -302,7 +302,7 @@ public class DesignationComponent
             string query = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                     FROM Designations d
-                    LEFT JOIN Company 
+                    LEFT JOIN Companies c 
                     ON d.CompanyId = c.Id
                 WHERE d.Code = {code}
                   AND d.IsActive = True
@@ -317,7 +317,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -377,7 +377,7 @@ public class DesignationComponent
             string selectQuery = $@"
             SELECT d.*,c.Id AS CompanyId, c.Name AS Company
             FROM Designations d
-            LEFT JOIN Company 
+            LEFT JOIN Companies c 
             ON d.CompanyId = c.Id
             WHERE d.Code = '{input.Code.Replace("'", "''")}'";
 
@@ -390,7 +390,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),

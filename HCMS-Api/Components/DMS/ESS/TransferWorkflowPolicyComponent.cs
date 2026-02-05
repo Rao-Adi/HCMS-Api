@@ -118,7 +118,7 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
@@ -251,7 +251,7 @@ public class TransferWorkflowPolicyComponent
                 .Select(row => new TransferWorkflowPolicyReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Field<string>("Division"),
@@ -328,7 +328,7 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
@@ -426,7 +426,7 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),

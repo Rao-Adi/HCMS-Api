@@ -10,7 +10,7 @@ public class DocumentRequest : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
 
@@ -20,9 +20,8 @@ public class DocumentRequest : AuditableEntity
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
     public int? DocumentId { get; set; }
-
-    [MaxLength(10)]
-    public string DocumentTypeCode { get; set; } = null!;
+ 
+    public int DocumentTypeId { get; set; }
      
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; } 
@@ -47,7 +46,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -57,9 +56,8 @@ public class DocumentRequestReadDto : AuditableEntity
     public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
     public int? DocumentId { get; set; }
-
-    [MaxLength(10)]
-    public string DocumentTypeCode { get; set; } = null!;
+     
+    public int DocumentTypeId { get; set; }  
 
     public string? Division { get; set; }
     public string? DivisionCode { get; set; }
@@ -88,18 +86,18 @@ public class DocumentRequestCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
 
     [MaxLength(50)]
     public string RequestNumber { get; set; } = null!;
 
-    public int RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
+    public string RequestType { get; set; } // 1=Creation, 2=Revision, 3=Obsoletion
 
     public int? DocumentId { get; set; }
 
     [MaxLength(10)]
-    public string DocumentTypeCode { get; set; } = null!;
+    public int DocumentTypeId { get; set; }  
      
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; } 
@@ -122,7 +120,7 @@ public class DocumentRequestUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     [MaxLength(50)]
@@ -133,7 +131,7 @@ public class DocumentRequestUpdateDto
     public int? DocumentId { get; set; }
 
     [MaxLength(10)]
-    public string DocumentTypeCode { get; set; } = null!;
+    public int DocumentTypeId { get; set; }  
      
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; }
@@ -152,4 +150,12 @@ public class DocumentRequestUpdateDto
 
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
+}
+
+public class DocumentRequestCreate
+{
+    public int DocumentTypeId { get; set; }
+    public string RequestType { get; set; }
+    public string Title { get; set; }
+    public string Justification { get; set; }
 }

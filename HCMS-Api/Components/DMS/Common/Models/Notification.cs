@@ -10,7 +10,7 @@ public class Notification
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public int UserId { get; set; }
@@ -39,7 +39,7 @@ public class NotificationReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int UserId { get; set; }
@@ -69,7 +69,7 @@ public class NotificationCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public int UserId { get; set; }
 
@@ -98,7 +98,7 @@ public class NotificationUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public int UserId { get; set; }
 

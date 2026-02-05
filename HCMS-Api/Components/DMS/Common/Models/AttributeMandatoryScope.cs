@@ -11,7 +11,7 @@ public class AttributeMandatoryScope : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public int DocumentAttributeId { get; set; }
@@ -32,7 +32,7 @@ public class AttributeMandatoryScopeCreateDto
 {
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
     public int DocumentAttributeId { get; set; }
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -48,7 +48,7 @@ public class AttributeMandatoryScopeUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public int DocumentAttributeId { get; set; }
     public string? DivisionCode { get; set; }
@@ -68,7 +68,7 @@ public class AttributeMandatoryScopeReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int DocumentAttributeId { get; set; }

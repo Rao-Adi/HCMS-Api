@@ -12,7 +12,7 @@ public class User : AuditableEntity
 
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
 
@@ -39,7 +39,7 @@ public class UserReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     [MaxLength(20)]
@@ -72,7 +72,7 @@ public class UserCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -99,7 +99,7 @@ public class UserUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;

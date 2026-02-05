@@ -11,7 +11,7 @@ public class Role : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
 
@@ -30,7 +30,7 @@ public class RoleReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -48,7 +48,7 @@ public class RoleCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     [MaxLength(50)]
     public string Name { get; set; } = null!;
@@ -64,7 +64,7 @@ public class RoleUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     [MaxLength(50)]
     public string Name { get; set; } = null!;

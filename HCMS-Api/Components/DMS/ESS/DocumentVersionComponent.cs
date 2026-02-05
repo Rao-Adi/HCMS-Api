@@ -113,7 +113,7 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
@@ -226,7 +226,7 @@ public class DocumentVersionComponent
                 .Select(row => new DocumentVersionReadDto
                 {
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
                     VersionType = row.Table.Columns.Contains("VersionType") ? row.Field<int>("VersionType") : 0,
@@ -308,7 +308,7 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
@@ -382,7 +382,7 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),

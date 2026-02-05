@@ -147,7 +147,7 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
@@ -273,7 +273,7 @@ public class ResponsibilityTransferComponent
                 .Select(row => new ResponsibilityTransferReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
                     EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
@@ -335,7 +335,7 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
@@ -422,7 +422,7 @@ public class ResponsibilityTransferComponent
             return new ResponsibilityTransferReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),

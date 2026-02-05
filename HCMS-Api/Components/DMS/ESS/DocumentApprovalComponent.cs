@@ -121,7 +121,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -238,7 +238,7 @@ public class DocumentApprovalComponent
                 .Select(row => new DocumentApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentVersionId = row.Table.Columns.Contains("DocumentVersionId") ? row.Field<int>("DocumentVersionId") : 0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
@@ -329,7 +329,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -375,7 +375,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -458,7 +458,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),

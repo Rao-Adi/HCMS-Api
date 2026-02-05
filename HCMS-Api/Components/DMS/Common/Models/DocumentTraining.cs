@@ -10,7 +10,7 @@ public class DocumentTraining : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public int DocumentId { get; set; }
@@ -34,7 +34,7 @@ public class DocumentTrainingReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int DocumentId { get; set; }
@@ -60,7 +60,7 @@ public class DocumentTrainingCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public int DocumentId { get; set; }
 
@@ -83,7 +83,7 @@ public class DocumentTrainingUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public int DocumentId { get; set; }
 

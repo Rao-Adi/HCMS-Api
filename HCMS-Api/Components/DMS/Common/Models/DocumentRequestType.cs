@@ -9,7 +9,7 @@ public class DocumentRequestType : BaseEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public string Code { get; set; } = null!;
@@ -22,7 +22,7 @@ public class DocumentRequestType : BaseEntity
 public class DocumentRequestTypeCreateDto
 {
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Name { get; set; }
     public string? Description { get; set; }
 }
@@ -31,7 +31,7 @@ public class DocumentRequestTypeUpdateDto
 {
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Code { get; set; }
     public string Name { get; set; }
 
@@ -46,7 +46,7 @@ public class DocumentRequestTypeReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
     public string Code { get; set; }
     public string Name { get; set; }

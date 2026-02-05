@@ -12,7 +12,7 @@ public class DistributionList : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public string DocumentRequestTypeCode { get; set; }
@@ -39,7 +39,7 @@ public class DistributionListReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string DocumentRequestType { get; set; }
@@ -67,7 +67,7 @@ public class DistributionListReadDto : AuditableEntity
 public class DistributionListCreateDto
 { 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentRequestTypeCode { get; set; }
 
@@ -86,7 +86,7 @@ public class DistributionListUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentRequestTypeCode { get; set; }
 

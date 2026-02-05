@@ -60,8 +60,7 @@ public class CompanyComponent
             string duplicateCheckQuery = $@"
                             SELECT COUNT(1)
                             FROM Companies
-                            WHERE Name = '{input.Name.Replace("'", "''")}'
-                              AND IsDeleted = FALSE";
+                            WHERE Name = '{input.Name.Replace("'", "''")}' ";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
@@ -97,23 +96,19 @@ public class CompanyComponent
             (
                 Code,
                 Name,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
+                Status,
+                SubscriptionPlan,
+                StorageQuotaGB,
+                CreatedAt
             )
             VALUES
             (
                 '{generatedCode}',
                 '{input.Name.Replace("'", "''")}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
+                '{input.Status!.Replace("'", "''")}',
+                '{input.SubscriptionPlan!.Replace("'", "''")}',
+                {input.StorageQuotaGB}, 
+                NOW()
             )
             RETURNING Id;";
 
@@ -134,15 +129,13 @@ public class CompanyComponent
 
             return new CompanyReadDto
             {
-                Id = row.Field<int>("Id"),
+                Id = row.Field<Int64>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Status = row.Field<string>("Status"),
+                SubscriptionPlan = row.Field<string>("SubscriptionPlan"),
+                StorageQuotaGB = row.Field<int>("StorageQuotaGB"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") 
             };
         }
         catch
@@ -160,8 +153,7 @@ public class CompanyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Companies
-                WHERE Code = {code}
-                  AND IsDeleted = False";
+                WHERE Code = {code} ";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -170,8 +162,7 @@ public class CompanyComponent
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE Companies
-                SET IsDeleted = False
+                UPDATE Companies 
                 WHERE Code = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -188,9 +179,7 @@ public class CompanyComponent
         try
         {
 
-            var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+            var whereClause = @"";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -207,8 +196,7 @@ public class CompanyComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "Name",
-                "CODE" => "Code",
-                "ISACTIVE" => "IsActive",
+                "CODE" => "Code", 
                 _ => "Name"
             };
 
@@ -244,19 +232,14 @@ public class CompanyComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new CompanyReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
-                    Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
-                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
-                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
-                })
-                .ToList();
+                    Id = row.Field<Int64>("Id"),
+                    Code = row.Field<string>("Code"),
+                    Name = row.Field<string>("Name"),
+                    Status = row.Field<string>("Status"),
+                    SubscriptionPlan = row.Field<string>("SubscriptionPlan"),
+                    StorageQuotaGB = row.Field<int>("StorageQuotaGB"),
+                    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
+                }).ToList();
 
             int totalCount = 0;
             if (countTable != null && countTable.Rows.Count > 0)
@@ -283,9 +266,7 @@ public class CompanyComponent
         {
             string query = @"
             SELECT *
-            FROM Companies
-            WHERE IsActive = True
-              AND IsDeleted = False
+            FROM Companies 
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -314,9 +295,7 @@ public class CompanyComponent
             string query = $@"
                 SELECT *
                     FROM Companies
-                WHERE Code = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                WHERE Code = '{code}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -327,15 +306,13 @@ public class CompanyComponent
 
             return new CompanyReadDto
             {
-                Id = row.Field<int>("Id"), 
+                Id = row.Field<Int64>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Status = row.Field<string>("Status"),
+                SubscriptionPlan = row.Field<string>("SubscriptionPlan"),
+                StorageQuotaGB = row.Field<int>("StorageQuotaGB"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
         }
         catch (Exception)
@@ -362,8 +339,7 @@ public class CompanyComponent
             string existsQuery = $@"
                     SELECT COUNT(1)
                     FROM Companies
-                    WHERE Code = '{input.Code.Replace("'", "''")}'
-                      AND IsDeleted = FALSE";
+                    WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
 
@@ -375,8 +351,7 @@ public class CompanyComponent
                         SELECT COUNT(1)
                         FROM Companies
                         WHERE Name = '{input.Name.Replace("'", "''")}'
-                          AND Code <> '{input.Code.Replace("'", "''")}'
-                          AND IsDeleted = FALSE";
+                          AND Code <> '{input.Code.Replace("'", "''")}'";
 
             int duplicate = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
 
@@ -387,10 +362,11 @@ public class CompanyComponent
             string updateQuery = $@"
                         UPDATE Companies
                         SET 
-                            Name = '{input.Name.Replace("'", "''")}',
-                            IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                            LastModifiedAt = NOW(),
-                            LastModifiedBy = '{userId.Replace("'", "''")}'
+                            Name = '{input.Name.Replace("'", "''")}', 
+                            Status = '{input.Status!.Replace("'", "''")}', 
+                            SubscriptionPlan = '{input.SubscriptionPlan!.Replace("'", "''")}', 
+                            StorageQuotaGB = {input.StorageQuotaGB},  
+                            CreatedAt = NOW(), 
                         WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -415,15 +391,13 @@ public class CompanyComponent
 
             return new CompanyReadDto
             {
-                Id = row.Field<int>("Id"),
+                Id = row.Field<Int64>("Id"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Status = row.Field<string>("Status"),
+                SubscriptionPlan = row.Field<string>("SubscriptionPlan"),
+                StorageQuotaGB = row.Field<int>("StorageQuotaGB"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
         }
         catch
@@ -438,8 +412,7 @@ public class CompanyComponent
         {
             string query = $@"
                 SELECT COUNT(1)
-                FROM Companies 
-                  WHERE IsDeleted = FALSE";
+                FROM Companies";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

@@ -135,7 +135,7 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
 
@@ -270,7 +270,7 @@ public class WorkflowPolicyComponent
                 .Select(row => new WorkflowPolicyReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     PolicyType = row.Table.Columns.Contains("PolicyType") ? row.Field<int>("PolicyType") : 0,
 
@@ -348,7 +348,7 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
 
@@ -449,7 +449,7 @@ public class WorkflowPolicyComponent
             return new WorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 PolicyType = row.Field<int>("PolicyType"),
 

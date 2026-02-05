@@ -11,7 +11,7 @@ public class DistributionType : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     [MaxLength(50)]
@@ -26,7 +26,7 @@ public class DistributionTypeReadDto : AuditableEntity
 
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -39,7 +39,7 @@ public class DistributionTypeReadDto : AuditableEntity
 public class DistributionTypeCreateDto
 {
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
 
     [MaxLength(50)]
@@ -54,7 +54,7 @@ public class DistributionTypeUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
 
     [MaxLength(50)]

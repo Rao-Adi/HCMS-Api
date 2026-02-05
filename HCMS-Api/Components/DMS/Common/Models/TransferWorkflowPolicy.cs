@@ -10,7 +10,7 @@ public class TransferWorkflowPolicy : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public Company Company { get; set; } = null!;
      
     public string? DivisionCode { get; set; } 
@@ -28,7 +28,7 @@ public class TransferWorkflowPolicyReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string? Division { get; set; }
@@ -52,7 +52,7 @@ public class TransferWorkflowPolicyCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
      
     public string? DivisionCode { get; set; } 
@@ -70,7 +70,7 @@ public class TransferWorkflowPolicyUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;  
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; } 

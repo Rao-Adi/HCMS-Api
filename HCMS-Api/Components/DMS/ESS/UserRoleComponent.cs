@@ -117,7 +117,7 @@ public class UserRoleComponent
             return new UserRoleReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -232,7 +232,7 @@ public class UserRoleComponent
                 .Select(row => new UserRoleReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     RoleId = row.Table.Columns.Contains("RoleId") ? row.Field<int>("RoleId") : 0,
@@ -290,7 +290,7 @@ public class UserRoleComponent
             return new UserRoleReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -334,7 +334,7 @@ public class UserRoleComponent
             return new UserRoleReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),
@@ -411,7 +411,7 @@ public class UserRoleComponent
             return new UserRoleReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 RoleId = row.Field<int>("RoleId"),

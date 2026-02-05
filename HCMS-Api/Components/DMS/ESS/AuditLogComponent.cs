@@ -78,12 +78,8 @@ public class AuditLogComponent
                 EntityTid,
                 OldValues,
                 NewValues,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
+                Timestamp,
+                ipaddress 
             )
             VALUES
             (
@@ -93,13 +89,9 @@ public class AuditLogComponent
                 '{input.EntityId}',
                 '{input.EntityType}',
                 '{input.OldValues}',
-                '{input.NewValues}',
-                TRUE,
-                FALSE,
+                '{input.NewValues}', 
                 NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
+                '{input.IPAddress}'
             )
             RETURNING Id;";
 
@@ -120,7 +112,7 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
@@ -174,9 +166,7 @@ public class AuditLogComponent
     {
         try
         {
-            var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+            var whereClause = @"";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -193,8 +183,7 @@ public class AuditLogComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "Action" => "Action",
-                "CUserIdODE" => "UserId",
-                "ISACTIVE" => "IsActive",
+                "UserId" => "UserId", 
                 _ => "Action"
             };
 
@@ -205,7 +194,6 @@ public class AuditLogComponent
             string query = $@"
                         SELECT *
                         FROM AuditLogs
-						ON EntityType = div.UserId
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -231,7 +219,7 @@ public class AuditLogComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new AuditLogReadDto
                 {
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     Action = row.Table.Columns.Contains("Action") ? row.Field<string>("Action") : string.Empty,
@@ -261,38 +249,7 @@ public class AuditLogComponent
             throw;
         }
     }
-
-
-    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
-    {
-        try
-        {
-            string query = @"
-            SELECT UserId, Action
-            FROM AuditLogs
-            WHERE IsActive = True
-              AND IsDeleted = False
-            ORDER BY Action";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            var list = dt.AsEnumerable()
-                .Select(row => new SelectListDto
-                {
-                    Code = row.Field<string>("UserId"),
-                    Value = row.Field<string>("Action")
-                })
-                .ToList();
-
-            return list.AsQueryable();
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<AuditLogReadDto> GetByUserIdAsync(string code)
     {
         try
@@ -300,9 +257,7 @@ public class AuditLogComponent
             string query = $@"
                 SELECT *
                 FROM AuditLogs
-                WHERE UserId = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                WHERE UserId = {code}";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -313,7 +268,7 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),
@@ -331,46 +286,7 @@ public class AuditLogComponent
         }
     }
 
-
-    public async Task<AuditLogReadDto> GetByEntityTypeAsync(string dUserId)
-    {
-        try
-        {
-            string query = $@"
-                SELECT *
-                FROM AuditLogs
-                WHERE Division = {dUserId}
-                  AND IsActive = True
-                  AND IsDeleted = False";
-
-            DataTable dt = await _common.ExecuteSqlQuery(query);
-
-            if (dt.Rows.Count == 0)
-                throw new CustomException("AuditLog not found", 200);
-
-            DataRow row = dt.Rows[0];
-
-            return new AuditLogReadDto
-            {
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
-                Action = row.Field<string>("Action"),
-                EntityId = row.Field<int>("EntityId"),
-                EntityType = row.Table.Columns.Contains("EntityType") ? row.Field<string>("EntityType") : string.Empty,
-                OldValues = row.Table.Columns.Contains("OldValues") ? row.Field<string>("OldValues") : string.Empty,
-                NewValues = row.Table.Columns.Contains("NewValues") ? row.Field<string>("NewValues") : string.Empty,
-                Timestamp = row.Table.Columns.Contains("Timestamp") ? row.Field<DateTime>("Timestamp") : DateTime.Now,
-                IPAddress = row.Table.Columns.Contains("IPAddress") ? row.Field<string>("IPAddress") : string.Empty
-            };
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-
+     
     public async Task<AuditLogReadDto> UpdateAsync(AuditLogUpdateDto input)
     {
         try
@@ -385,8 +301,7 @@ public class AuditLogComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM AuditLogs
-            WHERE UserId = '{input.UserId}'
-              AND IsDeleted = FALSE";
+            WHERE UserId = '{input.UserId}'";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -397,8 +312,7 @@ public class AuditLogComponent
             string updateQuery = $@"
             UPDATE AuditLogs
             SET 
-                Action = '{input.Action.Replace("'", "''")}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                Action = '{input.Action.Replace("'", "''")}', 
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
             WHERE UserId = '{input.UserId}'";
@@ -423,7 +337,7 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 Action = row.Field<string>("Action"),

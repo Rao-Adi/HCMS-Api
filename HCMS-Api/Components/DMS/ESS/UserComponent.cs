@@ -162,7 +162,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
@@ -349,7 +349,7 @@ public class UserComponent
                 .Select(row => new UserReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
-                    CompanyId = row.Field<int>("CompanyId"),
+                    CompanyId = row.Field<Int64>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     EmployeeName = row.Table.Columns.Contains("EmployeeName") ? row.Field<string>("EmployeeName") : string.Empty,
@@ -433,7 +433,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
@@ -543,7 +543,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
+                CompanyId = row.Field<Int64>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),

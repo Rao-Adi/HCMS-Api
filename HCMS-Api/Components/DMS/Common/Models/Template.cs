@@ -10,7 +10,7 @@ public class Template : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string DocumentTypeCode { get; set; }
@@ -40,7 +40,7 @@ public class TemplateReadDto : AuditableEntity
 
 
     // 🔑 Tenant
-    public int CompanyId { get; set; }
+    public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string DocumentTypeCode { get; set; }
@@ -75,7 +75,7 @@ public class TemplateCreateDto
 {
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
@@ -104,7 +104,7 @@ public class TemplateUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public Int64 CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
