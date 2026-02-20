@@ -12,7 +12,7 @@ public class User : AuditableEntity
 
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
 
@@ -30,6 +30,7 @@ public class User : AuditableEntity
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; } 
     public string? BusinessDomainCode { get; set; }
+    public string? DesignationCode { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }
@@ -39,7 +40,7 @@ public class UserReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     [MaxLength(20)]
@@ -61,7 +62,15 @@ public class UserReadDto : AuditableEntity
 
     public string? BusinessDomain { get; set; }
     public string? BusinessDomainCode { get; set; }
+
+    public string? Designation { get; set; }
+    public string? DesignationCode { get; set; }
+
+
+    public int? RoleId { get; set; }
+    public string? UserRole { get; set; }
     public string? ReportingTo { get; set; }
+    public string Grade { get; set; }
     public string? DateOfJoining { get; set; }
 
 }
@@ -72,7 +81,7 @@ public class UserCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -87,8 +96,12 @@ public class UserCreateDto
     public string? DepartmentCode { get; set; } 
     public string? SubDepartmentCode { get; set; } 
     public string? BusinessDomainCode { get; set; }
+     
+    public string? DesignationCode { get; set; }
 
     public string? ReportingTo { get; set; }
+
+    public string Grade { get; set; }
     public DateTime? DateOfJoining { get; set; }
 
 }
@@ -99,7 +112,7 @@ public class UserUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -115,8 +128,11 @@ public class UserUpdateDto
      
     public string? SubDepartmentCode { get; set; }
      
-    public string? BusinessDomainCode { get; set; }
+    public string? BusinessDomainCode { get; set; } 
+    public string? DesignationCode { get; set; }
     public string? ReportingTo { get; set; }
+
+    public string Grade { get; set; }
     public DateTime? DateOfJoining { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }

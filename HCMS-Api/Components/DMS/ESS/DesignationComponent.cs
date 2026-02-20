@@ -116,7 +116,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -231,7 +231,7 @@ public class DesignationComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DesignationReadDto
                 {
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
@@ -317,7 +317,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -390,7 +390,7 @@ public class DesignationComponent
 
             return new DesignationReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),

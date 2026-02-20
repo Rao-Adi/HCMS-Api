@@ -70,7 +70,7 @@ public class DMSCompanyController : Controller
         try
         {
             var selectList = await _companyComponent.GetAllSelectList();
-            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            return Ok(new HttpApiResponse<IList<SelectList2Dto>>()
             {
                 Success = true,
                 Data = selectList.ToList(),

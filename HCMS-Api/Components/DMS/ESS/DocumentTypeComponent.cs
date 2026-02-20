@@ -107,7 +107,7 @@ public class DocumentTypeComponent
                     )
                     VALUES
                     (
-                        '{input.CompanyId}',
+                        {input.CompanyId},
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.Description?.Replace("'", "''")}',
@@ -141,7 +141,7 @@ public class DocumentTypeComponent
             return new DocumentTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Code = row.Field<string>("Code"), // 🔒 immutable
@@ -257,8 +257,8 @@ public class DocumentTypeComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentTypeReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<Int64>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
@@ -345,8 +345,8 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
-                Id = row.Field<Int64>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
@@ -421,8 +421,8 @@ public class DocumentTypeComponent
 
             return new DocumentTypeReadDto
             {
-                Id = row.Field<Int64>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),

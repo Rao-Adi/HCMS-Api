@@ -3,6 +3,7 @@ using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
+using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Components.HCMS.Common.Dapper;
@@ -29,6 +30,7 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using StackExchange.Redis;
 using System.Text;
+using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuring SeriLog for logging 
@@ -82,6 +84,17 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = null;
     });
 */
+
+// In Program.cs or Startup.cs
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // This will convert ALL property names to camelCase (e.g., "requestId", "currentStepType")
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+
+        // OR if you REALLY want all lowercase (not standard JSON):
+        options.JsonSerializerOptions.PropertyNamingPolicy = new LowerCaseNamingPolicy();
+    });
 
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
@@ -240,6 +253,8 @@ builder.Services.AddScoped<DesignationComponent>();
 builder.Services.AddScoped<DistributionTypeComponent>();  
 builder.Services.AddScoped<CompanyComponent>();  
 builder.Services.AddScoped<DocumentRequestTypeComponent>();  
+builder.Services.AddScoped<ControlTypeComponent>();  
+builder.Services.AddScoped<UserAccessLevelComponent>();  
 
 #endregion DMS Service
 

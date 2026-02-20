@@ -21,7 +21,7 @@ public enum DocumentRequestType
     Obsoletion = 3
 }
 
-public enum RequestStatus
+public enum RequestStatusEnum
 {
     Pending = 1,
     Approved = 2,
@@ -121,3 +121,12 @@ public enum DistributionType
 }
 
 #endregion Distribution / Sharing
+
+public enum DocumentRequestStatus
+{
+    Draft = 0,
+    Submitted = 1,
+    InApproval = 2,
+    Approved = 3,
+    Rejected = 4
+}

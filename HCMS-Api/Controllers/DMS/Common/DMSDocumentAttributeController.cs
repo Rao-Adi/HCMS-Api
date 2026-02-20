@@ -92,14 +92,41 @@ public class DMSDocumentAttributeController : Controller
 
 
     [HttpGet("get-document-attributes-by-code/{code}")]
-    public async Task<IActionResult> GetDocumentAttributeById(string code)
+    public async Task<IActionResult> GetDocumentAttributeByDocumentTypeCode(string code)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<DocumentAttributeReadDto>>()
+            {
+                Success = true,
+                Data = await _documentAttributeComponent.GetAllByDocumentTypeAsync(code),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-document-attributes-by-id/{id}")]
+    public async Task<IActionResult> GetDocumentAttributeById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
             {
                 Success = true,
-                Data = await _documentAttributeComponent.GetByCodeAsync(code),
+                Data = await _documentAttributeComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -179,8 +206,8 @@ public class DMSDocumentAttributeController : Controller
         }
     }
 
-    [HttpDelete("delete-document-attributes/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-document-attributes/{id}")]
+    public async Task<IActionResult> DeleteAsync(int code)
     {
         try
         {

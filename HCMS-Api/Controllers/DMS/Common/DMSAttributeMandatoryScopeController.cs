@@ -120,6 +120,33 @@ public class DMSAttributeMandatoryScopeController : Controller
     }
 
 
+    [HttpGet("get-mandatory-by-document-type-id/{id}")]
+    public async Task<IActionResult> GetAttributeByDocumenTypeId(int id)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScopeReadDto>>()
+            {
+                Success = true,
+                Data = await _attributeMandatoryScopeComponent.GetAttributeByDocumenTypeId(id),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("create-attribute-mandatory-scopes")]
   
     [MapToApiVersion("1.0")]

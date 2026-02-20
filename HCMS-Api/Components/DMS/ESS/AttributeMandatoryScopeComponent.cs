@@ -132,7 +132,7 @@ public class AttributeMandatoryScopeComponent
             {
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),
 
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("DivisionName"),
@@ -270,7 +270,7 @@ public class AttributeMandatoryScopeComponent
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
@@ -388,7 +388,7 @@ public class AttributeMandatoryScopeComponent
                 {
                     DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
 
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
@@ -432,6 +432,95 @@ public class AttributeMandatoryScopeComponent
             throw;
         }
     }
+
+
+    public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetAttributeByDocumenTypeId(int id)
+    {
+        try
+        {
+            string query = $@"
+                SELECT doc.*, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
+                        FROM AttributeMandatoryScopes doc
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c 
+                        ON doc.CompanyId = c.Id
+                WHERE DocumentAttributeId = {id}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("AttributeMandatoryScope not found", 200);
+
+
+            if (dt == null || dt.Rows.Count == 0)
+            {
+                return new PaginationResult<AttributeMandatoryScopeReadDto>
+                {
+                    Items = new List<AttributeMandatoryScopeReadDto>(),
+                    TotalCount = 0
+                };
+            }
+
+            var divisions = dt.AsEnumerable()
+                .Select(row => new AttributeMandatoryScopeReadDto
+                {
+                    DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId") ? row.Field<int>("DocumentAttributeId") : 0,
+
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+
+                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
+
+                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
+                    DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
+
+                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
+                    SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
+
+                    BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
+                    BusinessDomainCode = row.Table.Columns.Contains("BusinessDomainCode") ? row.Field<string>("BusinessDomainCode") : string.Empty,
+
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") && row.Field<bool?>("IsMandatory") == true,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                })
+                .ToList();
+
+            int totalCount = 0;
+            if (dt != null && dt.Rows.Count > 0)
+            {
+                totalCount = Convert.ToInt32(dt.Rows[0][0]);
+            }
+
+            return new PaginationResult<AttributeMandatoryScopeReadDto>
+            {
+                Items = divisions,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 
 
 
@@ -501,7 +590,7 @@ public class AttributeMandatoryScopeComponent
 
             return new AttributeMandatoryScopeReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 DocumentAttributeId = row.Field<int>("DocumentAttributeId"),

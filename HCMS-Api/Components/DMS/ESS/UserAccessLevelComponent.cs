@@ -9,9 +9,8 @@ using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class WorkflowPolicyComponent
+public class UserAccessLevelComponent
 {
-
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
     private readonly IConfiguration _configuration;
@@ -20,7 +19,7 @@ public class WorkflowPolicyComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public WorkflowPolicyComponent(
+    public UserAccessLevelComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -45,25 +44,40 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<WorkflowPolicyReadDto> CreateAsync(WorkflowPolicyCreateDto input)
+    public async Task<UserAccessLevelReadDto> CreateAsync(UserAccessLevelCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix); 
+            var userId = "manual"; //_utilities.GetUserid(prefix);
+            if (input.Id < 0)
+                throw new CustomException("UserAccessLevel Id is required.", 400);
+
+            // Check duplicate by Id OR Name
+            string checkQuery = $@"
+            SELECT COUNT(1)
+            FROM UserAccessLevels
+            WHERE (Id = '{input.Id}' 
+              AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+            if (exists > 0)
+                throw new CustomException("UserAccessLevel already exists", 409);
+             
+
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO WorkflowPolicies
+            INSERT INTO UserAccessLevels
             (   CompanyId,
-                Name,
-                EntityType,
+                EmployeeCode,  
                 DivisionCode,
                 DepartmentCode,
                 SubDepartmentCode,
                 BusinessDomainCode, 
-                DocumentTypeCode,
+                DocumentTypeCode, 
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -73,11 +87,10 @@ public class WorkflowPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
-                '{input.Name}',
-                '{input.EntityType}',
-                '{input.DivisionCode}',
-                '{input.DepartmentCode}',
+                {input.CompanyId}, 
+                '{input.EmployeeCode}', 
+                '{input.DivisionCode}', 
+                '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}',
                 '{input.BusinessDomainCode}',
                 '{input.DocumentTypeCode}',
@@ -93,9 +106,23 @@ public class WorkflowPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@" 
-            SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = {newId}";
+            string selectQuery = $@"
+                SELECT u.*,div.Name as Division, dep.Name as Department,
+                     sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                     FROM UserAccessLevels u 
+                     LEFT JOIN Divisions div 
+                     ON u.divisionCode = div.Code
+                     LEFT JOIN Departments dep
+                     ON u.DepartmentCode = dep.Code
+                     LEFT JOIN SubDepartments sdep
+                     ON u.SubdepartmentCode = sdep.Code 
+                     LEFT JOIN BusinessDomains bd
+                     ON u.BusinessDomainCode = bd.Code
+                     LEFT JOIN Companies c
+                     ON u.CompanyId = c.Id
+                     LEFT JOIN DocumentTypes dt
+                     ON u.DocumentTypeCode = dt.Code
+                     WHERE u.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -104,13 +131,12 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new UserAccessLevelReadDto
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                Name = row.Field<string>("Name"),
-                EntityType = row.Field<string>("EntityType"),
+                EmployeeCode = row.Field<string>("EmployeeCode"), 
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -126,7 +152,7 @@ public class WorkflowPolicyComponent
 
                 DocumentType = row.Field<string>("DocumentType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
+                 
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -142,27 +168,27 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM WorkflowPolicies
-                WHERE Id = {code}
+                FROM UserAccessLevels
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("UserAccessLevels not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE WorkflowPolicies
+                UPDATE UserAccessLevels
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -171,15 +197,14 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
-
-
-    public async Task<PaginationResult<WorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
+     
+    public async Task<PaginationResult<UserAccessLevelReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
             var whereClause = @"
-                WHERE w.IsDeleted = False 
-                  AND w.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE u.IsDeleted = False 
+                  AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -187,19 +212,30 @@ public class WorkflowPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(w.Name) LIKE '%{search}%'
-                    OR UPPER(w.Id) LIKE '%{search}%'
+                    UPPER(u.EmployeeName) LIKE '%{search}%'
+                    OR UPPER(u.Id) LIKE '%{search}%'
+                    OR UPPER(u.EmployeeCode) LIKE '%{search}%' 
+                    OR UPPER(u.DivisionCode) LIKE '%{search}%'
+                    OR UPPER(u.DepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.SubDepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.BusinessDomainCode) LIKE '%{search}%' 
+                    OR UPPER(u.DocumentTypeCode) LIKE '%{search}%' 
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "w.Name",
-                "ENTITYTYPE" => "w.EntityType",
-                "ID" => "w.Id",
-                "ISACTIVE" => "w.IsActive",
-                _ => "w.Name"
+                "Id" => "u.Id",
+                "EMPLOYEECODE" => "u.EmployeeCode",
+                "USERNAME" => "u.EmployeeName",
+                "level1Id" => "u.DivisionCode",
+                "level2Id" => "u.DepartmentCode",
+                "level3Id" => "u.SubDepartmentCode",
+                "level4Id" => "u.BusinessDomainCode",
+                "DocumentTypeCode" => "u.DocumentTypeCode",
+                "ISACTIVE" => "u.IsActive",
+                _ => "u.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -207,13 +243,27 @@ public class WorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT * FROM vw_WorkflowPolicy w
+                        SELECT u.*,div.Name as Division, dep.Name as Department,
+                         sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                         FROM UserAccessLevels u 
+                         LEFT JOIN Divisions div 
+                         ON u.divisionCode = div.Code
+                         LEFT JOIN Departments dep
+                         ON u.DepartmentCode = dep.Code
+                         LEFT JOIN SubDepartments sdep
+                         ON u.SubdepartmentCode = sdep.Code 
+                         LEFT JOIN BusinessDomains bd
+                         ON u.BusinessDomainCode = bd.Code
+                         LEFT JOIN Companies c
+                         ON u.CompanyId = c.Id
+                         LEFT JOIN DocumentTypes dt
+                         ON u.DocumentTypeCode = dt.Code
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM WorkflowPolicies w
+                        FROM UserAccessLevels u
                         {whereClause};
                     ";
 
@@ -223,22 +273,21 @@ public class WorkflowPolicyComponent
                                                       // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<WorkflowPolicyReadDto>
+                return new PaginationResult<UserAccessLevelReadDto>
                 {
-                    Items = new List<WorkflowPolicyReadDto>(),
+                    Items = new List<UserAccessLevelReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new WorkflowPolicyReadDto
+                .Select(row => new UserAccessLevelReadDto
                 {
-                    Id = row.Field<int>("Id"),
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    Name = row.Field<string>("Name"),
-                    EntityType = row.Field<string>("EntityType"),
-
+                    EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
+                  
                     Division = row.Field<string>("Division"),
                     DivisionCode = row.Field<string>("DivisionCode"),
 
@@ -271,7 +320,7 @@ public class WorkflowPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<WorkflowPolicyReadDto>
+            return new PaginationResult<UserAccessLevelReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -283,30 +332,43 @@ public class WorkflowPolicyComponent
         }
     }
 
-    public async Task<WorkflowPolicyReadDto> GetByCodeAsync(string code)
+    public async Task<UserAccessLevelReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT * FROM vw_WorkflowPolicy w
-                WHERE w.Id = {code}
-                  AND w.IsActive = True
-                  AND w.IsDeleted = False";
+                   SELECT u.*,div.Name as Division, dep.Name as Department,
+                     sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                     FROM UserAccessLevels u 
+                     LEFT JOIN Divisions div 
+                     ON u.divisionCode = div.Code
+                     LEFT JOIN Departments dep
+                     ON u.DepartmentCode = dep.Code
+                     LEFT JOIN SubDepartments sdep
+                     ON u.SubdepartmentCode = sdep.Code 
+                     LEFT JOIN BusinessDomains bd
+                     ON u.BusinessDomainCode = bd.Code
+                     LEFT JOIN Companies c
+                     ON u.CompanyId = c.Id
+                     LEFT JOIN DocumentTypes dt
+                     ON u.DocumentTypeCode = dt.Code
+                WHERE u.Id = {id}
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("UserAccessLevels not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new UserAccessLevelReadDto
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                Name = row.Field<string>("Name"), 
-                EntityType = row.Field<string>("EntityType"),
+                EmployeeCode = row.Field<string>("EmployeeCode"), 
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -336,8 +398,9 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
-     
-    public async Task<WorkflowPolicyReadDto> UpdateAsync(WorkflowPolicyUpdateDto input)
+
+
+    public async Task<UserAccessLevelReadDto> UpdateAsync(UserAccessLevelUpdateDto input)
     {
         try
         {
@@ -350,21 +413,26 @@ public class WorkflowPolicyComponent
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
-            FROM WorkflowPolicies
+            FROM Users
             WHERE Id = '{input.Id}'
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("Users not found", 200);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
-            UPDATE WorkflowPolicies
+            UPDATE Users
             SET 
-                Name = '{input.Name}',
-                EntityType = '{input.EntityType}',
+                EmployeeCode = '{input.EmployeeCode}',  
+                DivisionCode = '{input.DivisionCode}',
+                DepartmentCode = '{input.DepartmentCode}',
+                SubDepartmentCode = '{input.SubDepartmentCode}', 
+                BusinessDomainCode = '{input.BusinessDomainCode}', 
+                DesignationCode = '{input.DesignationCode}', 
+                DocumentTypeCode = '{input.DocumentTypeCode}',  
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
@@ -377,8 +445,22 @@ public class WorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = '{input.Id}'";
+                       SELECT u.*,div.Name as Division, dep.Name as Department,
+                         sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                         FROM UserAccessLevels u 
+                         LEFT JOIN Divisions div 
+                         ON u.divisionCode = div.Code
+                         LEFT JOIN Departments dep
+                         ON u.DepartmentCode = dep.Code
+                         LEFT JOIN SubDepartments sdep
+                         ON u.SubdepartmentCode = sdep.Code 
+                         LEFT JOIN BusinessDomains bd
+                         ON u.BusinessDomainCode = bd.Code
+                         LEFT JOIN Companies c
+                         ON u.CompanyId = c.Id
+                         LEFT JOIN DocumentTypes dt
+                         ON u.DocumentTypeCode = dt.Code
+            WHERE u.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -387,13 +469,12 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new UserAccessLevelReadDto
             {
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                Name = row.Field<string>("Name"),
-                EntityType = row.Field<string>("EntityType"),
+                EmployeeCode = row.Field<string>("EmployeeCode"), 
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),

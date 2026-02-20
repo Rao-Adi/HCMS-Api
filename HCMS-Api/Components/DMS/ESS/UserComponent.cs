@@ -1,11 +1,16 @@
-﻿using HCMS_Api.Common;
+﻿using Dapper;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.HCMS.ESS;
+using System.ComponentModel.Design;
 using System.Data;
+using System.Text.RegularExpressions;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -66,6 +71,13 @@ public class UserComponent
             if (exists > 0)
                 throw new CustomException("User already exists", 409);
 
+
+            // Get Employee Name from Code
+            string empQuery = $@"SELECT EmployeeName 
+                            FROM Users
+                            WHERE EmployeeCode ='{input.ReportingTo}'";
+            var employeeName = _common.ExecuteScalarQuery(empQuery);
+
             // 🔢 Generate next Division Code
             string getLastCodeQuery = @"
                             SELECT EmployeeCode
@@ -101,7 +113,9 @@ public class UserComponent
                 DepartmentCode,
                 SubDepartmentCode,
                 BusinessDomainCode,
+                DesignationCode,
                 ReportingTo,
+                Grade,
                 DateOfJoining, 
                 IsActive,
                 IsDeleted,
@@ -112,7 +126,7 @@ public class UserComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                {input.CompanyId},
                 '{generatedCode}',
                 '{input.EmployeeName}',
                 '{input.Email}', 
@@ -120,7 +134,9 @@ public class UserComponent
                 '{input.DepartmentCode}', 
                 '{input.SubDepartmentCode}',
                 '{input.BusinessDomainCode}',
-                '{input.ReportingTo}',
+                '{input.DesignationCode}',
+                '{employeeName}',
+                '{input.Grade}',
                 '{input.DateOfJoining}',
                 TRUE,
                 FALSE,
@@ -135,22 +151,8 @@ public class UserComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-             SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
-   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-		                   div.Name as Division, dep.Name as Department,
-		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
-            FROM Users u
-            LEFT JOIN Divisions div 
-			ON u.divisionCode = div.Code
-			LEFT JOIN Departments dep
-			ON u.DepartmentCode = dep.Code
-			LEFT JOIN SubDepartments sdep
-			ON u.SubdepartmentCode = sdep.Code
-            LEFT JOIN Companies c
-            ON u.CompanyId = c.Id
-            LEFT JOIN BusinessDomains bd
-            ON u.BusinessDomainCode = bd.Code
-            WHERE u.Id = {newId}";
+             Select * from VW_Users u
+                        WHERE u.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -162,7 +164,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
@@ -180,7 +182,11 @@ public class UserComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                Designation = row.Field<string>("Designation"),
+                DesignationCode = row.Field<string>("DesignationCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
+                Grade = row.Field<string>("Grade"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -279,10 +285,12 @@ public class UserComponent
                     OR UPPER(u.DivisionCode) LIKE '%{search}%'
                     OR UPPER(u.DepartmentCode) LIKE '%{search}%'
                     OR UPPER(u.SubDepartmentCode) LIKE '%{search}%'
+                    OR UPPER(u.DesignationCode) LIKE '%{search}%'
                     OR UPPER(u.BusinessDomain) LIKE '%{search}%'
                     OR UPPER(u.Email) LIKE '%{search}%'
                     OR UPPER(u.DateOfJoining) LIKE '%{search}%'
                     OR UPPER(u.ReportingTo) LIKE '%{search}%'
+                    OR UPPER(u.Grade) LIKE '%{search}%'
                 )";
             }
 
@@ -296,9 +304,11 @@ public class UserComponent
                 "level2Id" => "u.DepartmentCode",
                 "level3Id" => "u.SubDepartmentCode",
                 "level4Id" => "u.BusinessDomainCode",
+                "DesignationCode" => "u.DesignationCode",
                 "EMAIL" => "u.Email",
                 "DATEOFJOINING" => "u.DateOfJoining",
                 "REPORTINGTO" => "u.ReportingTo",
+                "GRADE" => "u.Grade",
                 "ISACTIVE" => "u.IsActive",
                 _ => "u.Id"
             };
@@ -308,21 +318,7 @@ public class UserComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                         SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
-   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-		                   div.Name as Division, dep.Name as Department,
-		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
-                        FROM Users u
-                        LEFT JOIN Divisions div 
-			            ON u.divisionCode = div.Code
-			            LEFT JOIN Departments dep
-			            ON u.DepartmentCode = dep.Code
-			            LEFT JOIN SubDepartments sdep
-			            ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Companies c
-                        ON u.CompanyId = c.Id
-                        LEFT JOIN BusinessDomains bd
-                        ON u.BusinessDomainCode = bd.Code
+                        Select * from VW_Users u
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -348,8 +344,8 @@ public class UserComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new UserReadDto
                 {
-                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0, 
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     EmployeeName = row.Table.Columns.Contains("EmployeeName") ? row.Field<string>("EmployeeName") : string.Empty,
@@ -367,7 +363,11 @@ public class UserComponent
                     BusinessDomain = row.Field<string>("BusinessDomain"),
                     BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                    Designation = row.Field<string>("Designation"),
+                    DesignationCode = row.Field<string>("DesignationCode"),
+
                     ReportingTo = row.Table.Columns.Contains("ReportingTo") ? row.Field<string>("ReportingTo") : string.Empty,
+                    Grade = row.Field<string>("Grade"),
                     DateOfJoining = (row.Table.Columns.Contains("DateOfJoining") && !row.IsNull("DateOfJoining"))
                                 ? row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -404,21 +404,7 @@ public class UserComponent
         try
         {
             string query = $@"
-                    SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
-   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-		                   div.Name as Division, dep.Name as Department,
-		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
-                    FROM Users u
-                    LEFT JOIN Divisions div 
-			        ON u.divisionCode = div.Code
-			        LEFT JOIN Departments dep
-			        ON u.DepartmentCode = dep.Code
-			        LEFT JOIN SubDepartments sdep
-			        ON u.SubdepartmentCode = sdep.Code
-                    LEFT JOIN Companies c
-                    ON u.CompanyId = c.Id
-                    LEFT JOIN BusinessDomains bd
-                    ON u.BusinessDomainCode = bd.Code
+                   Select * from VW_Users u
                 WHERE u.Id = {id}
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
@@ -433,7 +419,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
@@ -451,7 +437,11 @@ public class UserComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                Designation = row.Field<string>("Designation"),
+                DesignationCode = row.Field<string>("DesignationCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
+                Grade = row.Field<string>("Grade"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -467,7 +457,6 @@ public class UserComponent
         }
     }
 
- 
 
     public async Task<UserReadDto> UpdateAsync(UserUpdateDto input)
     {
@@ -502,7 +491,9 @@ public class UserComponent
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}', 
                 BusinessDomainCode = '{input.BusinessDomainCode}', 
+                DesignationCode = '{input.DesignationCode}', 
                 ReportingTo = '{input.ReportingTo}', 
+                Grade = '{input.Grade}', 
                 DateOfJoining = '{input.DateOfJoining}', 
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
@@ -516,21 +507,7 @@ public class UserComponent
 
             // Return updated record
             string selectQuery = $@"
-                         SELECT u.Id,u.CompanyId,u.EmployeeCode,u.EmployeeName,u.DivisionCode,u.DepartmentCode,u.SubDepartmentCode,u.BusinessDomainCode,
-   		                   u.Email,u.ReportingTo,u.DateOfJoining,u.IsActive,u.IsDeleted,u.CreatedAt,u.CreatedBy,u.LastModifiedAt,u.LastModifiedBy,
-		                   div.Name as Division, dep.Name as Department,
-		                   sdep.Name SubDepartment, c.Name Company, bd.Name AS BusinessDomain
-                        FROM Users u
-                        LEFT JOIN Divisions div 
-			            ON u.divisionCode = div.Code
-			            LEFT JOIN Departments dep
-			            ON u.DepartmentCode = dep.Code
-			            LEFT JOIN SubDepartments sdep
-			            ON u.SubdepartmentCode = sdep.Code
-                        LEFT JOIN Companies c
-                        ON u.CompanyId = c.Id
-                        LEFT JOIN BusinessDomains bd
-                        ON u.BusinessDomainCode = bd.Code
+                       Select * from VW_Users u
             WHERE u.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -543,7 +520,7 @@ public class UserComponent
             return new UserReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 EmployeeCode = row.Field<string>("EmployeeCode"),
                 EmployeeName = row.Field<string>("EmployeeName"),
@@ -561,7 +538,11 @@ public class UserComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                Designation = row.Field<string>("Designation"),
+                DesignationCode = row.Field<string>("DesignationCode"),
+
                 ReportingTo = row.Field<string>("ReportingTo"),
+                Grade = row.Field<string>("Grade"),
                 DateOfJoining = row.Field<DateTime>("DateOfJoining").ToString("yyyy-MM-dd HH:mm:ss"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -576,4 +557,181 @@ public class UserComponent
             throw;
         }
     }
+
+
+    public async Task<UserReadDto> GetUsersByFiltersAsync(UserFilterDto filters)
+    {
+        try
+        {
+            var parameters = new DynamicParameters();
+            var whereConditions = new List<string>();
+
+            // Base query
+            string baseQuery = @"
+            SELECT u.*, 
+                   div.Name as Division, 
+                   dep.Name as Department,
+                   sdep.Name as SubDepartment, 
+                   c.Name as Company, 
+                   bd.Name as BusinessDomain, 
+                   des.Name as Designation,
+	               r.Name AS UserRole
+            FROM Users u
+            LEFT JOIN Divisions div ON u.DivisionCode = div.Code
+            LEFT JOIN Departments dep ON u.DepartmentCode = dep.Code
+            LEFT JOIN SubDepartments sdep ON u.SubDepartmentCode = sdep.Code
+            LEFT JOIN Designations des ON u.DesignationCode = des.Code
+            LEFT JOIN Companies c ON u.CompanyId = c.Id
+            LEFT JOIN BusinessDomains bd ON u.BusinessDomainCode = bd.Code
+            LEFT JOIN UserRoles ur
+            ON u.Id = ur.UserId
+	            LEFT JOIN Roles r
+	            ON ur.RoleId = r.Id
+            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE";
+
+            // Add conditions based on provided filters
+            if (!string.IsNullOrEmpty(filters.DivisionCode))
+            {
+                whereConditions.Add("u.DivisionCode = @DivisionCode");
+                parameters.Add("@DivisionCode", filters.DivisionCode);
+            }
+
+            if (!string.IsNullOrEmpty(filters.DepartmentCode))
+            {
+                whereConditions.Add("u.DepartmentCode = @DepartmentCode");
+                parameters.Add("@DepartmentCode", filters.DepartmentCode);
+            }
+
+            if (!string.IsNullOrEmpty(filters.SubDepartmentCode))
+            {
+                whereConditions.Add("u.SubDepartmentCode = @SubDepartmentCode");
+                parameters.Add("@SubDepartmentCode", filters.SubDepartmentCode);
+            }
+
+            if (!string.IsNullOrEmpty(filters.BusinessDomainCode))
+            {
+                whereConditions.Add("u.BusinessDomainCode = @BusinessDomainCode");
+                parameters.Add("@BusinessDomainCode", filters.BusinessDomainCode);
+            }
+
+            // Multiple Designations
+            if (filters.DesignationCodes != null && filters.DesignationCodes.Any())
+            {
+                var designationList = filters.DesignationCodes.ToList();
+                var designationParams = new List<string>();
+
+                for (int i = 0; i < designationList.Count; i++)
+                {
+                    var paramName = $"@DesignationCode{i}";
+                    designationParams.Add(paramName);
+                    parameters.Add(paramName, designationList[i]);
+                }
+
+                whereConditions.Add($"u.DesignationCode IN ({string.Join(",", designationParams)})");
+            }
+
+            // Multiple Roles
+            if (filters.Roles != null && filters.Roles.Any())
+            {
+                var roleList = filters.Roles.ToList();
+                var roleParams = new List<string>();
+
+                for (int i = 0; i < roleList.Count; i++)
+                {
+                    var paramName = $"@Role{i}";
+                    roleParams.Add(paramName);
+                    parameters.Add(paramName, roleList[i]);
+                }
+
+                whereConditions.Add($"ur.RoleId IN ({string.Join(",", roleParams)})");
+            }
+
+             
+            // Multiple Employee Codes
+            if (filters.EmployeeCodes != null && filters.EmployeeCodes.Any())
+            {
+                var employeeCodeList = filters.EmployeeCodes.ToList();
+                var employeeCodeParams = new List<string>();
+
+                for (int i = 0; i < employeeCodeList.Count; i++)
+                {
+                    var paramName = $"@EmployeeCode{i}";
+                    employeeCodeParams.Add(paramName);
+                    parameters.Add(paramName, employeeCodeList[i]);
+                }
+
+                whereConditions.Add($"u.EmployeeCode IN ({string.Join(",", employeeCodeParams)})");
+            }
+
+            // Combine all conditions
+            if (whereConditions.Count > 0)
+            {
+                baseQuery += " AND " + string.Join(" AND ", whereConditions);
+            }
+
+            // Add ORDER BY for consistent results
+            baseQuery += " ORDER BY u.EmployeeName";
+
+            var resultList = (await _dapperService.QuerySingleAsync<UserReadDto>(baseQuery, parameters));
+
+
+            if (resultList == null)
+                throw new CustomException("No users found matching the criteria", 200);
+
+            var divisions = new UserReadDto
+            {
+                Id = resultList.Id,
+                CompanyId = resultList.CompanyId,
+                Company = resultList.Company,
+                EmployeeCode = resultList.EmployeeCode,
+                EmployeeName = resultList.EmployeeName,
+                Email = resultList.Email,
+
+                Division = resultList.Division,
+                DivisionCode = resultList.DivisionCode,
+
+                Department = resultList.Department,
+                DepartmentCode = resultList.DepartmentCode,
+
+                SubDepartment = resultList.SubDepartment,
+                SubDepartmentCode = resultList.SubDepartmentCode,
+
+                BusinessDomain = resultList.BusinessDomain,
+                BusinessDomainCode = resultList.BusinessDomainCode,
+
+                Designation = resultList.Designation,
+                DesignationCode = resultList.DesignationCode,
+
+                ReportingTo = resultList.ReportingTo,
+                Grade = resultList.Grade,
+
+            };
+
+            return divisions;
+
+
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+}
+
+
+// DTO for filter parameters
+public class UserFilterDto
+{ 
+    public int CompanyId { get; set; }
+    public int WorkflowPolicyId { get; set; }
+    public string DocumentTypeCode { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public List<long>? Roles { get; set; }
+    public List<string>? EmployeeCodes { get; set; }
+    public List<string>? DesignationCodes { get; set; }
 }

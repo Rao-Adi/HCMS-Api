@@ -11,7 +11,7 @@ public class DocumentAttribute : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     // ⚠️ Matches DB column:
@@ -21,7 +21,7 @@ public class DocumentAttribute : AuditableEntity
     [MaxLength(100)]
     public string ControlLabel { get; set; } = null!;
 
-    public int ControlType { get; set; }
+    public int ControlTypeId { get; set; }
 
     [MaxLength(1000)]
     public string? ListValues { get; set; }
@@ -39,7 +39,7 @@ public class DocumentAttributeReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -51,7 +51,8 @@ public class DocumentAttributeReadDto : AuditableEntity
     [MaxLength(100)]
     public string ControlLabel { get; set; } = null!;
 
-    public int ControlType { get; set; }
+    public string ControlType { get; set; }
+    public int ControlTypeId { get; set; }
 
     [MaxLength(1000)]
     public string? ListValues { get; set; }
@@ -65,14 +66,14 @@ public class DocumentAttributeCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
     [MaxLength(100)]
     public string ControlLabel { get; set; } = null!;
 
-    public int ControlType { get; set; }
+    public int ControlTypeId { get; set; }
 
     [MaxLength(1000)]
     public string? ListValues { get; set; }
@@ -86,14 +87,14 @@ public class DocumentAttributeUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 
     [MaxLength(100)]
     public string ControlLabel { get; set; } = null!;
 
-    public int ControlType { get; set; }
+    public int ControlTypeId { get; set; }
 
     [MaxLength(1000)]
     public string? ListValues { get; set; }

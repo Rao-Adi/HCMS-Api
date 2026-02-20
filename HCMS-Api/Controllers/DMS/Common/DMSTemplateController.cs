@@ -63,7 +63,7 @@ public class DMSTemplateController : Controller
 
 
 
-    [HttpGet("get-template-by-code/{code}")]
+    [HttpGet("get-template-by-document-type/{code}")]
     public async Task<IActionResult> GetTemplateById(string code)
     {
         try

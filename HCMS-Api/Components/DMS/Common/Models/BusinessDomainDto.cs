@@ -8,7 +8,7 @@ public class BusinessDomainDto
 public class BusinessDomainCreateDto
 {
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     public string Code { get; set; }
 
@@ -19,7 +19,7 @@ public class BusinessDomainCreateDto
 public class BusinessDomainUpdateDto
 {
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string Code { get; set; }
@@ -35,7 +35,7 @@ public class BusinessDomainReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string Code { get; set; }

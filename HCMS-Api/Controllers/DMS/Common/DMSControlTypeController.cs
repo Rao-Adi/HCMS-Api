@@ -8,41 +8,42 @@ using Microsoft.AspNetCore.Mvc;
 using System.Net;
 
 namespace HCMS_Api.Controllers.DMS.Common;
+ 
 
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/[controller]")]
-public class DMSWorkflowStepController : Controller
+public class DMSControlTypeController : Controller
 {
     private readonly Utilities _utilities;
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly WorkflowStepComponent _workflowStepComponent;
+    private readonly ControlTypeComponent _controlTypeComponent;
 
-    public DMSWorkflowStepController(
+    public DMSControlTypeController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     WorkflowStepComponent workflowStepComponent)
+     ControlTypeComponent divisionComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _workflowStepComponent = workflowStepComponent;
+        _controlTypeComponent = divisionComponent;
     }
 
-    [HttpPost("get-all-workflow-step")]
-    public async Task<IActionResult> GetAllWorkflowSetups(TableFiltersDto input)
+    [HttpPost("get-all-control-types")]
+    public async Task<IActionResult> GetAllControlTypes(TableFiltersDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<WorkflowStepReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<ControlTypeReadDto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetAllAsync(input),
+                Data = await _controlTypeComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -62,16 +63,44 @@ public class DMSWorkflowStepController : Controller
     }
 
 
-
-    [HttpPost("get-workflow-step-by-document-code")]
-    public async Task<IActionResult> GetWorkflowStepById(GetStepDefinitionFilterDto input)
+    [HttpGet("get-all-control-type-list")]
+    public async Task<IActionResult> GetAllSelectList()
     {
         try
         {
-            return Ok(new HttpApiResponse<List<WorkflowStepReadDto>>()
+            var selectList = await _controlTypeComponent.GetAllSelectList();
+            return Ok(new HttpApiResponse<IList<SelectList2Dto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetByDocumentTypeCodeAsync(input),
+                Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-control-type-by-id/{id}")]
+    public async Task<IActionResult> GetControlTypeById(int id)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<ControlTypeReadDto>()
+            {
+                Success = true,
+                Data = await _controlTypeComponent.GetByIdAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -90,16 +119,15 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-
-    [HttpGet("get-pending-approvals/{companyId}/{userId}")]
-    public async Task<IActionResult> GetPendingApprovals(long companyId, int userId)
+    [HttpGet("get-control-type-count")]
+    public async Task<IActionResult> GetDocumentTypeCount()
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<PendingRequestDto>>()
+            return Ok(new HttpApiResponse<int>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetPendingApprovalsAsync(companyId, userId),
+                Data = await _controlTypeComponent.GetCount(),
                 Message = "Success",
                 Code = 200
             });
@@ -118,44 +146,8 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-
-
-    //[HttpPost("create-workflow-step")]
-    //public async Task<IActionResult> Create([FromBody] WorkflowStepCreateDto input)
-    //{
-    //    if (!ModelState.IsValid)
-    //    {
-    //        // Return validation errors
-    //        return BadRequest(ModelState);
-    //    }
-
-    //    try
-    //    {
-    //        return Ok(new HttpApiResponse<WorkflowStepReadDto>()
-    //        {
-    //            Success = true,
-    //            Data = await _workflowStepComponent.CreateAsync(input),
-    //            Message = "Workflow Step created successfully.",
-    //            Code = 200
-    //        });
-    //    }
-    //    catch (CustomException ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-    //        return StatusCode(response.Code, response);
-    //    }
-    //}
-
-
-    [HttpPost("create-workflow-step")]
-    public async Task<IActionResult> Create([FromBody] WorkFlowStepsFilterDto filters)
+    [HttpPost("create-control-type")]
+    public async Task<IActionResult> Create([FromBody] ControlTypeCreateDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -165,11 +157,11 @@ public class DMSWorkflowStepController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<List<WorkflowStepReadDto>>()
+            return Ok(new HttpApiResponse<ControlTypeReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.CreateWorkflowStepsByFilterAsync(filters),
-                Message = "Workflow Step created successfully.",
+                Data = await _controlTypeComponent.CreateAsync(input),
+                Message = "ControlType created successfully.",
                 Code = 200
             });
         }
@@ -187,16 +179,16 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-    [HttpPut("update-workflow-step")]
-    public async Task<IActionResult> Update([FromBody] WorkflowStepUpdateDto input)
+    [HttpPut("update-control-type")]
+    public async Task<IActionResult> Update([FromBody] ControlTypeUpdateDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<WorkflowStepReadDto>()
+            return Ok(new HttpApiResponse<ControlTypeReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.UpdateAsync(input),
-                Message = "Workflow Step updated successfully.",
+                Data = await _controlTypeComponent.UpdateAsync(input),
+                Message = "ControlType updated successfully.",
                 Code = 200
             });
         }
@@ -214,16 +206,17 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
-    [HttpDelete("delete-workflow-step/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-control-type/{id}")]
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
-        { 
+        {
+            
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.DeleteAsync(code),
-                Message = "Workflow Step deleted successfully.",
+                Data = await _controlTypeComponent.DeleteAsync(id),
+                Message = "ControlType deleted successfully.",
                 Code = 200
             });
         }
@@ -240,5 +233,5 @@ public class DMSWorkflowStepController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
 }
+

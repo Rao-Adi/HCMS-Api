@@ -9,9 +9,8 @@ using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
-public class WorkflowPolicyComponent
+public class ControlTypeComponent
 {
-
     private readonly DMSUtilities _utilities;
     private readonly DMSDataServices _dataservice;
     private readonly IConfiguration _configuration;
@@ -20,7 +19,7 @@ public class WorkflowPolicyComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
-    public WorkflowPolicyComponent(
+    public ControlTypeComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
         , IConfiguration configuration
@@ -45,25 +44,36 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<WorkflowPolicyReadDto> CreateAsync(WorkflowPolicyCreateDto input)
+
+
+    public async Task<ControlTypeReadDto> CreateAsync(ControlTypeCreateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix); 
+            var userId = "manual"; //_utilities.GetUserid(prefix);
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("ControlType name is required.", 400);
+
+            // 🔍 Check duplicate by NAME only
+            string duplicateCheckQuery = $@"
+                            SELECT COUNT(1)
+                            FROM ControlTypes
+                            WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
+
+            if (exists > 0)
+                throw new CustomException("ControlType already exists", 409);
+
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
-            INSERT INTO WorkflowPolicies
-            (   CompanyId,
+            INSERT INTO ControlTypes
+            (    
                 Name,
-                EntityType,
-                DivisionCode,
-                DepartmentCode,
-                SubDepartmentCode,
-                BusinessDomainCode, 
-                DocumentTypeCode,
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -72,15 +82,8 @@ public class WorkflowPolicyComponent
                 LastModifiedBy
             )
             VALUES
-            (
-                '{input.CompanyId}', 
-                '{input.Name}',
-                '{input.EntityType}',
-                '{input.DivisionCode}',
-                '{input.DepartmentCode}',
-                '{input.SubDepartmentCode}',
-                '{input.BusinessDomainCode}',
-                '{input.DocumentTypeCode}',
+            ( 
+                '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
                 NOW(),
@@ -93,9 +96,10 @@ public class WorkflowPolicyComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // Fetch inserted record
-            string selectQuery = $@" 
-            SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = {newId}";
+            string selectQuery = $@"
+            SELECT *
+            FROM ControlTypes
+            WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -104,29 +108,10 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new ControlTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
                 Name = row.Field<string>("Name"),
-                EntityType = row.Field<string>("EntityType"),
-
-                Division = row.Field<string>("Division"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                DocumentType = row.Field<string>("DocumentType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -142,27 +127,27 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
-                FROM WorkflowPolicies
-                WHERE Id = {code}
+                FROM ControlTypes
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("ControlType not found", 200);
 
             // Soft delete
             string deleteQuery = $@"
-                UPDATE WorkflowPolicies
+                UPDATE ControlTypes
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -173,13 +158,14 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<PaginationResult<WorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<ControlTypeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
         {
+
             var whereClause = @"
-                WHERE w.IsDeleted = False 
-                  AND w.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False 
+                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -187,19 +173,18 @@ public class WorkflowPolicyComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(w.Name) LIKE '%{search}%'
-                    OR UPPER(w.Id) LIKE '%{search}%'
+                    UPPER(d.Name) LIKE '%{search}%'
+                    OR UPPER(d.Id) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "w.Name",
-                "ENTITYTYPE" => "w.EntityType",
-                "ID" => "w.Id",
-                "ISACTIVE" => "w.IsActive",
-                _ => "w.Name"
+                "NAME" => "d.Name",
+                "CODE" => "d.Id",
+                "ISACTIVE" => "d.IsActive",
+                _ => "d.Name"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -207,53 +192,35 @@ public class WorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT * FROM vw_WorkflowPolicy w
+                        SELECT d.*
+                        FROM ControlTypes d 
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM WorkflowPolicies w
+                        FROM ControlTypes d
                         {whereClause};
                     ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
             DataTable countTable = ds.Tables[1];      // second result set (count)
-                                                      // ✅ SAFETY CHECKS
+            // ✅ SAFETY CHECKS
             if (divisionsTable == null || divisionsTable.Rows.Count == 0)
             {
-                return new PaginationResult<WorkflowPolicyReadDto>
+                return new PaginationResult<ControlTypeReadDto>
                 {
-                    Items = new List<WorkflowPolicyReadDto>(),
+                    Items = new List<ControlTypeReadDto>(),
                     TotalCount = 0
                 };
             }
 
             var divisions = divisionsTable.AsEnumerable()
-                .Select(row => new WorkflowPolicyReadDto
+                .Select(row => new ControlTypeReadDto
                 {
-                    Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<int>("CompanyId"),
-                    Company = row.Field<string>("Company"),
-                    Name = row.Field<string>("Name"),
-                    EntityType = row.Field<string>("EntityType"),
-
-                    Division = row.Field<string>("Division"),
-                    DivisionCode = row.Field<string>("DivisionCode"),
-
-                    Department = row.Field<string>("Department"),
-                    DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                    SubDepartment = row.Field<string>("SubDepartment"),
-                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                    BusinessDomain = row.Field<string>("BusinessDomain"),
-                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                    DocumentType = row.Field<string>("DocumentType"),
-                    DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -271,7 +238,7 @@ public class WorkflowPolicyComponent
                 totalCount = Convert.ToInt32(countTable.Rows[0][0]);
             }
 
-            return new PaginationResult<WorkflowPolicyReadDto>
+            return new PaginationResult<ControlTypeReadDto>
             {
                 Items = divisions,
                 TotalCount = totalCount
@@ -283,46 +250,59 @@ public class WorkflowPolicyComponent
         }
     }
 
-    public async Task<WorkflowPolicyReadDto> GetByCodeAsync(string code)
+
+    public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
+    {
+        try
+        {
+            string query = @"
+            SELECT Id, Name
+            FROM ControlTypes
+            WHERE IsActive = True
+              AND IsDeleted = False
+            ORDER BY Name";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("Id"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<ControlTypeReadDto> GetByIdAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT * FROM vw_WorkflowPolicy w
-                WHERE w.Id = {code}
-                  AND w.IsActive = True
-                  AND w.IsDeleted = False";
+                SELECT d.*
+                    FROM ControlTypes d 
+                WHERE d.Id = {id}
+                  AND d.IsActive = True
+                  AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("ControlType not found", 200);
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new ControlTypeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                Name = row.Field<string>("Name"), 
-                EntityType = row.Field<string>("EntityType"),
-
-                Division = row.Field<string>("Division"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                DocumentType = row.Field<string>("DocumentType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
+                Name = row.Field<string>("Name"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -336,49 +316,66 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
-     
-    public async Task<WorkflowPolicyReadDto> UpdateAsync(WorkflowPolicyUpdateDto input)
+
+
+    public async Task<ControlTypeReadDto> UpdateAsync(ControlTypeUpdateDto input)
     {
         try
         {
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Invalid division code.", 200);
+            if (input.Id <= 0)
+                throw new CustomException("ControlType code is required.", 400);
 
-            // Check existence (Id is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM WorkflowPolicies
-            WHERE Id = '{input.Id}'
-              AND IsDeleted = FALSE";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                throw new CustomException("ControlType name is required.", 400);
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            // 🔍 Check division exists
+            string existsQuery = $@"
+                    SELECT COUNT(1)
+                    FROM ControlTypes
+                    WHERE Id = {input.Id}
+                      AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowPolicies not found", 200);
+                throw new CustomException("ControlType not found", 404);
 
-            // Update (PostgreSQL boolean + timestamp)
+            // 🚫 Prevent duplicate NAME (excluding current division)
+            string duplicateNameQuery = $@"
+                        SELECT COUNT(1)
+                        FROM ControlTypes
+                        WHERE Name = '{input.Name.Replace("'", "''")}' 
+                          AND IsDeleted = FALSE";
+
+            int duplicate = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
+
+            if (duplicate > 0)
+                throw new CustomException("ControlType name already exists", 409);
+
+            // ✏️ Update mutable fields ONLY
             string updateQuery = $@"
-            UPDATE WorkflowPolicies
-            SET 
-                Name = '{input.Name}',
-                EntityType = '{input.EntityType}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+                        UPDATE ControlTypes
+                        SET 
+                            Name = '{input.Name.Replace("'", "''")}', 
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = '{userId.Replace("'", "''")}'
+                        WHERE Id = {input.Id}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
+            // 📥 Fetch updated record
             string selectQuery = $@"
-            SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = '{input.Id}'";
+                        SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+                        FROM ControlTypes d
+                        LEFT JOIN Companies c
+                        ON d.CompanyId = c.Id
+                        WHERE d.Id = {input.Id}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -387,29 +384,10 @@ public class WorkflowPolicyComponent
 
             DataRow row = dt.Rows[0];
 
-            return new WorkflowPolicyReadDto
+            return new ControlTypeReadDto
             {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
+                Id = row.Field<int>("Id"), 
                 Name = row.Field<string>("Name"),
-                EntityType = row.Field<string>("EntityType"),
-
-                Division = row.Field<string>("Division"),
-                DivisionCode = row.Field<string>("DivisionCode"),
-
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                DocumentType = row.Field<string>("DocumentType"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -423,4 +401,22 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
+
+    public async Task<int> GetCount()
+    {
+        try
+        {
+            string query = $@"
+                SELECT COUNT(1)
+                FROM ControlTypes 
+                  WHERE IsDeleted = FALSE";
+            int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
+            return count;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 }

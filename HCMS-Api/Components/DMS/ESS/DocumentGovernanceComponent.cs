@@ -31,7 +31,9 @@ public class DocumentGovernanceComponent
         var companyId = ""; //_tenant.CompanyId;
         var userId = ""; //_user.UserId;
 
-        // Resolve workflow
+        //------------------------------------------------
+        // ✅ 1. Resolve ACTIVE Workflow Policy Version
+        //------------------------------------------------
         var workflowVersionId = await _common.ExecuteScalarAsync<long>(
             @"SELECT wpv.Id
           FROM WorkflowPolicyVersions wpv
@@ -45,7 +47,9 @@ public class DocumentGovernanceComponent
         if (workflowVersionId == 0)
             throw new Exception("No active workflow found.");
 
-        // Insert request
+        //------------------------------------------------
+        // ✅ 2. Insert DocumentRequest
+        //------------------------------------------------
         var requestId = await _common.ExecuteScalarAsync<long>(
             @"INSERT INTO DocumentRequests
           (CompanyId, DocumentTypeId, RequestType, DocumentName, Justification, CreatedBy)
@@ -61,14 +65,19 @@ public class DocumentGovernanceComponent
                 User = userId
             }, tx);
 
-        // State
+        //------------------------------------------------
+        // ✅ 3. Insert STATE HISTORY (CRITICAL)
+        //------------------------------------------------
+
         await _common.ExecuteAsync(
             @"INSERT INTO RequestStateHistory
           (CompanyId, RequestId, State, ChangedBy)
           VALUES (@CompanyId,@Request,'Submitted',@User)",
             new { CompanyId = companyId, Request = requestId, User = userId }, tx);
 
-        // Workflow execution
+        //------------------------------------------------
+        // ✅ 4. Start Workflow Execution
+        //------------------------------------------------
         await _common.ExecuteAsync(
             @"INSERT INTO WorkflowExecutions
           (CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy)

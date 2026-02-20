@@ -145,9 +145,9 @@ public class TemplateComponent
             LEFT JOIN SubDepartments sd
             ON t.SubDepartmentCode = sd.Code
             LEFT JOIN Companies c
-            ON d.CompanyId = c.Id
+            ON t.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
-            ON d.BusinessDomainCode = bd.Code
+            ON t.BusinessDomainCode = bd.Code
             WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -160,7 +160,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
@@ -298,7 +298,7 @@ public class TemplateComponent
                 .Select(row => new TemplateReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     TemplateName = row.Table.Columns.Contains("TemplateName") ? row.Field<string>("TemplateName") : string.Empty,
@@ -362,10 +362,10 @@ public class TemplateComponent
                     LEFT JOIN SubDepartments sd
                     ON t.SubDepartmentCode = sd.Code
                     LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+                    ON t.CompanyId = c.Id
                     LEFT JOIN BusinessDomains bd
-                    ON d.BusinessDomainCode = bd.Code
-                WHERE t.Id = {code}
+                    ON t.BusinessDomainCode = bd.Code
+                WHERE t.DocumentTypeCode = '{code}'
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -379,7 +379,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),
@@ -487,7 +487,7 @@ public class TemplateComponent
             return new TemplateReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TemplateName = row.Field<string>("TemplateName"),

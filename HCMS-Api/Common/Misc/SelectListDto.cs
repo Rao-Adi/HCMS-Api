@@ -8,6 +8,6 @@ public class SelectListDto
 
 public class SelectList2Dto
 {
-    public int Id { get; set; }
+    public dynamic Id { get; set; }
     public string Value { get; set; }
 }

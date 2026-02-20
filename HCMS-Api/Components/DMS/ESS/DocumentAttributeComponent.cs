@@ -72,7 +72,7 @@ public class DocumentAttributeComponent
             (   CompanyId,
                 DocumentTypeCode,
                 ControlLabel,
-                ControlType,
+                ControlTypeId,
                 ListValues,
                 IsMandatory, 
                 IsActive,
@@ -84,11 +84,11 @@ public class DocumentAttributeComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                {input.CompanyId},
                 '{input.DocumentTypeCode}',
-                '{input.ControlLabel}',
-                '{input.ControlType}',
-                '{input.ListValues}',
+                '{input.ControlLabel.Trim()}',
+                '{input.ControlTypeId}',
+                '{input.ListValues!.Trim()}',
                 {input.IsMandatory}, 
                 TRUE,
                 FALSE,
@@ -103,12 +103,15 @@ public class DocumentAttributeComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
-            FROM DocumentAttributes da
-                 LEFT JOIN DocumentTypes dt
-                 ON da.DocumentTypeCode = dt.Code
-                 LEFT JOIN Companies c
-                 ON da.CompanyId = c.Id
+            SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
             WHERE da.Id = '{newId}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -121,12 +124,13 @@ public class DocumentAttributeComponent
             return new DocumentAttributeReadDto
             {
                 Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                 DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                 ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
-                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
+                ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
                 ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
                 IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
                 IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -146,7 +150,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int code)
     {
         try
         {
@@ -210,12 +214,15 @@ public class DocumentAttributeComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
-                        FROM DocumentAttributes da
-                             LEFT JOIN DocumentTypes dt
-                             ON da.DocumentTypeCode = dt.Code
-                             LEFT JOIN Companies c
-                             ON da.CompanyId = c.Id
+                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -242,12 +249,13 @@ public class DocumentAttributeComponent
                 .Select(row => new DocumentAttributeReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
-                    ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                    ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
+                    ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
                     ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
                     IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -272,6 +280,60 @@ public class DocumentAttributeComponent
                 Items = divisions,
                 TotalCount = totalCount
             };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<List<DocumentAttributeReadDto>> GetAllByDocumentTypeAsync(string documentTypeCode)
+    {
+        try
+        { 
+            string query = $@"
+                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
+                         WHERE da.DocumentTypeCode = '{documentTypeCode}'
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
+
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
+            DataTable divisionsTable = ds.Tables[0];  
+
+            var documentAttributes = divisionsTable.AsEnumerable()
+                .Select(row => new DocumentAttributeReadDto
+                {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                    ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
+                    ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
+                    ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                })
+                .ToList();
+
+
+            return documentAttributes;
         }
         catch (Exception)
         {
@@ -310,18 +372,21 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttributeReadDto> GetByCodeAsync(string code)
+    public async Task<DocumentAttributeReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
-                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
-                    FROM DocumentAttributes da
-                         LEFT JOIN DocumentTypes dt
-                         ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Companies c
-                         ON da.CompanyId = c.Id
-                WHERE da.Id = '{code}'
+                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
+                WHERE da.Id = {id}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
@@ -335,12 +400,13 @@ public class DocumentAttributeComponent
             return new DocumentAttributeReadDto
             {
                 Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                 DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                 ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
-                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
                 ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
                 IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
                 IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -365,12 +431,15 @@ public class DocumentAttributeComponent
         try
         {
             string query = $@"
-                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
-                    FROM DocumentAttributes da
-                         LEFT JOIN DocumentTypes dt
-                         ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Companies c
-                         ON da.CompanyId = c.Id
+                SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
                 WHERE DocumentTypeCode = '{dCode}'
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
@@ -385,12 +454,13 @@ public class DocumentAttributeComponent
             return new DocumentAttributeReadDto
             {
                 Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                 DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                 ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
-                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<int>("ControlType") : 0,
+                ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
+                ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
                 ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
                 IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
                 IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -435,7 +505,7 @@ public class DocumentAttributeComponent
             UPDATE DocumentAttributes
             SET 
                 ControlLabel = '{input.ControlLabel}',
-                ControlType = {input.ControlType},
+                ControlTypeId = {input.ControlTypeId},
                 ListValues = '{input.ListValues}',
                 IsMandatory = '{input.IsMandatory}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
@@ -450,12 +520,15 @@ public class DocumentAttributeComponent
 
             // Return updated record
             string selectQuery = $@"
-                    SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company
-                    FROM DocumentAttributes da
-                         LEFT JOIN DocumentTypes dt
-                         ON da.DocumentTypeCode = dt.Code
-                         LEFT JOIN Companies c
-                         ON da.CompanyId = c.Id
+                    SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                         ct.Name AS ControlType
+                         FROM DocumentAttributes da
+                              LEFT JOIN DocumentTypes dt
+                              ON da.DocumentTypeCode = dt.Code
+                              LEFT JOIN Companies c
+                              ON da.CompanyId = c.Id
+	                          LEFT JOIN ControlTypes ct
+	                          ON da.ControlTypeId = ct.Id
             WHERE da.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -468,11 +541,12 @@ public class DocumentAttributeComponent
             return new DocumentAttributeReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 ControlLabel = row.Field<string>("ControlLabel"),
-                ControlType = row.Field<int>("ControlType"),
+                ControlTypeId = row.Field<int>("ControlTypeId"),
+                ControlType = row.Field<string>("ControlType"),
                 ListValues = row.Field<string>("ListValues"),
                 IsMandatory = row.Field<bool>("IsMandatory"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

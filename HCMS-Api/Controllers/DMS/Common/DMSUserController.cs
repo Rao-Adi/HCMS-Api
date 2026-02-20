@@ -64,6 +64,35 @@ public class DMSUserController : Controller
     }
 
 
+    [HttpPost("get-user-with-filters")]
+    public async Task<IActionResult> GetUserByFilter(UserFilterDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<UserReadDto>()
+            {
+                Success = true,
+                Data = await _userComponent.GetUsersByFiltersAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+
 
     [HttpGet("get-user-by-id/{id}")]
     public async Task<IActionResult> GetUserById(int id)

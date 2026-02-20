@@ -260,7 +260,7 @@ public class CompanyComponent
     }
 
 
-    public async Task<IQueryable<SelectListDto>> GetAllSelectList()
+    public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
     {
         try
         {
@@ -272,9 +272,9 @@ public class CompanyComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             var list = dt.AsEnumerable()
-                .Select(row => new SelectListDto
+                .Select(row => new SelectList2Dto
                 {
-                    Code = row.Field<string>("Code"),
+                    Id = row.Field<Int64>("Id"),
                     Value = row.Field<string>("Name")
                 })
                 .ToList();

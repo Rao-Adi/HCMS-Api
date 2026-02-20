@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
@@ -36,4 +37,11 @@ public interface ICodeNameEntity
 
     [MaxLength(350)]
     string Name { get; set; }
+}
+
+
+// Create a custom naming policy for all lowercase if needed
+public class LowerCaseNamingPolicy : JsonNamingPolicy
+{
+    public override string ConvertName(string name) => name.ToLowerInvariant();
 }
