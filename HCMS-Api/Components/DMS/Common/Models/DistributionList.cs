@@ -12,10 +12,10 @@ public class DistributionList : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
-    public string DocumentRequestTypeCode { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -39,11 +39,10 @@ public class DistributionListReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
-    public string DocumentRequestType { get; set; }
-    public string DocumentRequestTypeCode { get; set; }
+    public int DocumentRequestId { get; set; } 
 
     public string? Division { get; set; }
     public string? DivisionCode { get; set; }
@@ -59,7 +58,8 @@ public class DistributionListReadDto : AuditableEntity
     public string Role { get; set; }
 
     public string Distribution { get; set; }
-    public int DistributionType { get; set; }
+    public int DistributionTypeId { get; set; }
+    public string DistributionType { get; set; }
 
 }
 
@@ -67,9 +67,9 @@ public class DistributionListReadDto : AuditableEntity
 public class DistributionListCreateDto
 { 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; }
 
-    public string DocumentRequestTypeCode { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -77,7 +77,7 @@ public class DistributionListCreateDto
     public string? BusinessDomainCode { get; set; }
     public int RoleId { get; set; }
 
-    public int DistributionType { get; set; }
+    public int DistributionTypeId { get; set; }
 }
 
 
@@ -86,9 +86,9 @@ public class DistributionListUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; }
 
-    public string DocumentRequestTypeCode { get; set; }
+    public int DocumentRequestId { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }

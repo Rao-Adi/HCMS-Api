@@ -63,7 +63,7 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
-    [HttpPost("get-my-pending-request")]
+    [HttpPost("get-my-pending-document-request")]
     public async Task<IActionResult> GetMyInboxRequests(GetPendingRequestDto input)
     {
         try
@@ -91,8 +91,8 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpPost("get-my-request-pending-approval")]
-    public async Task<IActionResult> GetMyRequestsPendingApproval(MyRequestFilterDto input)
+    [HttpPost("get-my-document-requests-for-approval")]
+    public async Task<IActionResult> GetMyDocumentRequestsForApproval(MyRequestFilterDto input)
     {
         try
         {
@@ -119,15 +119,15 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpGet("get-request-details")]
-    public async Task<IActionResult> GetRequestDetails(int companyId, int requestId, string? initiator)
+    [HttpGet("get-document-observation-details")]
+    public async Task<IActionResult> GetRequestDetails(int companyId, int requestId, string entityType)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentRequestDetailsDto>()
+            return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetRequestDetailsAsync(companyId, requestId, initiator),
+                Data = await _documentRequestComponent.GetRequestDetailsAsync(companyId, requestId, entityType),
                 Message = "Success",
                 Code = 200
             });
@@ -147,32 +147,60 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    //[HttpGet("get-my-draft-request")]
-    //public async Task<IActionResult> GetMyDraftRequests(int companyId, string userId)
-    //{
-    //    try
-    //    {
-    //        return Ok(new HttpApiResponse<List<DocumentRequestReadDto>>()
-    //        {
-    //            Success = true,
-    //            Data = await _documentRequestComponent.GetDraftRequestsAsync(companyId, userId),
-    //            Message = "Success",
-    //            Code = 200
-    //        });
-    //    }
-    //    catch (CustomException ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-    //        return StatusCode(response.Code, response);
-    //    }
-    //}
+
+    [HttpGet("get-workflow-details")]
+    public async Task<IActionResult> GetWorkflowDetail(int companyId, int requestId, string entityType)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(companyId, requestId, entityType),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-my-draft-request")]
+    public async Task<IActionResult> GetMyDraftRequests(int companyId, string userId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<object>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetDraftDocumentRequestAsync(companyId, userId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpGet("get-all-document-request-list")]
     public async Task<IActionResult> GetAllSelectList()
@@ -180,7 +208,7 @@ public class DMSDocumentRequestController : Controller
         try
         {
             var selectList = await _documentRequestComponent.GetAllSelectList();
-            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            return Ok(new HttpApiResponse<IList<SelectList2Dto>>()
             {
                 Success = true,
                 Data = selectList.ToList(),
@@ -203,15 +231,15 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpGet("get-document-request-by-code/{code}")]
-    public async Task<IActionResult> GetDocumentRequestById(string code)
+    [HttpGet("get-document-request-by-id/{id}")]
+    public async Task<IActionResult> GetDocumentRequestById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<DocumentRequestReadDto>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetByCodeAsync(code),
+                Data = await _documentRequestComponent.GetByIdAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -231,7 +259,7 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpPost("draft-document-request")]
+    [HttpPost("create-draft-document-request")]
     public async Task<IActionResult> DraftDocumentRequest([FromBody] DraftDocumentRequestDto input)
     {
         if (!ModelState.IsValid)
@@ -245,7 +273,7 @@ public class DMSDocumentRequestController : Controller
             return Ok(new HttpApiResponse<long>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.DraftDocumentRequestAsync(input),
+                Data = await _documentRequestComponent.CreateDraftDocumentRequestAsync(input),
                 Message = "Document Request created successfully.",
                 Code = 200
             });
@@ -404,7 +432,7 @@ public class DMSDocumentRequestController : Controller
 
 
 
-    [HttpPost("submit-document-request")]
+    [HttpPost("submit-draft-document-request")]
     public async Task<IActionResult> SubmitDocumentRequest(SubmitDocumentRequestDto input)
     {
         if (!ModelState.IsValid)
@@ -418,7 +446,7 @@ public class DMSDocumentRequestController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.SubmitDocumentRequestAsync(input),
+                Data = await _documentRequestComponent.SubmitDraftDocumentRequestAsync(input),
                 Message = "Document Request created successfully.",
                 Code = 200
             });
@@ -471,71 +499,59 @@ public class DMSDocumentRequestController : Controller
     //    }
     //}
 
-    [HttpPut("update-document-request")]
-    public async Task<IActionResult> Update([FromBody] DocumentRequestUpdateDto input)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<DocumentRequestReadDto>()
-            {
-                Success = true,
-                Data = await _documentRequestComponent.UpdateAsync(input),
-                Message = "Document Request updated successfully.",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
+    //[HttpPut("update-document-request")]
+    //public async Task<IActionResult> Update([FromBody] DocumentRequestUpdateDto input)
+    //{
+    //    try
+    //    {
+    //        return Ok(new HttpApiResponse<DocumentRequestReadDto>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentRequestComponent.UpdateAsync(input),
+    //            Message = "Document Request updated successfully.",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
 
-    [HttpDelete("delete-document-request/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
-    {
-        try
-        {
-            var existingRecord = await _documentRequestComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Document Request not found",
-                    Code = 404
-                });
-            }
-
-            return Ok(new HttpApiResponse<bool>()
-            {
-                Success = true,
-                Data = await _documentRequestComponent.DeleteAsync(code),
-                Message = "Document Request deleted successfully.",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
+    //[HttpDelete("delete-document-request/{code}")]
+    //public async Task<IActionResult> DeleteAsync(string code)
+    //{
+    //    try
+    //    {
+    //        return Ok(new HttpApiResponse<bool>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentRequestComponent.DeleteAsync(code),
+    //            Message = "Document Request deleted successfully.",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
 
 
     //[HttpPost("submit-document-request")]

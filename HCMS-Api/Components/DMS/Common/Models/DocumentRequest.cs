@@ -89,7 +89,85 @@ public class DocumentRequestReadDto : AuditableEntity
     public int StepId { get; set; }
     public int StepOrder { get; set; }
     public string StartedAt { get; set; }
-     
+
+
+    // 🟩 UC-22
+    public List<DistributionListReadDto>? DistributionList { get; set; }
+    public List<DocumentRequestUserDistribution>? UserList { get; set; }
+
+}
+
+public class DocumentRequestUserDistribution
+{
+    // Id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+    public int Id { get; set; }
+
+    // CompanyId INT NOT NULL
+    public int CompanyId { get; set; }
+
+    // DocumentRequestId INT NOT NULL
+    public int DocumentRequestId { get; set; }
+
+    // UserId BIGINT NOT NULL
+    public long UserId { get; set; }
+
+    // IsActive BOOLEAN NOT NULL DEFAULT TRUE
+    public bool IsActive { get; set; } = true;
+
+    // IsDeleted BOOLEAN NOT NULL DEFAULT FALSE
+    public bool IsDeleted { get; set; } = false;
+
+    // CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    public string? CreatedAt { get; set; }  
+
+    // CreatedBy BIGINT NOT NULL
+    public long CreatedBy { get; set; }
+
+    // LastModifiedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    public string? LastModifiedAt { get; set; }
+
+    // LastModifiedBy BIGINT NOT NULL
+    public long LastModifiedBy { get; set; }
+}
+
+public class DocumentRoleDistribution
+{
+    // Id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY 
+    public int Id { get; set; }
+
+    // CompanyId INT NOT NULL
+    public int CompanyId { get; set; }
+
+    // DocumentId INT NOT NULL
+    public int DocumentId { get; set; }
+
+    // DivisionCode VARCHAR(10) (Nullable if SQL doesn't say NOT NULL)
+    [MaxLength(10)]
+    public string? DivisionCode { get; set; }
+
+    // DepartmentCode VARCHAR(20)
+    [MaxLength(20)]
+    public string? DepartmentCode { get; set; }
+
+    // SubDepartmentCode VARCHAR(30)
+    [MaxLength(30)]
+    public string? SubDepartmentCode { get; set; }
+
+    // BusinessDomainCode VARCHAR(30)
+    [MaxLength(30)]
+    public string? BusinessDomainCode { get; set; }
+
+    // RoleId INT NOT NULL
+    public int RoleId { get; set; }
+
+    // DistributionType INT NOT NULL
+    public int DistributionType { get; set; }
+
+    // CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    public string CreatedAt { get; set; }
+
+    // CreatedBy BIGINT NOT NULL
+    public long CreatedBy { get; set; }
 }
 
 public class DocumentRequestCreateDto
@@ -295,33 +373,38 @@ public class WorkflowStepHistoryDto
 
 public class DocumentRequestDetailsDto
 {
-    public int Id { get; set; }
-    public string RequestNumber { get; set; }
-    public string DocumentName { get; set; }
-    public string Justification { get; set; }
-    public string ProposedContent { get; set; }
-    public DateTime? SubmittedAt { get; set; }
-    public string SubmittedBy { get; set; }
-    public int Status { get; set; }
+    // we.EntityId, we.EntityType
+    public int EntityId { get; set; }
+    public string EntityType { get; set; }
 
+    // wes.StepOrder, wsd.StepType
+    public int StepOrder { get; set; }
+    public string StepType { get; set; }
 
-    public string? Division { get; set; }
-    public string? DivisionCode { get; set; }
-    public string? Department { get; set; }
-    public string? DepartmentCode { get; set; }
+    // wes.AssignedUserId, u.EmployeeName, u.EmployeeCode
+    public int? AssignedUserId { get; set; } // Nullable if a step can be unassigned
+    public string EmployeeName { get; set; }
+    public string EmployeeCode { get; set; }
+    public string Division { get; set; }
+    public string Department { get; set; }
+    public string SubDepartment { get; set; }
+    public string Designation { get; set; }
 
-    public string? SubDepartment { get; set; }
-    public string? SubDepartmentCode { get; set; }
+    // r.Name AS RoleName
+    public string RoleName { get; set; }
 
-    public string? BusinessDomain { get; set; }
-    public string? BusinessDomainCode { get; set; }
+    // wes.Decision, wes.Observation
+    public string Decision { get; set; }
+    public string Observation { get; set; }
 
+    // wes.ActionAt
+    public string? ActionAt { get; set; } // Nullable if the action hasn't happened yet
 
-    public string? WorkflowStatus { get; set; }
-    public DateTime? WorkflowStartedAt { get; set; }
-    public DateTime? WorkflowCompletedAt { get; set; }
+    public string ReceivedOn { get; set; }
+    public string StatusUpdatedOn { get; set; }
+    // wes.IsActive
+    public bool IsActive { get; set; }
 
-    public List<WorkflowStepHistoryDto> Steps { get; set; } = new();
 }
 
 
@@ -358,25 +441,27 @@ public class DraftDocumentRequestDto
     public string? BusinessDomainCode { get; set; }
 
     public long CreatedByUserId { get; set; }
+
+    // 🟩 UC-22
+    public List<DistributionListCreateDto>? DistributionList { get; set; }
+    public List<long>? UserIds { get; set; }
 }
+
 
 public class UpdateDraftRequestDto
 {
-    public long CompanyId { get; set; }
-    public long RequestId { get; set; }
+    public int CompanyId { get; set; }
+    public int RequestId { get; set; }
 
     public string DocumentName { get; set; }
     public string Justification { get; set; }
     public string ProposedContent { get; set; }
-
-    public string DivisionCode { get; set; }
-    public string DepartmentCode { get; set; }
-    public string SubDepartmentCode { get; set; }
-    public string BusinessDomainCode { get; set; }
-
     public long ModifiedByUserId { get; set; }
+     
 
-    public long RowVersion { get; set; }
+    // UC-22 User Modification Allowed
+    public List<DistributionListCreateDto>? DistributionList { get; set; }
+    public List<long>? UserList { get; set; }
 }
 
 
@@ -385,6 +470,10 @@ public class SubmitDocumentRequestDto
     public int CompanyId { get; set; }
     public int RequestId { get; set; }
     public int SubmittedBy { get; set; }
+
+    // UC-22 User Modification Allowed
+    public List<DistributionListCreateDto>? DistributionList { get; set; }
+    public List<long>? UserList { get; set; }
 }
 
 

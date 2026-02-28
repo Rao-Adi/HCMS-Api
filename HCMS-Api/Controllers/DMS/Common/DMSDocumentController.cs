@@ -5,7 +5,11 @@ using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.Design;
 using System.Net;
+using System.Reflection.Metadata;
+using System.Xml.Linq;
+using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
@@ -117,7 +121,7 @@ public class DMSDocumentController : Controller
             return StatusCode(response.Code, response);
         }
     }
-     
+
 
     [HttpPost("create-document")]
     [Consumes("multipart/form-data")]
@@ -153,55 +157,17 @@ public class DMSDocumentController : Controller
         }
     }
 
-    [HttpPut("update-document")]
-    public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
+
+    [HttpPost("submit-document")]
+    public async Task<IActionResult> SubmitDocument(SubmitDocument input)
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentReadDto>()
-            {
-                Success = true,
-                Data = await _documentComponent.UpdateAsync(input),
-                Message = "Document updated successfully.",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
-
-    [HttpDelete("delete-document/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
-    {
-        try
-        {
-            var existingRecord = await _documentComponent.GetByCodeAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Document not found",
-                    Code = 404
-                });
-            }
-
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentComponent.DeleteAsync(code),
-                Message = "Document deleted successfully.",
+                Data = await _documentComponent.SubmitDocumentAsync(input),
+                Message = "Success",
                 Code = 200
             });
         }
@@ -218,4 +184,239 @@ public class DMSDocumentController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
+    [HttpPost("approve-document")]
+    public async Task<IActionResult> ApproveDocument(ActionOnDocument input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentComponent.ApproveDocumentAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpPost("reject-document")]
+    public async Task<IActionResult> RejectDocument(ActionOnDocument input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentComponent.RejectDocumentAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpPost("send-back-for-rework")]
+    public async Task<IActionResult> SendBackForRework(ActionOnDocument input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentComponent.SendBackForReworkAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-request-ids-finalization")]
+    public async Task<IActionResult> GetRequestsPendingFinalization(int companyId, string documentTypeCode)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetRequestsPendingFinalizationAsync(companyId, documentTypeCode),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-draft-by-request/{companyId}/{requestId}")]
+    public async Task<IActionResult> GetDraftDocumentByRequest(int companyId, int requestId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDraftDocumentByRequestAsync(companyId, requestId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpPost("get-my-document")]
+    public async Task<IActionResult> GetMyInboxRequestsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyInboxRequestsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    //[HttpPut("update-document")]
+    //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
+    //{
+    //    try
+    //    {
+    //        return Ok(new HttpApiResponse<DocumentReadDto>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentComponent.UpdateAsync(input),
+    //            Message = "Document updated successfully.",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
+
+    //[HttpDelete("delete-document/{code}")]
+    //public async Task<IActionResult> DeleteAsync(string code)
+    //{
+    //    try
+    //    {
+    //        var existingRecord = await _documentComponent.GetByCodeAsync(code);
+    //        if (existingRecord is null)
+    //        {
+    //            return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
+    //            {
+    //                Success = false,
+    //                Data = new { },
+    //                Message = "Document not found",
+    //                Code = 404
+    //            });
+    //        }
+
+    //        return Ok(new HttpApiResponse<bool>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentComponent.DeleteAsync(code),
+    //            Message = "Document deleted successfully.",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
 }
