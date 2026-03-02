@@ -287,6 +287,74 @@ public class DocumentAttributeComponent
         }
     }
 
+
+    public async Task<List<DocumentAttributeReadDto2>> GetDocumentAttributesByDocumentIdAsync(int companyId, int documentId)
+    {
+        try
+        {
+            var query = $@"SELECT 
+                        da.Id AS DocumentAttributeId,
+                        da.ControlLabel,
+                        da.ControlTypeId,
+    
+                        dav.ValueText,
+                        dav.ValueNumber,
+                        dav.ValueDate,
+                        dav.ValueBoolean
+
+                    FROM DocumentAttributeValues dav
+                    JOIN DocumentAttributes da
+                        ON da.Id = dav.DocumentAttributeId
+                    WHERE dav.CompanyId = {companyId}
+                      AND dav.DocumentId = {documentId}
+                      AND da.IsDeleted = FALSE
+                      AND da.IsActive = TRUE
+                    ORDER BY da.Id;";
+
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
+            DataTable divisionsTable = ds.Tables[0];
+          
+
+            var divisions = divisionsTable.AsEnumerable()
+                .Select(row => new DocumentAttributeReadDto2
+                {
+                    // Use <int?> to safely handle DBNull, then ?? 0 for the default
+                    DocumentAttributeId = row.Table.Columns.Contains("DocumentAttributeId")
+                        ? (row.Field<int?>("DocumentAttributeId") ?? 0)
+                        : 0,
+
+                    ControlLabel = row.Field<string>("ControlLabel"),
+
+                    // Critical: ControlTypeId likely has a NULL in the DB
+                    ControlTypeId = row.Field<int?>("ControlTypeId") ?? 0,
+
+                    ValueText = row.Table.Columns.Contains("ValueText")
+                        ? row.Field<string>("ValueText")
+                        : string.Empty,
+
+                    // ValueNumber is likely stored as decimal or int; use nullable to be safe
+                    ValueNumber = row.Table.Columns.Contains("ValueNumber")
+                        ? (row.Field<decimal?>("ValueNumber") ?? 0)
+                        : 0,
+
+                    // If ValueDate is a DateTime column, use row.Field<DateTime?>
+                    ValueDate = row.Table.Columns.Contains("ValueDate")
+                        ? row.Field<DateOnly?>("ValueDate")?.ToDateTime(TimeOnly.MinValue).ToString("yyyy-MM-dd") ?? string.Empty
+                        : string.Empty,
+
+                    ValueBoolean = row.Table.Columns.Contains("ValueBoolean") && (row.Field<bool?>("ValueBoolean") ?? false)
+
+                })
+                .ToList();
+
+            return divisions;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
     public async Task<List<DocumentAttributeReadDto>> GetAllByDocumentTypeAsync(string documentTypeCode)
     {
         try

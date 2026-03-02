@@ -1077,6 +1077,13 @@ public class DocumentComponent
             if (doc == null)
                 throw new Exception("Document not found.");
 
+
+            //-------------------------------------------------
+            // Validate & Save Attributes (NEW METHOD)
+            //-------------------------------------------------
+
+            await ValidateAndSaveAttributesAsync(input, doc, transaction);
+
             //-------------------------------------------------
             // 2️⃣ Resolve Correct Workflow Policy
             //-------------------------------------------------
@@ -1258,6 +1265,115 @@ public class DocumentComponent
         }
     }
 
+    private async Task ValidateAndSaveAttributesAsync(SubmitDocument input, dynamic documentInfo, IDbTransaction transaction)
+    {
+        //-------------------------------------------------
+        // 1️⃣ Load Active Attributes
+        //-------------------------------------------------
+
+        var attributes = await _common.QueryAsync<dynamic>(@"
+                SELECT *
+                FROM DocumentAttributes
+                WHERE CompanyId = @CompanyId
+                AND DocumentTypeCode = @DocumentTypeCode
+                AND IsActive = TRUE
+                AND IsDeleted = FALSE;",
+            new
+            {
+                input.CompanyId,
+                DocumentTypeCode = documentInfo.documenttypecode
+            }, transaction);
+
+        foreach (var attr in attributes)
+        {
+            var submitted = input.Attributes
+                .FirstOrDefault(x => x.DocumentAttributeId == attr.id);
+
+            bool isMandatory = attr.ismandatory;
+
+            //-------------------------------------------------
+            // 2️⃣ Check Scoped Mandatory
+            //-------------------------------------------------
+
+            var scopedMandatory = await _common.ExecuteScalarAsync<bool?>(@"
+                SELECT TRUE
+                FROM AttributeMandatoryScopes
+                WHERE CompanyId = @CompanyId
+                AND DocumentAttributeId = @AttributeId
+                AND DivisionCode = @DivisionCode
+                AND DepartmentCode = @DepartmentCode
+                AND SubDepartmentCode = @SubDepartmentCode
+                AND BusinessDomainCode = @BusinessDomainCode
+                AND IsMandatory = TRUE
+                AND IsActive = TRUE
+                AND IsDeleted = FALSE
+                LIMIT 1;",
+            new
+            {
+                input.CompanyId,
+                AttributeId = attr.id,
+                DivisionCode = documentInfo.divisioncode,
+                DepartmentCode = documentInfo.departmentcode,
+                SubDepartmentCode = documentInfo.subdepartmentcode,
+                BusinessDomainCode = documentInfo.businessdomaincode
+            }, transaction);
+
+            if (scopedMandatory == true)
+                isMandatory = true;
+
+            //-------------------------------------------------
+            // 3️⃣ Mandatory Validation
+            //-------------------------------------------------
+
+            if (isMandatory)
+            {
+                if (submitted == null ||
+                    (submitted.ValueText == null &&
+                     submitted.ValueNumber == null &&
+                     submitted.ValueDate == null &&
+                     submitted.ValueBoolean == null))
+                {
+                    throw new Exception(
+                        $"Attribute '{attr.controllabel}' is mandatory.");
+                }
+            }
+
+            //-------------------------------------------------
+            // 4️⃣ Insert / Update Value
+            //-------------------------------------------------
+
+            if (submitted != null)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentAttributeValues
+                    (CompanyId, DocumentId, DocumentAttributeId,
+                     ValueText, ValueNumber, ValueDate, ValueBoolean,
+                     CreatedBy)
+                    VALUES
+                    (@CompanyId, @DocumentId, @AttributeId,
+                     @ValueText, @ValueNumber, @ValueDate, @ValueBoolean,
+                     @UserId)
+                    ON CONFLICT (CompanyId, DocumentId, DocumentAttributeId)
+                    DO UPDATE SET
+                        ValueText = EXCLUDED.ValueText,
+                        ValueNumber = EXCLUDED.ValueNumber,
+                        ValueDate = EXCLUDED.ValueDate,
+                        ValueBoolean = EXCLUDED.ValueBoolean;",
+                new
+                {
+                    input.CompanyId,
+                    input.DocumentId,
+                    AttributeId = submitted.DocumentAttributeId,
+                    submitted.ValueText,
+                    submitted.ValueNumber,
+                    submitted.ValueDate,
+                    submitted.ValueBoolean,
+                    input.UserId
+                }, transaction);
+            }
+        }
+    }
+
     public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, long userId)
     {
         try
@@ -1268,13 +1384,13 @@ public class DocumentComponent
             // 1️⃣ Check Last State Was Rework Draft
             //-----------------------------------------
             var wasReworked = await _common.QuerySingleAsync<int>(@"
-            SELECT COUNT(*)
-            FROM DocumentStateHistory
-            WHERE CompanyId = @CompanyId
-              AND DocumentId = @DocumentId
-              AND ToStateId = 1
-              AND WorkflowExecutionId IS NOT NULL
-            ", new { companyId, documentId });
+                SELECT COUNT(*)
+                FROM DocumentStateHistory
+                WHERE CompanyId = @CompanyId
+                  AND DocumentId = @DocumentId
+                  AND ToStateId = 1
+                  AND WorkflowExecutionId IS NOT NULL
+                ", new { companyId, documentId });
 
             if (wasReworked == 0)
                 return;
@@ -1283,15 +1399,15 @@ public class DocumentComponent
             // 2️⃣ Get Latest Version
             //-----------------------------------------
             var current = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-            SELECT *
-            FROM DocumentVersions
-            WHERE CompanyId = @CompanyId
-              AND DocumentId = @DocumentId
-              AND Content IS NOT NULL
-              AND IsActive = TRUE
-            ORDER BY CreatedAt DESC
-            LIMIT 1
-            ", new { companyId, documentId });
+                SELECT *
+                FROM DocumentVersions
+                WHERE CompanyId = @CompanyId
+                  AND DocumentId = @DocumentId
+                  AND Content IS NOT NULL
+                  AND IsActive = TRUE
+                ORDER BY CreatedAt DESC
+                LIMIT 1",
+            new { companyId, documentId });
 
             if (current == null)
                 throw new Exception("No valid document content found to promote.");
@@ -1305,34 +1421,24 @@ public class DocumentComponent
             // 4️⃣ Insert New Version Row
             //-----------------------------------------
             await _common.ExecuteAsync(@"
-            INSERT INTO DocumentVersions
-            (
-                CompanyId,
-                DocumentId,
-                Version,
-                VersionType,
-                Content,
-                ChangeDescription,
-                CreatedBy
-            )
-            VALUES
-            (
-                @CompanyId,
-                @DocumentId,
-                @Version,
-                1,
-                @Content,
-                'Version promoted after rework',
-                @UserId
-            )
+                INSERT INTO DocumentVersions
+                (
+                    CompanyId, DocumentId, Version, VersionType, Content,
+                    ChangeDescription, CreatedBy
+                )
+                VALUES
+                (
+                    @CompanyId, @DocumentId, @Version, 1, @Content,
+                    'Version promoted after rework', @UserId
+                )
             ", new
-                {
-                    companyId,
-                    documentId,
-                    Version = newVersion,
-                    Content = current.Content,
-                    userId
-                });
+            {
+                companyId,
+                documentId,
+                Version = newVersion,
+                Content = current.Content,
+                userId
+            });
         }
         catch (Exception)
         {
@@ -2109,36 +2215,72 @@ public class DocumentComponent
     }
 
 
-    public async Task<IEnumerable<dynamic>> GetRequestsPendingFinalizationAsync(int companyId, string documentTypeCode)
+    public async Task<IEnumerable<dynamic>> GetRequestsPendingFinalizationAsync(GetApprovedRequestForDocumentCreationDto input)
     {
-        var result = await _common.QueryAsync<dynamic>(@" 
-            SELECT 
-            dr.Id,
-            dr.RequestNumber,
-            d.Id AS DocumentId,
-            d.Title
-        FROM DocumentRequests dr
-        INNER JOIN Documents d
-            ON d.CompanyId = dr.CompanyId
-            AND d.Id = dr.DocumentId
-        WHERE dr.CompanyId = @CompanyId
-          AND dr.Status = 3 -- Approved
-          AND dr.DocumentTypeCode = @DocumentTypeCode
-          AND dr.DocumentId IS NOT NULL
-          -- Ensure latest document state is Draft
-          AND (
-                SELECT dsh.ToStateId
-                FROM DocumentStateHistory dsh
-                WHERE dsh.CompanyId = d.CompanyId
-                  AND dsh.DocumentId = d.Id
-                ORDER BY dsh.ChangedAt DESC
-                LIMIT 1
-          ) = 1 -- Draft
-        ORDER BY dr.RequestNumber;
+        // Basic validation (you can throw exceptions or handle differently)
+        if (input.CompanyId <= 0)
+            throw new ArgumentException("CompanyId is required", nameof(input.CompanyId));
+        if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+            throw new ArgumentException("DocumentTypeCode is required", nameof(input.DocumentTypeCode));
 
-    ", new { companyId, documentTypeCode });
 
-        return result;
+        // ────────────────────────────────────────────────
+        // Convert empty strings → null (this is the key fix)
+        // ────────────────────────────────────────────────
+        string? Normalize(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        var parameters = new
+        {
+            CompanyId = input.CompanyId,
+            DocumentTypeCode = input.DocumentTypeCode.Trim(),
+            DivisionCode = Normalize(input.DivisionCode),
+            DepartmentCode = Normalize(input.DepartmentCode),
+            SubDepartmentCode = Normalize(input.SubDepartmentCode),
+            BusinessDomainCode = Normalize(input.BusinessDomainCode),
+            // UserId = input.UserId   // add only if you're actually using it in WHERE
+        };
+
+        const string sql = $@"
+                SELECT 
+                    dr.Id,
+                    dr.RequestNumber,
+                    d.Id          AS DocumentId,
+                    d.Title       AS DocumentTitle,
+                    d.DocumentNumber
+
+                FROM DocumentRequests dr
+                INNER JOIN Documents d 
+                    ON  d.CompanyId = dr.CompanyId 
+                    AND d.Id        = dr.DocumentId
+
+                WHERE dr.CompanyId       = @CompanyId
+                  AND dr.Status          = 3                    -- Approved
+                  AND dr.DocumentTypeCode = @DocumentTypeCode
+                  AND dr.DocumentId      IS NOT NULL
+
+                  -- Organizational filters (only applied when value is provided)
+                  AND (@DivisionCode       IS NULL OR d.DivisionCode       = @DivisionCode)
+                  AND (@DepartmentCode     IS NULL OR d.DepartmentCode     = @DepartmentCode)
+                  AND (@SubDepartmentCode  IS NULL OR d.SubDepartmentCode  = @SubDepartmentCode)
+                  AND (@BusinessDomainCode IS NULL OR d.BusinessDomainCode = @BusinessDomainCode)
+
+                  -- Only documents that are currently in Draft state (latest state = 1)
+                  AND (
+                    SELECT dsh.ToStateId
+                    FROM DocumentStateHistory dsh
+                    WHERE dsh.CompanyId  = d.CompanyId
+                      AND dsh.DocumentId = d.Id
+                    ORDER BY dsh.ChangedAt DESC
+                    LIMIT 1
+                  ) = 1   -- Draft
+
+                ORDER BY dr.RequestNumber DESC;   -- most recent requests first (common preference)
+                ";
+
+        var result = await _common.QueryAsync<dynamic>(sql, parameters);
+
+        return result ?? Enumerable.Empty<dynamic>();  // never return null list
     }
 
     public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int companyId, int requestId)

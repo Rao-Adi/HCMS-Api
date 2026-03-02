@@ -142,6 +142,32 @@ public class SubmitDocument
     public int CompanyId { get; set; }
     public int DocumentId { get; set; }
     public int UserId { get; set; }
+
+    public List<CreateDocumentAttributeValueDto> Attributes { get; set; } = new();
+}
+
+public class CreateDocumentAttributeValueDto
+{ 
+    // CompanyId BIGINT NOT NULL
+    public int CompanyId { get; set; }
+     
+
+    // DocumentAttributeId INT NOT NULL
+    public int DocumentAttributeId { get; set; }
+
+    // ValueText TEXT
+    public string? ValueText { get; set; }
+
+    // ValueNumber NUMERIC
+    public decimal? ValueNumber { get; set; }
+
+    // ValueDate DATE
+    public DateTime? ValueDate { get; set; }
+
+    // ValueBoolean BOOLEAN
+    public bool? ValueBoolean { get; set; }
+
+   
 }
 
 
@@ -217,3 +243,15 @@ public class CompleteDocumentTrainingDto
     public string? TrainingProofUrl { get; set; }
     public decimal? AssessmentScore { get; set; }
 }
+
+public class GetApprovedRequestForDocumentCreationDto
+{
+    public int CompanyId { get; set; }
+    public int? UserId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string DocumentTypeCode { get; set; }
+}
+

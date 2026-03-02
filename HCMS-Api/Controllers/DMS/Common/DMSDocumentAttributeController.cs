@@ -91,6 +91,34 @@ public class DMSDocumentAttributeController : Controller
     }
 
 
+    [HttpGet("get-document-attributes-by-documentId")]
+    public async Task<IActionResult> GetDocumentAttributeByDocumentTypeCode(int companyId, int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<DocumentAttributeReadDto2>>()
+            {
+                Success = true,
+                Data = await _documentAttributeComponent.GetDocumentAttributesByDocumentIdAsync(companyId, documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
     [HttpGet("get-document-attributes-by-code/{code}")]
     public async Task<IActionResult> GetDocumentAttributeByDocumentTypeCode(string code)
     {
@@ -156,7 +184,7 @@ public class DMSDocumentAttributeController : Controller
         }
 
         try
-        { 
+        {
             return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
             {
                 Success = true,

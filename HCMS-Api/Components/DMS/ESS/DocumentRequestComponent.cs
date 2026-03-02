@@ -207,43 +207,43 @@ public class DocumentRequestComponent
             //-------------------------------------------------
 
             var requestId = await _common.ExecuteScalarAsync<long>(@"
-            INSERT INTO DocumentRequests
-            (
-                CompanyId,
-                RequestNumber,
-                DocumentRequestTypeCode,
-                DocumentTypeCode,
-                DocumentName,
-                Justification,
-                ProposedContent,
-                DivisionCode,
-                DepartmentCode,
-                SubDepartmentCode,
-                BusinessDomainCode,
-                Status,
-                CreatedBy,
-                LastModifiedBy,
-                IsContentFinalized
-            )
-            VALUES
-            (
-                @CompanyId,
-                'DR-' || nextval('document_request_seq'),
-                @RequestType,
-                @DocumentTypeCode,
-                @DocumentName,
-                @Justification,
-                @ProposedContent,
-                @DivisionCode,
-                @DepartmentCode,
-                @SubDepartmentCode,
-                @BusinessDomainCode,
-                @Status,
-                @CreatedBy,
-                @CreatedBy,
-                FALSE
-            )
-            RETURNING Id;",
+                INSERT INTO DocumentRequests
+                (
+                    CompanyId,
+                    RequestNumber,
+                    DocumentRequestTypeCode,
+                    DocumentTypeCode,
+                    DocumentName,
+                    Justification,
+                    ProposedContent,
+                    DivisionCode,
+                    DepartmentCode,
+                    SubDepartmentCode,
+                    BusinessDomainCode,
+                    Status,
+                    CreatedBy,
+                    LastModifiedBy,
+                    IsContentFinalized
+                )
+                VALUES
+                (
+                    @CompanyId,
+                    'DR-' || nextval('document_request_seq'),
+                    @RequestType,
+                    @DocumentTypeCode,
+                    @DocumentName,
+                    @Justification,
+                    @ProposedContent,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @Status,
+                    @CreatedBy,
+                    @CreatedBy,
+                    FALSE
+                )
+                RETURNING Id;",
             new
             {
                 dto.CompanyId,
@@ -269,16 +269,16 @@ public class DocumentRequestComponent
                 foreach (var d in dto.DistributionList)
                 {
                     await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentRequestRoleDistributions
-                    (CompanyId,DocumentRequestId,DivisionCode,
-                     DepartmentCode,SubDepartmentCode,
-                     BusinessDomainCode,RoleId,DistributionTypeId,
-                     CreatedBy,LastModifiedBy)
-                    VALUES
-                    (@CompanyId,@RequestId,@DivisionCode,
-                     @DepartmentCode,@SubDepartmentCode,
-                     @BusinessDomainCode,@RoleId,@DistributionTypeId,
-                     @UserId,@UserId);",
+                        INSERT INTO DocumentRequestRoleDistributions
+                        (CompanyId,DocumentRequestId,DivisionCode,
+                         DepartmentCode,SubDepartmentCode,
+                         BusinessDomainCode,RoleId,DistributionTypeId,
+                         CreatedBy,LastModifiedBy)
+                        VALUES
+                        (@CompanyId,@RequestId,@DivisionCode,
+                         @DepartmentCode,@SubDepartmentCode,
+                         @BusinessDomainCode,@RoleId,@DistributionTypeId,
+                         @UserId,@UserId);",
                     new
                     {
                         dto.CompanyId,
@@ -303,12 +303,12 @@ public class DocumentRequestComponent
                 foreach (var userId in dto.UserIds)
                 {
                     await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentRequestUserDistributions
-                    (CompanyId,DocumentRequestId,UserId,
-                     CreatedBy,LastModifiedBy)
-                    VALUES
-                    (@CompanyId,@RequestId,@UserId,
-                     @CreatedBy,@CreatedBy);",
+                        INSERT INTO DocumentRequestUserDistributions
+                        (CompanyId,DocumentRequestId,UserId,
+                         CreatedBy,LastModifiedBy)
+                        VALUES
+                        (@CompanyId,@RequestId,@UserId,
+                         @CreatedBy,@CreatedBy);",
                     new
                     {
                         dto.CompanyId,
@@ -367,8 +367,7 @@ public class DocumentRequestComponent
                 WHERE Id = @RequestId
                 AND CompanyId = @CompanyId
                 AND Status = @DraftStatus
-                AND IsContentFinalized = FALSE;
-        ",
+                AND IsContentFinalized = FALSE;",
             new
             {
                 dto.RequestId,
@@ -449,11 +448,11 @@ public class DocumentRequestComponent
     {
         // Optional: ensure draft exists before calling original submit
         var draftExists = await _common.ExecuteScalarAsync<int>(@"
-        SELECT COUNT(1)
-        FROM DocumentRequests
-        WHERE Id = @RequestId
-        AND CompanyId = @CompanyId
-        AND Status = @DraftStatus;",
+            SELECT COUNT(1)
+            FROM DocumentRequests
+            WHERE Id = @RequestId
+            AND CompanyId = @CompanyId
+            AND Status = @DraftStatus;",
         new
         {
             input.RequestId,
@@ -1904,7 +1903,7 @@ public class DocumentRequestComponent
                 )
                 SELECT
                     CompanyId, @DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
-                    BusinessDomainCode, RoleId, DistributionType, @UserId
+                    BusinessDomainCode, RoleId, DistributionTypeId, @UserId
                 FROM DocumentRequestRoleDistributions
                 WHERE DocumentRequestId = @RequestId;",
             new

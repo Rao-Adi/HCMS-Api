@@ -270,15 +270,15 @@ public class DMSDocumentController : Controller
     }
 
 
-    [HttpGet("get-request-ids-finalization")]
-    public async Task<IActionResult> GetRequestsPendingFinalization(int companyId, string documentTypeCode)
+    [HttpPost("get-approved-request-for-document-creation")]
+    public async Task<IActionResult> GetRequestsPendingFinalization(GetApprovedRequestForDocumentCreationDto input)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
             {
                 Success = true,
-                Data = await _documentComponent.GetRequestsPendingFinalizationAsync(companyId, documentTypeCode),
+                Data = await _documentComponent.GetRequestsPendingFinalizationAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -326,7 +326,7 @@ public class DMSDocumentController : Controller
     }
 
 
-    [HttpPost("get-my-document")]
+    [HttpPost("get-document-for-approval")]
     public async Task<IActionResult> GetMyInboxRequestsAsync(GetDocumentDto input)
     {
         try

@@ -105,3 +105,15 @@ public class DocumentAttributeUpdateDto
     public bool IsDeleted { get; set; }
 
 }
+
+public class DocumentAttributeReadDto2
+{
+    public int DocumentAttributeId { get; set; }
+    public string ControlLabel { get; set; }
+    public int ControlTypeId { get; set; }
+
+    public string? ValueText { get; set; }
+    public decimal? ValueNumber { get; set; }
+    public string? ValueDate { get; set; }
+    public bool? ValueBoolean { get; set; }
+}
