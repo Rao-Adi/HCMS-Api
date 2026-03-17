@@ -1146,21 +1146,11 @@ public class DocumentComponent
             var executionId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO WorkflowExecutions
                 (
-                    CompanyId,
-                    WorkflowPolicyVersionId,
-                    EntityType,
-                    EntityId,
-                    Status,
-                    StartedBy
+                    CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @VersionId,
-                    'Document',
-                    @DocumentId,
-                    'Running',
-                    @UserId
+                    @CompanyId, @VersionId, 'Document', @DocumentId, 'Running', @UserId
                 )
                 RETURNING Id;",
             new
@@ -1178,24 +1168,12 @@ public class DocumentComponent
             var inserted = await _common.ExecuteAsync(@"
                 INSERT INTO WorkflowExecutionSteps
                 (
-                    CompanyId,
-                    WorkflowExecutionId,
-                    StepDefinitionId,
-                    AssignedUserId,
-                    AssignedRoleId,
-                    StepOrder,
-                    Observation,
-                    IsActive
+                    CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId,
+                    StepOrder, Observation, IsActive
                 )
                 SELECT
-                    @CompanyId,
-                    @ExecutionId,
-                    Id,
-                    UserId,
-                    RoleId,
-                    StepOrder,
-                    '',
-                    FALSE
+                    @CompanyId, @ExecutionId, Id, UserId, RoleId,
+                    StepOrder, '', FALSE
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId;",
             new
@@ -1231,21 +1209,11 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
                 (
-                    CompanyId,
-                    DocumentId,
-                    FromStateId,
-                    ToStateId,
-                    WorkflowExecutionId,
-                    ChangedBy
+                    CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, ChangedBy
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @DocumentId,
-                    1,
-                    2,
-                    @ExecutionId,
-                    @UserId
+                    @CompanyId, @DocumentId, 1, 2, @ExecutionId, @UserId
                 );",
             new
             {
@@ -1630,13 +1598,9 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @DocumentId,
-                    3,
-                    4,
-                    @UserId
-                )
-            ", new { companyId, documentId, userId }, transaction);
+                    @CompanyId, @DocumentId, 3, 4, @UserId
+                )",
+                new { companyId, documentId, userId }, transaction);
 
 
             //-----------------------------------------
@@ -1646,13 +1610,7 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserTraining
                 (
-                    CompanyId,
-                    DocumentId,
-                    UserId,
-                    TrainingMode,
-                    TrainingStatus,
-                    CreatedBy,
-                    LastModifiedBy
+                    CompanyId, DocumentId, UserId, TrainingMode, TrainingStatus, CreatedBy, LastModifiedBy
                 )
                 SELECT
                     CompanyId,
@@ -2082,13 +2040,7 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
                 (
-                    CompanyId,
-                    DocumentId,
-                    FromStateId,
-                    ToStateId,
-                    WorkflowExecutionId,
-                    Comments,
-                    ChangedBy
+                    CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, Comments, ChangedBy
                 )
                 VALUES
                 (
@@ -2326,7 +2278,7 @@ public class DocumentComponent
     }
 
 
-    public async Task<IEnumerable<AllDocumentDto>> GetMyInboxRequestsAsync(GetDocumentDto input)
+    public async Task<IEnumerable<AllDocumentDto>> GetDocumentByStatusAsync(GetDocumentDto input)
     {
         try
         {
@@ -2346,7 +2298,7 @@ public class DocumentComponent
                     @DocumentTypeCode
                 );";
 
-            return await _common.QueryAsync<AllDocumentDto>(sql, new
+            var requests = await _common.QueryAsync<AllDocumentDto>(sql, new
             {
                 input.CompanyId,
                 userId,
@@ -2357,6 +2309,91 @@ public class DocumentComponent
                 input.BusinessDomainCode,
                 input.DocumentTypeCode
             });
+
+            if (!requests.Any())
+                return Enumerable.Empty<AllDocumentDto>();
+            //-------------------------------------------------
+            // 2️⃣ Extract Ids
+            //-------------------------------------------------
+
+            var requestIds = requests.Select(x => x.Id).ToArray();
+
+            //-------------------------------------------------
+            // 3️⃣ Get Role Distributions
+            //-------------------------------------------------
+
+            var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
+                SELECT dl.*,
+                       div.Name AS Division,
+                       dep.Name AS Department,
+                       subd.Name AS SubDepartment,
+                       bd.Name AS BusinessDomain,
+	                   dt.Name AS DistributionType
+                   FROM DocumentRequestRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
+                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id 
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+                WHERE dl.CompanyId = @CompanyId
+                AND dl.DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = input.CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 4️⃣ Get User Distributions
+            //-------------------------------------------------
+
+            var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+                SELECT *
+                FROM DocumentRequestUserDistributions
+                WHERE CompanyId = @CompanyId
+                AND DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = input.CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 5️⃣ Map Distributions Into Each Request
+            //-------------------------------------------------
+
+            foreach (var request in requests)
+            {
+                request.DistributionList = roleDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .Select(x => new DistributionListReadDto
+                    {
+                        Id = x.Id,
+                        DocumentRequestId = x.DocumentRequestId,
+                        CompanyId = x.CompanyId,
+                        Company = x.Company,
+                        RoleId = x.RoleId,
+                        Role = x.Role,
+                        DistributionTypeId = x.DistributionTypeId,
+                        DistributionType = x.DistributionType,
+                        Division = x.Division,
+                        DivisionCode = x.DivisionCode,
+                        Department = x.Department,
+                        DepartmentCode = x.DepartmentCode,
+                        SubDepartment = x.SubDepartment,
+                        SubDepartmentCode = x.SubDepartmentCode,
+                        BusinessDomain = x.BusinessDomain,
+                        BusinessDomainCode = x.BusinessDomainCode,
+                    }).ToList();
+
+                request.UserList = userDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .ToList();
+            }
+
+            return requests;
 
         }
         catch (Exception ex)

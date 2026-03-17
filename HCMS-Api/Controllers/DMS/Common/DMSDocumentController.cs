@@ -326,7 +326,7 @@ public class DMSDocumentController : Controller
     }
 
 
-    [HttpPost("get-document-for-approval")]
+    [HttpPost("get-document-by-status")]
     public async Task<IActionResult> GetMyInboxRequestsAsync(GetDocumentDto input)
     {
         try
@@ -334,7 +334,7 @@ public class DMSDocumentController : Controller
             return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
             {
                 Success = true,
-                Data = await _documentComponent.GetMyInboxRequestsAsync(input),
+                Data = await _documentComponent.GetDocumentByStatusAsync(input),
                 Message = "Success",
                 Code = 200
             });

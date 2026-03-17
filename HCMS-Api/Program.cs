@@ -1,6 +1,7 @@
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
+using HCMS_Api.Components.DMS.Common.BackgroundJobs;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
@@ -254,8 +255,10 @@ builder.Services.AddScoped<DistributionTypeComponent>();
 builder.Services.AddScoped<CompanyComponent>();  
 builder.Services.AddScoped<DocumentRequestTypeComponent>();  
 builder.Services.AddScoped<ControlTypeComponent>();  
-builder.Services.AddScoped<UserAccessLevelComponent>();  
+builder.Services.AddScoped<UserAccessLevelComponent>();
 
+
+//builder.Services.AddHostedService<DataSyncService>();
 #endregion DMS Service
 
 

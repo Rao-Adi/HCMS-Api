@@ -217,6 +217,10 @@ public  class AllDocumentDto
     public string StepType { get; set; }
     public string ExecutionStatus { get; set; }
     public string? StartedAt { get; set; } // Maps to TIMESTAMP
+
+    // 🟩 UC-22
+    public List<DistributionListReadDto>? DistributionList { get; set; }
+    public List<DocumentRequestUserDistribution>? UserList { get; set; }
 }
 
 public class GetDocumentDto
