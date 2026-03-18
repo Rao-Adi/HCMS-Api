@@ -2027,7 +2027,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Completed',
+                SET Status = 'Cancelled',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
@@ -2116,7 +2116,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Completed',
+                SET Status = 'Cancelled',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",

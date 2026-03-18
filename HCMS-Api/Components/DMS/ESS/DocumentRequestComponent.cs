@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -1268,9 +1268,8 @@ public class DocumentRequestComponent
         }
 
         //-------------------------------------------------
-        // REJECT → Cancel Workflow
+        // REJECT → Cancel Workflow and mark Request as Rejected (Terminal)
         //-------------------------------------------------
-
         if (decision == "Rejected")
         {
             await _common.ExecuteAsync(@"
@@ -1281,14 +1280,40 @@ public class DocumentRequestComponent
 
             await _common.ExecuteAsync(@"
             UPDATE DocumentRequests
-            SET Status = 'Draft'
+            SET Status = @RejectedStatus
             WHERE Id =
             (
                 SELECT EntityId
                 FROM WorkflowExecutions
                 WHERE Id = @ExecutionId
             );",
+                new { ExecutionId = executionId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
+
+            await tx.CommitAsync();
+            return true;
+        }
+        
+        //-------------------------------------------------
+        // REWORK → Cancel Workflow and Revert to Draft (Non-Terminal)
+        //-------------------------------------------------
+        if (decision == "Rework")
+        {
+            await _common.ExecuteAsync(@"
+            UPDATE WorkflowExecutions
+            SET Status = 'Cancelled'
+            WHERE Id = @ExecutionId;",
                 new { ExecutionId = executionId }, tx);
+
+            await _common.ExecuteAsync(@"
+            UPDATE DocumentRequests
+            SET Status = @DraftStatus
+            WHERE Id =
+            (
+                SELECT EntityId
+                FROM WorkflowExecutions
+                WHERE Id = @ExecutionId
+            );",
+                new { ExecutionId = executionId, DraftStatus = DocumentRequestStatus.Draft }, tx);
 
             await tx.CommitAsync();
             return true;
@@ -1399,7 +1424,7 @@ public class DocumentRequestComponent
 
             wes.StepOrder        AS CurrentStepOrder,
             wsd.StepType         AS CurrentStepType,
-            u.EmployeeName       AS CurrentAssignedUser,
+            COALESCE(u.EmployeeName, r.Name) AS CurrentAssignedUser,
             wes.AssignedUserId   AS CurrentAssignedUserId,
             wes.AssignedRoleId   AS CurrentAssignedRoleId
 
@@ -1409,14 +1434,22 @@ public class DocumentRequestComponent
             ON we.CompanyId = dr.CompanyId
             AND we.EntityId = dr.Id
             AND we.EntityType = 'Request'
-            AND we.Status = 'Running'
+            --AND we.Status = 'Running'
+            AND we.Id = (
+                SELECT MAX(Id)
+                FROM WorkflowExecutions we2
+                WHERE we2.CompanyId = dr.CompanyId
+                  AND we2.EntityId = dr.Id
+                  AND we2.EntityType = 'Request'
+            )
 
         LEFT JOIN WorkflowExecutionSteps wes
             ON wes.CompanyId = we.CompanyId
             AND wes.WorkflowExecutionId = we.Id
-            AND wes.IsActive = TRUE               -- keep, but maybe add ORDER BY / LIMIT if multi-steps possible
+            --AND wes.IsActive = TRUE               -- keep, but maybe add ORDER BY / LIMIT if multi-steps possible
 
         LEFT JOIN USERS u ON wes.AssignedUserId = u.Id
+        LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
         LEFT JOIN WorkflowStepDefinitions wsd 
             ON wsd.CompanyId = wes.CompanyId
             AND wsd.Id = wes.StepDefinitionId
