@@ -32,8 +32,8 @@ namespace HCMS_Api.Controllers.HCMS.ESS
             _dataservice = dataservice;
             _employeeInformation = employeeInformation;
         }
-
-        [HttpPost]
+ 
+        [HttpPost("lookup-load-subordinates")]
         public IActionResult LookupLoadSubOrdinates([FromBody] object value, [FromQuery] string Level)
         {
             try
@@ -55,7 +55,7 @@ namespace HCMS_Api.Controllers.HCMS.ESS
             }
         }
 
-        [HttpPost]
+        [HttpPost("lookup-search-subordinates")]
         public IActionResult LookupSearchSubOrdinates([FromBody] object value, [FromQuery] string Level)
         {
             try

@@ -89,7 +89,7 @@ namespace HCMS_Api.Controllers.HCMS.ESS
             }
         }
 
-        public List<Dictionary<string, object>> ConvertDataTableToList(DataTable dt)
+        private List<Dictionary<string, object>> ConvertDataTableToList(DataTable dt)
         {
             return dt.AsEnumerable()
                      .Select(row => dt.Columns.Cast<DataColumn>()

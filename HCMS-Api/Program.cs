@@ -1,7 +1,14 @@
-using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
+using HCMS_Api.Common.DMS;
+using HCMS_Api.Components.DMS.Common;
+using HCMS_Api.Components.DMS.Common.BackgroundJobs;
+using HCMS_Api.Components.DMS.Common.Dapper;
+using HCMS_Api.Components.DMS.Common.DataAccess;
+using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Components.HCMS.Common.Dapper;
-using HCMS_Api.Components.HCMS.Common.DataAccess;
+using HCMS_Api.Components.HCMS.Common.DataAccess; 
 using HCMS_Api.Components.HCMS.Common.Models;
 using HCMS_Api.Components.HCMS.Common.Security;
 using HCMS_Api.Components.HCMS.ESS;
@@ -9,18 +16,22 @@ using HCMS_Api.Components.HCMS.HR;
 using HCMS_Api.Components.HCMS.Payroll;
 using HCMS_Api.Models;
 using HCMS_Api.Services;
-using HCMS_Api.Services.Authorization;
+using HCMS_Api.Services.Authorization; 
 using HCMS_Api.Services.EmployeeAuthority;
 using HCMS_Api.Services.HodService;
 using HCMS_Api.Services.LookupService;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
 using StackExchange.Redis;
 using System.Text;
-using Microsoft.AspNetCore.Http;
+using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuring SeriLog for logging 
@@ -75,6 +86,17 @@ builder.Services.AddControllers()
     });
 */
 
+// In Program.cs or Startup.cs
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // This will convert ALL property names to camelCase (e.g., "requestId", "currentStepType")
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+
+        // OR if you REALLY want all lowercase (not standard JSON):
+        options.JsonSerializerOptions.PropertyNamingPolicy = new LowerCaseNamingPolicy();
+    });
+
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
     {
@@ -85,7 +107,84 @@ builder.Services.AddControllers()
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+//builder.Services.AddSwaggerGen();
+ 
+builder.Services.AddSwaggerGen(c =>
+{
+    //c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+
+
+    // ✅ FIX: Prevent schema name collisions (Division vs Division)
+    c.CustomSchemaIds(type => type.FullName);
+
+    // ✅ API Version shown in Swagger
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "DMS API",
+        Version = "v1",
+        Description = "Document Management System APIs"
+    });
+
+    c.AddSecurityDefinition("ApiVersion", new OpenApiSecurityScheme
+    {
+        Name = "x-api-version",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "API Version (e.g. 1.0, 2.0)"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "ApiVersion"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+
+    //// ✅ JWT Bearer Authentication
+    //var securityScheme = new OpenApiSecurityScheme
+    //{
+    //    Name = "Authorization",
+    //    Description = "Enter JWT token in this format: Bearer {your token}",
+    //    In = ParameterLocation.Header,
+    //    Type = SecuritySchemeType.Http,
+    //    Scheme = "bearer",
+    //    BearerFormat = "JWT",
+    //    Reference = new OpenApiReference
+    //    {
+    //        Type = ReferenceType.SecurityScheme,
+    //        Id = JwtBearerDefaults.AuthenticationScheme
+    //    }
+    //};
+
+    //c.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, securityScheme);
+
+    //c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    //{
+    //    {
+    //        securityScheme,
+    //        Array.Empty<string>()
+    //    }
+    //});
+});
+
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+
+    options.ApiVersionReader = new HeaderApiVersionReader("x-api-version");
+});
+
+
 builder.Services.AddHttpContextAccessor();
 
 // Add configuration for connection string
@@ -99,6 +198,7 @@ builder.Services.AddScoped<IEmployeeAuthorityService, EmployeeAuthorityService>(
 builder.Services.AddScoped<Common>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<Utilities>();
+builder.Services.AddScoped<DMSUtilities>();
 builder.Services.AddScoped<ClientContextService>();
 builder.Services.AddScoped<LeaveComponent>();
 builder.Services.AddScoped<ValidateAntiForgeryTokenFilter>();
@@ -116,6 +216,52 @@ builder.Services.AddScoped<PFSlipViaEmailComponent>();
 builder.Services.AddScoped<PerformanceJournalPolicyComponent>();
 builder.Services.AddScoped<PerformanceJournalComponent>();
 builder.Services.AddScoped<AttendanceSheetComponent>();
+
+#region DMS Services
+
+builder.Services.AddScoped<DMSCommon>();
+builder.Services.AddScoped<DMSDataServices>();
+builder.Services.AddScoped<IDMSDapperDataService, DMSDapperDataService>();
+builder.Services.AddScoped<DivisionComponent>();
+builder.Services.AddScoped<DepartmentComponent>();
+builder.Services.AddScoped<SubDepartmentComponent>();
+builder.Services.AddScoped<DocumentTypeComponent>();
+builder.Services.AddScoped<BusinessDomainComponent>();
+builder.Services.AddScoped<CabinetStructureTabsConfigComponent>();
+builder.Services.AddScoped<AttributeMandatoryScopeComponent>();
+builder.Services.AddScoped<AuditLogComponent>();
+builder.Services.AddScoped<DistributionListComponent>();
+builder.Services.AddScoped<DocumentApprovalComponent>();
+builder.Services.AddScoped<DocumentAttributeComponent>();
+builder.Services.AddScoped<DocumentComponent>();
+builder.Services.AddScoped<DocumentRequestComponent>();
+builder.Services.AddScoped<DocumentTrainingComponent>();
+builder.Services.AddScoped<DocumentVersionComponent>();
+builder.Services.AddScoped<ESignatureComponent>();
+builder.Services.AddScoped<NotificationComponent>();
+builder.Services.AddScoped<RequestApprovalComponent>();
+builder.Services.AddScoped<ResponsibilityTransferComponent>();
+builder.Services.AddScoped<RoleComponent>();
+builder.Services.AddScoped<TemplateComponent>();
+builder.Services.AddScoped<TrainingPolicyComponent>();
+builder.Services.AddScoped<TransferScopePolicyComponent>();
+builder.Services.AddScoped<TransferWorkflowPolicyComponent>();
+builder.Services.AddScoped<UserComponent>();
+builder.Services.AddScoped<UserRoleComponent>();
+builder.Services.AddScoped<WorkflowPolicyComponent>();
+builder.Services.AddScoped<WorkflowStepComponent>(); 
+builder.Services.AddScoped<DesignationComponent>(); 
+builder.Services.AddScoped<DistributionTypeComponent>();  
+builder.Services.AddScoped<CompanyComponent>();  
+builder.Services.AddScoped<DocumentRequestTypeComponent>();  
+builder.Services.AddScoped<ControlTypeComponent>();  
+builder.Services.AddScoped<UserAccessLevelComponent>();
+
+
+//builder.Services.AddHostedService<DataSyncService>();
+#endregion DMS Service
+
+
 var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
 
 builder.Services.AddCors(options =>
@@ -176,7 +322,25 @@ app.UseCors("AllowSpecificOrigin");
     app.UseSwaggerUI();
 //}
 
+//Collapse all API groups
+if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
+{
+    app.UseSwagger();
 
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "DMS API v1");
+
+        // ✅ Collapse all endpoints by default
+        c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+
+        // Optional but recommended
+        c.DefaultModelsExpandDepth(-1); // Hides schema section
+
+        // Optional but recommended
+        c.DisplayRequestDuration();
+    });
+}
 
 
 app.UseHttpsRedirection();
