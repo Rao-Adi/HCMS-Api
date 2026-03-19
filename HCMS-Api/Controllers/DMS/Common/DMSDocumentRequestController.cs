@@ -260,7 +260,8 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpPost("create-draft-document-request")]
-    public async Task<IActionResult> DraftDocumentRequest([FromBody] DraftDocumentRequestDto input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> DraftDocumentRequest([FromForm] DraftDocumentRequestDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -293,7 +294,8 @@ public class DMSDocumentRequestController : Controller
     }
 
     [HttpPost("update-draft-document-request")]
-    public async Task<IActionResult> UpdateDraftDocumentRequest([FromBody] UpdateDraftRequestDto input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdateDraftDocumentRequest([FromForm] UpdateDraftRequestDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -324,6 +326,8 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
 
     [HttpPost("take-workflow-action")]
     public async Task<IActionResult> TakeWorkflowAction([FromBody] ApproveRejectWorkflowStepDto input)

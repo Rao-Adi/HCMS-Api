@@ -205,6 +205,24 @@ public class DocumentRequestComponent
 
         try
         {
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
+                var fileName = $"{dto.DraftFile.FileName}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
             //-------------------------------------------------
             // Insert Draft Request
             //-------------------------------------------------
@@ -219,6 +237,7 @@ public class DocumentRequestComponent
                     DocumentName,
                     Justification,
                     ProposedContent,
+                    DraftFileUrl,
                     DivisionCode,
                     DepartmentCode,
                     SubDepartmentCode,
@@ -237,6 +256,7 @@ public class DocumentRequestComponent
                     @DocumentName,
                     @Justification,
                     @ProposedContent,
+                    @DraftFileUrl,
                     @DivisionCode,
                     @DepartmentCode,
                     @SubDepartmentCode,
@@ -255,6 +275,7 @@ public class DocumentRequestComponent
                 dto.DocumentName,
                 dto.Justification,
                 dto.ProposedContent,
+                DraftFileUrl = draftFileUrl,
                 dto.DivisionCode,
                 dto.DepartmentCode,
                 dto.SubDepartmentCode,
@@ -355,6 +376,24 @@ public class DocumentRequestComponent
 
         try
         {
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
+                var fileName = $"DRF_{Guid.NewGuid()}{fileExtension}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
             //-------------------------------------------------
             // 1️⃣ Attempt Safe Update (Optimistic Lock)
             //-------------------------------------------------
@@ -365,6 +404,7 @@ public class DocumentRequestComponent
                     DocumentName = @DocumentName,
                     Justification = @Justification,
                     ProposedContent = @ProposedContent, 
+                    DraftFileUrl = COALESCE(@DraftFileUrl, DraftFileUrl),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
                 WHERE Id = @RequestId
@@ -378,6 +418,7 @@ public class DocumentRequestComponent
                 dto.DocumentName,
                 dto.Justification,
                 dto.ProposedContent, 
+                DraftFileUrl = draftFileUrl,
                 UserId = dto.ModifiedByUserId.ToString(), 
                 DraftStatus = DocumentRequestStatus.Draft
             },
@@ -1556,6 +1597,7 @@ public class DocumentRequestComponent
                 DocumentName = GetValue<string>(rowDict, "documentname"),
                 Justification = GetValue<string>(rowDict, "justification"),
                 ProposedContent = GetValue<string>(rowDict, "proposedcontent"),
+                DraftFileUrl = GetValue<string>(rowDict, "draftfileurl"),
                 Status = GetValue<int>(rowDict, "status"),
                 SubmittedAt = GetValue<DateTime?>(rowDict, "submittedat"),
 
@@ -1907,6 +1949,7 @@ public class DocumentRequestComponent
                     DepartmentCode,
                     SubDepartmentCode,
                     BusinessDomainCode,
+                    DocumentURL,
                     CreatedBy,
                     LastModifiedBy
                 )
@@ -1921,6 +1964,7 @@ public class DocumentRequestComponent
                     @DepartmentCode,
                     @SubDepartmentCode,
                     @BusinessDomainCode,
+                    @DocumentUrl,
                     @UserId,
                     @UserId
                 )
@@ -1935,6 +1979,7 @@ public class DocumentRequestComponent
                 request.departmentcode,
                 request.subdepartmentcode,
                 request.businessdomaincode,
+                DocumentUrl = request.draftfileurl,
                 userId
             }, transaction);
 
@@ -2412,6 +2457,7 @@ public class DocumentRequestComponent
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                     RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                     ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                    DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                     IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                     DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2527,6 +2573,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2595,6 +2642,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2704,6 +2752,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,

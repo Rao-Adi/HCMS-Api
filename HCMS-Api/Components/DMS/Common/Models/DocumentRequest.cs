@@ -66,6 +66,7 @@ public class DocumentRequestReadDto : AuditableEntity
 
     public string Justification { get; set; } = null!;
     public string ProposedContent { get; set; } = null!;
+    public string DraftFileUrl { get; set; } = null!;
     public bool IsContentFinalized { get; set; }
     public string DraftContentLastModifiedAt { get; set; } = null!;
     public string DraftContentLastModifiedBy { get; set; } = null!;
@@ -81,6 +82,7 @@ public class DocumentRequestReadDto : AuditableEntity
 
     public string? BusinessDomain { get; set; }
     public string? BusinessDomainCode { get; set; }
+    public string? DraftFileURL { get; set; }
 
     
 
@@ -301,6 +303,11 @@ public class MyRequestPendingDto
     [JsonPropertyName("proposedcontent")]
     public string ProposedContent { get; set; }
 
+
+    [JsonPropertyName("draftfileurl")]
+    public string DraftFileUrl { get; set; }
+
+
     [JsonPropertyName("status")]
     public int Status { get; set; }
 
@@ -433,7 +440,7 @@ public class DraftDocumentRequestDto
 
     public string DocumentName { get; set; }
     public string Justification { get; set; }
-    public string ProposedContent { get; set; }
+    public string? ProposedContent { get; set; }
 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -445,6 +452,8 @@ public class DraftDocumentRequestDto
     // 🟩 UC-22
     public List<DistributionListCreateDto>? DistributionList { get; set; }
     public List<long>? UserIds { get; set; }
+
+    public IFormFile? DraftFile { get; set; }
 }
 
 
@@ -462,6 +471,8 @@ public class UpdateDraftRequestDto
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
     public List<long>? UserList { get; set; }
+
+    public IFormFile? DraftFile { get; set; }
 }
 
 
