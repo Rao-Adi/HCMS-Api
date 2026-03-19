@@ -18,21 +18,78 @@ public class DMSNotificationController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly NotificationComponent _eSignatureComponent;
+    private readonly NotificationComponent _notificationComponent;
 
     public DMSNotificationController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     NotificationComponent eSignatureComponent)
+     NotificationComponent notificationComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _eSignatureComponent = eSignatureComponent;
+        _notificationComponent = notificationComponent;
     }
+
+
+
+    [HttpPost("GetAll")]
+    public async Task<IActionResult> GetAll([FromBody] TableFiltersDto filter)
+    {
+        try
+        {
+            var result = await _notificationComponent.GetAllAsync(filter);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching notifications");
+            return StatusCode(500, new { message = "An error occurred fetching notifications." });
+        }
+    }
+
+    [HttpPut("MarkAsRead/{id}")]
+    public async Task<IActionResult> MarkAsRead(int id)
+    {
+        try
+        {
+            bool isSuccess = await _notificationComponent.MarkAsReadAsync(id);
+            return Ok(new { success = isSuccess });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error marking notification {id} as read");
+            return StatusCode(500, new { message = "An error occurred marking notification as read." });
+        }
+    }
+
+    [HttpPut("MarkAllAsRead")]
+    public async Task<IActionResult> MarkAllAsRead()
+    {
+        try
+        {
+
+            bool isSuccess = await _notificationComponent.MarkAllAsReadAsync();
+            return Ok(new { success = isSuccess });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error marking all notifications as read");
+            return StatusCode(500, new { message = "An error occurred marking all notifications as read." });
+        }
+    }
+
+
+    [HttpPost("SendTestNotification")] 
+    public async Task<IActionResult> SendTestNotification([FromBody] TestNotificationDto request)
+    {
+        await _notificationComponent.SendTestNotification(request.Title, request.Message, request.Type);
+        return Ok(new { success = true, message = "Test notification sent successfully" });
+    }
+
 
     [HttpPost("get-all-notification")]
     public async Task<IActionResult> GetAllNotifications(TableFiltersDto input)
@@ -42,7 +99,7 @@ public class DMSNotificationController : Controller
             return Ok(new HttpApiResponse<PaginationResult<NotificationReadDto>>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.GetAllAsync(input),
+                Data = await _notificationComponent.GetAllAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -70,7 +127,7 @@ public class DMSNotificationController : Controller
             return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.GetByIdAsync(code),
+                Data = await _notificationComponent.GetByIdAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -99,11 +156,11 @@ public class DMSNotificationController : Controller
         }
 
         try
-        { 
+        {
             return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.CreateAsync(input),
+                Data = await _notificationComponent.CreateAsync(input),
                 Message = "DocumentType created successfully.",
                 Code = 200
             });
@@ -130,7 +187,7 @@ public class DMSNotificationController : Controller
             return Ok(new HttpApiResponse<NotificationReadDto>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.UpdateAsync(input),
+                Data = await _notificationComponent.UpdateAsync(input),
                 Message = "DocumentType updated successfully.",
                 Code = 200
             });
@@ -154,7 +211,7 @@ public class DMSNotificationController : Controller
     {
         try
         {
-            var existingRecord = await _eSignatureComponent.GetByIdAsync(code);
+            var existingRecord = await _notificationComponent.GetByIdAsync(code);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
@@ -169,7 +226,7 @@ public class DMSNotificationController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _eSignatureComponent.DeleteAsync(code),
+                Data = await _notificationComponent.DeleteAsync(code),
                 Message = "DocumentType deleted successfully.",
                 Code = 200
             });
@@ -187,4 +244,11 @@ public class DMSNotificationController : Controller
             return StatusCode(response.Code, response);
         }
     }
+}
+
+public class TestNotificationDto
+{
+    public string Title { get; set; }
+    public string Message { get; set; }
+    public string Type { get; set; }
 }

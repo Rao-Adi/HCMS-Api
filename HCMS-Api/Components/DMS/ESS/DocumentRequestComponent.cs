@@ -27,6 +27,7 @@ public class DocumentRequestComponent
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly DocumentComponent _documentComponent;
+    private readonly NotificationComponent _notificationComponent;
     public DocumentRequestComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -36,7 +37,8 @@ public class DocumentRequestComponent
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
         DMSCommon common,
-        DocumentComponent documentComponent
+        DocumentComponent documentComponent,
+        NotificationComponent notificationComponent
         )
     {
         _http = http;
@@ -48,6 +50,7 @@ public class DocumentRequestComponent
         _dapperService = dapper;
         _common = common;
         _documentComponent = documentComponent;
+        _notificationComponent = notificationComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -717,7 +720,31 @@ public class DocumentRequestComponent
                     input.RequestId
                 }, tx);
 
+            // Prepare notification data
+            int? firstStepUserId = null;
+            string? requestNumber = null;
+            var firstStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.AssignedUserId, dr.RequestNumber
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN DocumentRequests dr ON dr.Id = we.EntityId
+                WHERE wes.WorkflowExecutionId = @ExecutionId
+                AND wes.IsActive = TRUE;", new { ExecutionId = executionId }, tx);
+            
+            if (firstStep != null && firstStep.assigneduserid != null)
+            {
+                firstStepUserId = (int)firstStep.assigneduserid;
+                requestNumber = Convert.ToString(firstStep.requestnumber);
+            }
+
             await tx.CommitAsync();
+
+            if (firstStepUserId.HasValue)
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? input.RequestId.ToString() } };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, input.CompanyId, (int)input.RequestId, firstStepUserId.Value, placeholders);
+            }
+
             return true;
         }
         catch
@@ -1222,6 +1249,28 @@ public class DocumentRequestComponent
         int executionId = step.workflowexecutionid;
         int stepOrder = step.steporder;
 
+        // Fetch request info for notifications
+        var requestInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT dr.Id, dr.RequestNumber, dr.CreatedBy
+            FROM DocumentRequests dr
+            WHERE dr.Id = (SELECT EntityId FROM WorkflowExecutions WHERE Id = @ExecutionId)", new { ExecutionId = executionId }, tx);
+            
+        var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, tx);
+        string approverName = Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString();
+        
+        var notifyPlaceholders = new Dictionary<string, string>
+        {
+            { "ID", Convert.ToString(requestInfo?.requestnumber) ?? "Unknown" },
+            { "Approver", approverName },
+            { "Observation", input.Observation ?? "" }
+        };
+
+        int initiatorId = 0;
+        if (requestInfo != null && requestInfo.createdby != null)
+        {
+            int.TryParse(Convert.ToString(requestInfo.createdby), out initiatorId);
+        }
+
         //-------------------------------------------------
         // 3️⃣ Count pending BEFORE approving
         //-------------------------------------------------
@@ -1290,6 +1339,12 @@ public class DocumentRequestComponent
                 new { ExecutionId = executionId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
 
             await tx.CommitAsync();
+
+            if (initiatorId > 0)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
         
@@ -1316,6 +1371,12 @@ public class DocumentRequestComponent
                 new { ExecutionId = executionId, DraftStatus = DocumentRequestStatus.Draft }, tx);
 
             await tx.CommitAsync();
+
+            if (initiatorId > 0)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
 
@@ -1323,6 +1384,7 @@ public class DocumentRequestComponent
         // APPROVE → If last approver in group
         //-------------------------------------------------
 
+        int? nextStepUserId = null;
         if (pending == 1) // YOU were the final approver
         {
             //-------------------------------------------------
@@ -1359,6 +1421,12 @@ public class DocumentRequestComponent
 
                 if (rows == 0)
                     throw new Exception("Workflow activation failed. Next step not found.");
+
+                var nextStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT AssignedUserId FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND StepOrder = @Next;", new { ExecutionId = executionId, Next = next.Value }, tx);
+                if (nextStepInfo != null && nextStepInfo.assigneduserid != null)
+                {
+                    nextStepUserId = (int)nextStepInfo.assigneduserid;
+                }
             }
             else
             {
@@ -1410,6 +1478,12 @@ public class DocumentRequestComponent
         }
 
         await tx.CommitAsync();
+
+        if (nextStepUserId.HasValue && requestInfo != null)
+        {
+            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, input.CompanyId, (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
+        }
+
         return true;
     }
 

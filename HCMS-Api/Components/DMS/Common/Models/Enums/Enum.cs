@@ -1,4 +1,4 @@
-﻿namespace HCMS_Api.Components.DMS.Common.Models.Enums;
+﻿﻿namespace HCMS_Api.Components.DMS.Common.Models.Enums;
 
 public class Enum
 {
@@ -130,3 +130,26 @@ public enum DocumentRequestStatus
     Approved = 3,
     Rejected = 4
 }
+
+#region Notifications
+public enum NotificationScenario
+{
+    PendingRequest = 1,
+    RequestApprovedForwarded = 2,
+    RequestRejected = 3,
+    RequestRevertedForRework = 4,
+    OverdueRequestReminder = 5,
+    PendingDocumentApproval = 6,
+    DocumentApprovedForwarded = 7,
+    DocumentRejected = 8,
+    DocumentRevertedForRework = 9,
+    TrainingProofRequired = 10,
+    TrainingProofSubmitted = 11,
+    DocumentAuthorizedEffective = 12,
+    PeriodicReviewDue = 13,
+    DocumentObsoleted = 14,
+    PhysicalCopyRetrievalTask = 15,
+    NewUserAccountCreated = 16,
+    TransferRequestApproval = 17
+}
+#endregion Notifications
