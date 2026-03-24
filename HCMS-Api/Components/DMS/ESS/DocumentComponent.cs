@@ -483,8 +483,79 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                Title = row.Field<string>("Title"), 
+
+                NextReviewDate = row.Field<string>("NextReviewDate"),
+                DocumentURL = row.Field<string>("DocumentURL"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<DocumentReadDto> GetByIdAsync(int id)
+    {
+        try
+        {
+            string query = $@"
+                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
+                        c.Id AS CompanyId, c.Name AS Company
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c
+                        ON doc.CompanyId = c.Id
+                WHERE doc.Id = {id}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("Documents not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new DocumentReadDto
+            {
+                Id = row.Field<int>("Id"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
+                DocumentNumber = row.Field<string>("DocumentNumber"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 Title = row.Field<string>("Title"),
-                Version = row.Field<string>("Version"),
 
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
@@ -2367,7 +2438,8 @@ public class DocumentComponent
             d.NextReviewDate,
             dr.RequestNumber,
             dv.Version,
-            dv.Content
+            dv.Content,
+            dr.DraftFileURL
         FROM DocumentRequests dr
         INNER JOIN Documents d
             ON d.CompanyId = dr.CompanyId
@@ -2396,7 +2468,7 @@ public class DocumentComponent
     }
 
 
-    public async Task<IEnumerable<AllDocumentDto>> GetDocumentByStatusAsync(GetDocumentDto input)
+    public async Task<PaginationResult<AllDocumentDto>> GetDocumentByStatusAsync(GetDocumentDto input)
     {
         try
         {
@@ -2405,7 +2477,34 @@ public class DocumentComponent
                 throw new Exception("Requests not found.");
 
             var userId = await GetEmployeeID(input.EmployeeCode);
-            var sql = @"SELECT * FROM fn_get_my_inbox_documents(
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(Title) LIKE '%{search}%'
+                    OR UPPER(DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "Title",
+                "DOCUMENTNUMBER" => "DocumentNumber",
+                "CREATEDAT" => "CreatedAt",
+                _ => "CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_documents(
                     @CompanyId,
                     @UserId,
                     @RequestStatus,
@@ -2414,22 +2513,43 @@ public class DocumentComponent
                     @SubDepartmentCode,
                     @BusinessDomainCode,
                     @DocumentTypeCode
-                );";
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
-            var requests = await _common.QueryAsync<AllDocumentDto>(sql, new
+            var countSql = $@"SELECT COUNT(1) FROM fn_get_my_inbox_documents(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @DocumentTypeCode
+                ) {whereClause};";
+
+            var queryParams = new
             {
                 input.CompanyId,
-                userId,
+                UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
                 input.SubDepartmentCode,
                 input.BusinessDomainCode,
                 input.DocumentTypeCode
-            });
+            };
+
+            var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             if (!requests.Any())
-                return Enumerable.Empty<AllDocumentDto>();
+                return new PaginationResult<AllDocumentDto>
+                {
+                    Items = new List<AllDocumentDto>(),
+                    TotalCount = 0
+                };
             //-------------------------------------------------
             // 2️⃣ Extract Ids
             //-------------------------------------------------
@@ -2511,7 +2631,11 @@ public class DocumentComponent
                     .ToList();
             }
 
-            return requests;
+            return new PaginationResult<AllDocumentDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
 
         }
         catch (Exception ex)

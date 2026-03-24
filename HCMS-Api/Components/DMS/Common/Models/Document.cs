@@ -1,4 +1,5 @@
-﻿using HCMS_Api.Components.DMS.Common.Models.Departments;
+﻿using HCMS_Api.Common.Misc;
+using HCMS_Api.Components.DMS.Common.Models.Departments;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection.Metadata;
@@ -77,7 +78,7 @@ public class DocumentReadDto : AuditableEntity
      
     public string NextReviewDate { get; set; }
 
-    public string DocumentURL { get; set; }
+    public string DocumentURL { get; set; } 
 }
 
 public class DocumentCreateDto
@@ -195,6 +196,7 @@ public  class AllDocumentDto
     public string DocumentTypeCode { get; set; }
     public string VersionContent { get; set; }
     public string ProposedVersionNumber { get; set; }
+    public string DraftFileURL { get; set; }
 
     // Organizational Hierarchy
     public string Division { get; set; }
@@ -223,7 +225,7 @@ public  class AllDocumentDto
     public List<DocumentRequestUserDistribution>? UserList { get; set; }
 }
 
-public class GetDocumentDto
+public class GetDocumentDto : TableFiltersDto
 {
     public int CompanyId { get; set; }
     public int UserId { get; set; }
@@ -258,4 +260,3 @@ public class GetApprovedRequestForDocumentCreationDto
     public string? BusinessDomainCode { get; set; }
     public string DocumentTypeCode { get; set; }
 }
-
