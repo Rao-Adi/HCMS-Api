@@ -1133,32 +1133,70 @@ public class DocumentRequestComponent
         }
     }
 
-    public async Task<IEnumerable<DocumentRequestReadDto>>GetDraftDocumentRequestAsync(int companyId, string createdByUserId)
+    public async Task<PaginationResult<DocumentRequestReadDto>> GetDraftDocumentRequestAsync(GetDocumentDto input)
     {
         try
         {
-            var userId = await GetEmployeeID(createdByUserId);
+            if (string.IsNullOrEmpty(input.EmployeeCode))
+                throw new Exception("EmployeeCode is required.");
+
+            var userId = await GetEmployeeID(input.EmployeeCode);
+
+            var whereClause = @"WHERE CompanyId = @CompanyId
+                AND Status = @DraftStatus
+                AND CreatedBy = @CreatedBy";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "DocumentName",
+                "REQUESTNUMBER" => "RequestNumber",
+                "CREATEDAT" => "CreatedAt",
+                _ => "Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             //-------------------------------------------------
             // 1️⃣ Get Draft Requests
             //-------------------------------------------------
 
-            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(@"
-                SELECT *
-                FROM Vw_DocumentRequests
-                WHERE CompanyId = @CompanyId
-                AND Status = @DraftStatus
-                AND CreatedBy = @CreatedBy
-                ORDER BY Id DESC;",
-                new
-                {
-                    CompanyId = companyId,
-                    DraftStatus = DocumentRequestStatus.Draft,
-                    CreatedBy = userId.ToString()
-                })).ToList();
+            var dataSql = $@"SELECT * FROM Vw_DocumentRequests
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"SELECT COUNT(1) FROM Vw_DocumentRequests {whereClause};";
+
+            var queryParams = new
+            {
+                input.CompanyId,
+                DraftStatus = DocumentRequestStatus.Draft,
+                CreatedBy = userId.ToString()
+            };
+
+            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             if (!requests.Any())
-                return Enumerable.Empty<DocumentRequestReadDto>();
+                return new PaginationResult<DocumentRequestReadDto>
+                {
+                    Items = new List<DocumentRequestReadDto>(),
+                    TotalCount = 0
+                };
 
             //-------------------------------------------------
             // 2️⃣ Extract Ids
@@ -1189,7 +1227,7 @@ public class DocumentRequestComponent
                 AND dl.DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = companyId,
+                    CompanyId = input.CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1204,7 +1242,7 @@ public class DocumentRequestComponent
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = companyId,
+                    CompanyId = input.CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1240,7 +1278,11 @@ public class DocumentRequestComponent
                     .ToList();
             }
 
-            return requests;
+            return new PaginationResult<DocumentRequestReadDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
         }
         catch
         {

@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -176,15 +176,15 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
-    [HttpGet("get-my-draft-request")]
-    public async Task<IActionResult> GetMyDraftRequests(int companyId, string userId)
+    [HttpPost("get-my-draft-request")]
+    public async Task<IActionResult> GetMyDraftRequests(GetDocumentDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<object>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetDraftDocumentRequestAsync(companyId, userId),
+                Data = await _documentRequestComponent.GetDraftDocumentRequestAsync(input),
                 Message = "Success",
                 Code = 200
             });
