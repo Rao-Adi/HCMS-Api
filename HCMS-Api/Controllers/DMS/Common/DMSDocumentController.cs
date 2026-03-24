@@ -331,13 +331,79 @@ public class DMSDocumentController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
+            return Ok(new HttpApiResponse<PaginationResult<AllDocumentDto>>()
             {
                 Success = true,
                 Data = await _documentComponent.GetDocumentByStatusAsync(input),
                 Message = "Success",
                 Code = 200
             });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("download-submitted-document-template/{id}")]
+    public async Task<IActionResult> DownloadDraftDocument(int id)
+    {
+        try
+        {
+            var request = await _documentComponent.GetByIdAsync(id);
+            if (string.IsNullOrEmpty(request.DocumentURL))
+            {
+                return NotFound(new HttpApiResponse<object>()
+                {
+                    Success = false,
+                    Data = new { },
+                    Message = "This request does not have a physical draft file to download.",
+                    Code = 404
+                });
+            }
+
+            var relativePath = request.DocumentURL.TrimStart('/');
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound(new HttpApiResponse<object>()
+                {
+                    Success = false,
+                    Data = new { },
+                    Message = "Physical file does not exist on the server.",
+                    Code = 404
+                });
+            }
+
+            var memory = new MemoryStream();
+            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            {
+                await stream.CopyToAsync(memory);
+            }
+            memory.Position = 0;
+
+            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+            if (!provider.TryGetContentType(filePath, out var contentType))
+            {
+                contentType = "application/octet-stream";
+            }
+
+            var fileName = Path.GetFileName(filePath);
+
+            // Important for frontend reading of the File Name
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(memory, contentType, fileName);
         }
         catch (CustomException ex)
         {

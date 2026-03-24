@@ -6,6 +6,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.Models.Enums;
 using Newtonsoft.Json;
 using Npgsql;
 using System.Data;
@@ -23,6 +24,7 @@ public class DocumentComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
+    private readonly NotificationComponent _notificationComponent;
     public DocumentComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -31,7 +33,8 @@ public class DocumentComponent
         , IDMSDapperDataService dapper
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
-        DMSCommon common
+        DMSCommon common,
+        NotificationComponent notificationComponent
         )
     {
         _http = http;
@@ -42,6 +45,7 @@ public class DocumentComponent
         _clientContextService = clientContextService;
         _dapperService = dapper;
         _common = common;
+        _notificationComponent = notificationComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -479,8 +483,79 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
+                Title = row.Field<string>("Title"), 
+
+                NextReviewDate = row.Field<string>("NextReviewDate"),
+                DocumentURL = row.Field<string>("DocumentURL"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<DocumentReadDto> GetByIdAsync(int id)
+    {
+        try
+        {
+            string query = $@"
+                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
+                        c.Id AS CompanyId, c.Name AS Company
+                        FROM Documents doc
+                        LEFT JOIN DocumentTypes dt
+                        ON doc.DocumentTypeCode = dt.Code
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c
+                        ON doc.CompanyId = c.Id
+                WHERE doc.Id = {id}
+                  AND doc.IsActive = True
+                  AND doc.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("Documents not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new DocumentReadDto
+            {
+                Id = row.Field<int>("Id"),
+
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+
+                DocumentNumber = row.Field<string>("DocumentNumber"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                Division = row.Field<string>("DivisionName"),
+                DivisionCode = row.Field<string>("DivisionCode"),
+
+                Department = row.Field<string>("DepartmentName"),
+                DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                BusinessDomain = row.Field<string>("BusinessDomain"),
+                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
                 Title = row.Field<string>("Title"),
-                Version = row.Field<string>("Version"),
 
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
@@ -1223,7 +1298,34 @@ public class DocumentComponent
                 input.UserId
             }, transaction);
 
+            // Prepare notification data
+            int? firstStepUserId = null;
+            string? docTitle = null;
+            string? docVersion = null;
+            var firstStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.AssignedUserId, d.Title, dv.Version
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN Documents d ON d.Id = we.EntityId
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.IsActive = TRUE
+                WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.IsActive = TRUE
+                ORDER BY dv.CreatedAt DESC LIMIT 1;", new { ExecutionId = executionId }, transaction);
+
+            if (firstStepInfo != null && firstStepInfo.assigneduserid != null)
+            {
+                firstStepUserId = (int)firstStepInfo.assigneduserid;
+                docTitle = Convert.ToString(firstStepInfo.title);
+                docVersion = Convert.ToString(firstStepInfo.version);
+            }
+
             await transaction.CommitAsync();
+
+            if (firstStepUserId.HasValue)
+            {
+                var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle ?? "Unknown" }, { "V#", docVersion ?? "1.0" } };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, input.CompanyId, input.DocumentId, firstStepUserId.Value, placeholders);
+            }
+
             return true;
         }
         catch
@@ -1437,6 +1539,15 @@ public class DocumentComponent
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
 
+            // Fetch document info for notifications
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.Title, dv.Version
+                FROM Documents d
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
+                WHERE d.Id = @DocumentId
+                ORDER BY dv.CreatedAt DESC LIMIT 1;", new { DocumentId = input.DocumentId }, transaction);
+            var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
+
             //-------------------------------------------------
             // 2️⃣ Approve Current Step
             //-------------------------------------------------
@@ -1454,6 +1565,7 @@ public class DocumentComponent
             // 3️⃣ Find Next Step
             //-------------------------------------------------
 
+            int? nextStepUserId = null;
             var nextStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -1481,6 +1593,9 @@ public class DocumentComponent
                     SET IsActive = TRUE, Observation = @Observation
                     WHERE Id = @NextStepId;",
                 new { NextStepId = nextStep.id, input.Observation }, transaction);
+
+                if (nextStep.assigneduserid != null)
+                    nextStepUserId = (int)nextStep.assigneduserid;
             }
             else
             {
@@ -1526,6 +1641,12 @@ public class DocumentComponent
             }
 
             await transaction.CommitAsync();
+
+            if (nextStepUserId.HasValue && docInfo != null)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, input.CompanyId, input.DocumentId, nextStepUserId.Value, notifyPlaceholders);
+            }
+
             return true;
         }
         catch
@@ -1635,6 +1756,24 @@ public class DocumentComponent
             //-----------------------------------------
             await NotifyPendingUsersAsync(companyId, documentId);
 
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.Title, dv.Version, d.CreatedBy
+                FROM Documents d
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.VersionType = 2
+                WHERE d.Id = @DocumentId
+                ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = documentId });
+
+            int initiatorId = 0;
+            if (docInfo != null && docInfo.createdby != null)
+            {
+                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+            }
+
+            if (initiatorId > 0)
+            {
+                var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("yyyy-MM-dd") } };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders);
+            }
 
             return true;
         }
@@ -2004,6 +2143,15 @@ public class DocumentComponent
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
 
+            // Fetch document info for notifications
+            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, transaction);
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.Title, dv.Version, d.CreatedBy
+                FROM Documents d
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
+                WHERE d.Id = @DocumentId
+                ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = input.DocumentId }, transaction);
+
             //-------------------------------------------------
             // 2️⃣ Mark Step Rejected
             //-------------------------------------------------
@@ -2062,6 +2210,22 @@ public class DocumentComponent
             }, transaction);
 
             await transaction.CommitAsync();
+
+            int initiatorId = 0;
+            if (docInfo != null && docInfo.createdby != null)
+            {
+                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+            }
+
+            if (initiatorId > 0)
+            {
+                var notifyPlaceholders = new Dictionary<string, string> {
+                    { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
+                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString() }, { "Observation", input.Observation ?? "" }
+                };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, input.CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
         catch
@@ -2092,6 +2256,15 @@ public class DocumentComponent
 
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
+
+            // Fetch document info for notifications
+            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, transaction);
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.Title, dv.Version, d.CreatedBy
+                FROM Documents d
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
+                WHERE d.Id = @DocumentId
+                ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = input.DocumentId }, transaction);
 
             //-------------------------------------------------
             // 2️⃣ Mark Step Rework
@@ -2157,6 +2330,22 @@ public class DocumentComponent
             }, transaction);
 
             await transaction.CommitAsync();
+
+            int initiatorId = 0;
+            if (docInfo != null && docInfo.createdby != null)
+            {
+                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+            }
+
+            if (initiatorId > 0)
+            {
+                var notifyPlaceholders = new Dictionary<string, string> {
+                    { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
+                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString() }, { "Observation", input.Observation ?? "" }
+                };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRevertedForRework, input.CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
         catch
@@ -2249,7 +2438,8 @@ public class DocumentComponent
             d.NextReviewDate,
             dr.RequestNumber,
             dv.Version,
-            dv.Content
+            dv.Content,
+            dr.DraftFileURL
         FROM DocumentRequests dr
         INNER JOIN Documents d
             ON d.CompanyId = dr.CompanyId
@@ -2278,7 +2468,7 @@ public class DocumentComponent
     }
 
 
-    public async Task<IEnumerable<AllDocumentDto>> GetDocumentByStatusAsync(GetDocumentDto input)
+    public async Task<PaginationResult<AllDocumentDto>> GetDocumentByStatusAsync(GetDocumentDto input)
     {
         try
         {
@@ -2287,7 +2477,34 @@ public class DocumentComponent
                 throw new Exception("Requests not found.");
 
             var userId = await GetEmployeeID(input.EmployeeCode);
-            var sql = @"SELECT * FROM fn_get_my_inbox_documents(
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(Title) LIKE '%{search}%'
+                    OR UPPER(DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "Title",
+                "DOCUMENTNUMBER" => "DocumentNumber",
+                "CREATEDAT" => "CreatedAt",
+                _ => "CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_documents(
                     @CompanyId,
                     @UserId,
                     @RequestStatus,
@@ -2296,22 +2513,43 @@ public class DocumentComponent
                     @SubDepartmentCode,
                     @BusinessDomainCode,
                     @DocumentTypeCode
-                );";
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
-            var requests = await _common.QueryAsync<AllDocumentDto>(sql, new
+            var countSql = $@"SELECT COUNT(1) FROM fn_get_my_inbox_documents(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @DocumentTypeCode
+                ) {whereClause};";
+
+            var queryParams = new
             {
                 input.CompanyId,
-                userId,
+                UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
                 input.SubDepartmentCode,
                 input.BusinessDomainCode,
                 input.DocumentTypeCode
-            });
+            };
+
+            var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             if (!requests.Any())
-                return Enumerable.Empty<AllDocumentDto>();
+                return new PaginationResult<AllDocumentDto>
+                {
+                    Items = new List<AllDocumentDto>(),
+                    TotalCount = 0
+                };
             //-------------------------------------------------
             // 2️⃣ Extract Ids
             //-------------------------------------------------
@@ -2393,7 +2631,11 @@ public class DocumentComponent
                     .ToList();
             }
 
-            return requests;
+            return new PaginationResult<AllDocumentDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
 
         }
         catch (Exception ex)

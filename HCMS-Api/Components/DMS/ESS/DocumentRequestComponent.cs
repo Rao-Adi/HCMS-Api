@@ -27,6 +27,7 @@ public class DocumentRequestComponent
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly DocumentComponent _documentComponent;
+    private readonly NotificationComponent _notificationComponent;
     public DocumentRequestComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -36,7 +37,8 @@ public class DocumentRequestComponent
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
         DMSCommon common,
-        DocumentComponent documentComponent
+        DocumentComponent documentComponent,
+        NotificationComponent notificationComponent
         )
     {
         _http = http;
@@ -48,6 +50,7 @@ public class DocumentRequestComponent
         _dapperService = dapper;
         _common = common;
         _documentComponent = documentComponent;
+        _notificationComponent = notificationComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -202,6 +205,24 @@ public class DocumentRequestComponent
 
         try
         {
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
+                var fileName = $"{dto.DraftFile.FileName}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
             //-------------------------------------------------
             // Insert Draft Request
             //-------------------------------------------------
@@ -216,6 +237,7 @@ public class DocumentRequestComponent
                     DocumentName,
                     Justification,
                     ProposedContent,
+                    DraftFileUrl,
                     DivisionCode,
                     DepartmentCode,
                     SubDepartmentCode,
@@ -234,6 +256,7 @@ public class DocumentRequestComponent
                     @DocumentName,
                     @Justification,
                     @ProposedContent,
+                    @DraftFileUrl,
                     @DivisionCode,
                     @DepartmentCode,
                     @SubDepartmentCode,
@@ -252,6 +275,7 @@ public class DocumentRequestComponent
                 dto.DocumentName,
                 dto.Justification,
                 dto.ProposedContent,
+                DraftFileUrl = draftFileUrl,
                 dto.DivisionCode,
                 dto.DepartmentCode,
                 dto.SubDepartmentCode,
@@ -352,6 +376,24 @@ public class DocumentRequestComponent
 
         try
         {
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
+                var fileName = $"DRF_{Guid.NewGuid()}{fileExtension}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
             //-------------------------------------------------
             // 1️⃣ Attempt Safe Update (Optimistic Lock)
             //-------------------------------------------------
@@ -362,6 +404,7 @@ public class DocumentRequestComponent
                     DocumentName = @DocumentName,
                     Justification = @Justification,
                     ProposedContent = @ProposedContent, 
+                    DraftFileUrl = COALESCE(@DraftFileUrl, DraftFileUrl),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
                 WHERE Id = @RequestId
@@ -375,6 +418,7 @@ public class DocumentRequestComponent
                 dto.DocumentName,
                 dto.Justification,
                 dto.ProposedContent, 
+                DraftFileUrl = draftFileUrl,
                 UserId = dto.ModifiedByUserId.ToString(), 
                 DraftStatus = DocumentRequestStatus.Draft
             },
@@ -717,7 +761,31 @@ public class DocumentRequestComponent
                     input.RequestId
                 }, tx);
 
+            // Prepare notification data
+            int? firstStepUserId = null;
+            string? requestNumber = null;
+            var firstStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.AssignedUserId, dr.RequestNumber
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN DocumentRequests dr ON dr.Id = we.EntityId
+                WHERE wes.WorkflowExecutionId = @ExecutionId
+                AND wes.IsActive = TRUE;", new { ExecutionId = executionId }, tx);
+            
+            if (firstStep != null && firstStep.assigneduserid != null)
+            {
+                firstStepUserId = (int)firstStep.assigneduserid;
+                requestNumber = Convert.ToString(firstStep.requestnumber);
+            }
+
             await tx.CommitAsync();
+
+            if (firstStepUserId.HasValue)
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? input.RequestId.ToString() } };
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, input.CompanyId, (int)input.RequestId, firstStepUserId.Value, placeholders);
+            }
+
             return true;
         }
         catch
@@ -1065,32 +1133,70 @@ public class DocumentRequestComponent
         }
     }
 
-    public async Task<IEnumerable<DocumentRequestReadDto>>GetDraftDocumentRequestAsync(int companyId, string createdByUserId)
+    public async Task<PaginationResult<DocumentRequestReadDto>> GetDraftDocumentRequestAsync(GetDocumentDto input)
     {
         try
         {
-            var userId = await GetEmployeeID(createdByUserId);
+            if (string.IsNullOrEmpty(input.EmployeeCode))
+                throw new Exception("EmployeeCode is required.");
+
+            var userId = await GetEmployeeID(input.EmployeeCode);
+
+            var whereClause = @"WHERE CompanyId = @CompanyId
+                AND Status = @DraftStatus
+                AND CreatedBy = @CreatedBy";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "DocumentName",
+                "REQUESTNUMBER" => "RequestNumber",
+                "CREATEDAT" => "CreatedAt",
+                _ => "Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
 
             //-------------------------------------------------
             // 1️⃣ Get Draft Requests
             //-------------------------------------------------
 
-            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(@"
-                SELECT *
-                FROM Vw_DocumentRequests
-                WHERE CompanyId = @CompanyId
-                AND Status = @DraftStatus
-                AND CreatedBy = @CreatedBy
-                ORDER BY Id DESC;",
-                new
-                {
-                    CompanyId = companyId,
-                    DraftStatus = DocumentRequestStatus.Draft,
-                    CreatedBy = userId.ToString()
-                })).ToList();
+            var dataSql = $@"SELECT * FROM Vw_DocumentRequests
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"SELECT COUNT(1) FROM Vw_DocumentRequests {whereClause};";
+
+            var queryParams = new
+            {
+                input.CompanyId,
+                DraftStatus = DocumentRequestStatus.Draft,
+                CreatedBy = userId.ToString()
+            };
+
+            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             if (!requests.Any())
-                return Enumerable.Empty<DocumentRequestReadDto>();
+                return new PaginationResult<DocumentRequestReadDto>
+                {
+                    Items = new List<DocumentRequestReadDto>(),
+                    TotalCount = 0
+                };
 
             //-------------------------------------------------
             // 2️⃣ Extract Ids
@@ -1121,7 +1227,7 @@ public class DocumentRequestComponent
                 AND dl.DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = companyId,
+                    CompanyId = input.CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1136,7 +1242,7 @@ public class DocumentRequestComponent
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = companyId,
+                    CompanyId = input.CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1172,7 +1278,11 @@ public class DocumentRequestComponent
                     .ToList();
             }
 
-            return requests;
+            return new PaginationResult<DocumentRequestReadDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
         }
         catch
         {
@@ -1221,6 +1331,28 @@ public class DocumentRequestComponent
 
         int executionId = step.workflowexecutionid;
         int stepOrder = step.steporder;
+
+        // Fetch request info for notifications
+        var requestInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT dr.Id, dr.RequestNumber, dr.CreatedBy
+            FROM DocumentRequests dr
+            WHERE dr.Id = (SELECT EntityId FROM WorkflowExecutions WHERE Id = @ExecutionId)", new { ExecutionId = executionId }, tx);
+            
+        var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, tx);
+        string approverName = Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString();
+        
+        var notifyPlaceholders = new Dictionary<string, string>
+        {
+            { "ID", Convert.ToString(requestInfo?.requestnumber) ?? "Unknown" },
+            { "Approver", approverName },
+            { "Observation", input.Observation ?? "" }
+        };
+
+        int initiatorId = 0;
+        if (requestInfo != null && requestInfo.createdby != null)
+        {
+            int.TryParse(Convert.ToString(requestInfo.createdby), out initiatorId);
+        }
 
         //-------------------------------------------------
         // 3️⃣ Count pending BEFORE approving
@@ -1290,6 +1422,12 @@ public class DocumentRequestComponent
                 new { ExecutionId = executionId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
 
             await tx.CommitAsync();
+
+            if (initiatorId > 0)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
         
@@ -1316,6 +1454,12 @@ public class DocumentRequestComponent
                 new { ExecutionId = executionId, DraftStatus = DocumentRequestStatus.Draft }, tx);
 
             await tx.CommitAsync();
+
+            if (initiatorId > 0)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+            }
+
             return true;
         }
 
@@ -1323,6 +1467,7 @@ public class DocumentRequestComponent
         // APPROVE → If last approver in group
         //-------------------------------------------------
 
+        int? nextStepUserId = null;
         if (pending == 1) // YOU were the final approver
         {
             //-------------------------------------------------
@@ -1359,6 +1504,12 @@ public class DocumentRequestComponent
 
                 if (rows == 0)
                     throw new Exception("Workflow activation failed. Next step not found.");
+
+                var nextStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT AssignedUserId FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND StepOrder = @Next;", new { ExecutionId = executionId, Next = next.Value }, tx);
+                if (nextStepInfo != null && nextStepInfo.assigneduserid != null)
+                {
+                    nextStepUserId = (int)nextStepInfo.assigneduserid;
+                }
             }
             else
             {
@@ -1410,6 +1561,12 @@ public class DocumentRequestComponent
         }
 
         await tx.CommitAsync();
+
+        if (nextStepUserId.HasValue && requestInfo != null)
+        {
+            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, input.CompanyId, (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
+        }
+
         return true;
     }
 
@@ -1482,6 +1639,7 @@ public class DocumentRequestComponent
                 DocumentName = GetValue<string>(rowDict, "documentname"),
                 Justification = GetValue<string>(rowDict, "justification"),
                 ProposedContent = GetValue<string>(rowDict, "proposedcontent"),
+                DraftFileUrl = GetValue<string>(rowDict, "draftfileurl"),
                 Status = GetValue<int>(rowDict, "status"),
                 SubmittedAt = GetValue<DateTime?>(rowDict, "submittedat"),
 
@@ -1833,6 +1991,7 @@ public class DocumentRequestComponent
                     DepartmentCode,
                     SubDepartmentCode,
                     BusinessDomainCode,
+                    DocumentURL,
                     CreatedBy,
                     LastModifiedBy
                 )
@@ -1847,6 +2006,7 @@ public class DocumentRequestComponent
                     @DepartmentCode,
                     @SubDepartmentCode,
                     @BusinessDomainCode,
+                    @DocumentUrl,
                     @UserId,
                     @UserId
                 )
@@ -1861,6 +2021,7 @@ public class DocumentRequestComponent
                 request.departmentcode,
                 request.subdepartmentcode,
                 request.businessdomaincode,
+                DocumentUrl = request.draftfileurl,
                 userId
             }, transaction);
 
@@ -2338,6 +2499,7 @@ public class DocumentRequestComponent
                     Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                     RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                     ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                    DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                     IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                     DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2453,6 +2615,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2521,6 +2684,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -2630,6 +2794,7 @@ public class DocumentRequestComponent
                 Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 RowVersion = row.Table.Columns.Contains("RowVersion") ? row.Field<string>("RowVersion") : string.Empty,
                 ProposedContent = row.Table.Columns.Contains("ProposedContent") ? row.Field<string>("ProposedContent") : string.Empty,
+                DraftFileUrl = row.Table.Columns.Contains("DraftFileUrl") ? row.Field<string>("DraftFileUrl") : string.Empty,
                 IsContentFinalized = row.Table.Columns.Contains("IsContentFinalized") && row.Field<bool?>("IsContentFinalized") == true,
                 DraftContentLastModifiedAt = (row.Table.Columns.Contains("DraftContentLastModifiedAt") && !row.IsNull("DraftContentLastModifiedAt"))
                                      ? row.Field<DateTime>("DraftContentLastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,

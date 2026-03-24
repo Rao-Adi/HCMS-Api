@@ -96,6 +96,8 @@ public class TemplateCreateDto
 
     public bool IsDefault { get; set; }
 
+    public IFormFile? TemplateFile { get; set; }
+
 }
 
 
@@ -129,4 +131,5 @@ public class TemplateUpdateDto
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 
+    public IFormFile? TemplateFile { get; set; }
 }

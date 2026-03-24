@@ -51,20 +51,65 @@ public class TemplateComponent
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
-            //if (input.Id >0)
-            //    throw new CustomException("Template code is required.", 200);
 
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Templates
-            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
-              AND IsDeleted = FALSE";
+            if (input.IsDefault)
+            {
+                string checkDefaultQuery = $@"
+                SELECT COUNT(1)
+                FROM Templates
+                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+                  AND IsDefault = TRUE
+                  AND IsDeleted = FALSE";
 
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+                int defaultExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkDefaultQuery));
 
-            if (exists > 0)
-                throw new CustomException("Template already exists", 409);
+                if (defaultExists > 0)
+                    throw new CustomException("A default template already exists for this Document Type.", 409);
+            }
+            else
+            {
+                string checkQuery = $@"
+                SELECT COUNT(1)
+                FROM Templates
+                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+                  AND COALESCE(DivisionCode,'') = COALESCE('{input.DivisionCode}','')
+                  AND COALESCE(DepartmentCode,'') = COALESCE('{input.DepartmentCode}','')
+                  AND COALESCE(SubDepartmentCode,'') = COALESCE('{input.SubDepartmentCode}','')
+                  AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
+                  AND IsDefault = FALSE
+                  AND IsDeleted = FALSE";
+
+                int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+                if (exists > 0)
+                    throw new CustomException("A template for this specific scope already exists.", 409);
+            }
+
+            string templateFileUrl = input.TemplateFileUrl ?? string.Empty;
+
+            if (input.TemplateFile != null && input.TemplateFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "templates");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(input.TemplateFile.FileName);
+                var fileName = $"{input.TemplateFile.FileName}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await input.TemplateFile.CopyToAsync(stream);
+                }
+
+                templateFileUrl = $"/uploads/templates/{fileName}";
+            }
+
+            // Enforce TemplateType logic: If PDF/Word, HTML content should be empty
+            if (input.TemplateType == 1 || input.TemplateType == 2)
+            {
+                input.TemplateContent = "";
+            }
 
             // Insert (PostgreSQL syntax)
             string Safe(string s) => s?.Replace("'", "''") ?? "";
@@ -120,7 +165,7 @@ public class TemplateComponent
                         { "@CompanyId",           input.CompanyId},
                         { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
                         { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
-                        { "@TemplateFileUrl",     input.TemplateFileUrl     ?? (object)DBNull.Value },
+                        { "@TemplateFileUrl",     templateFileUrl           },
                         { "@TemplateType",        input.TemplateType  },
                         { "@DivisionCode",        input.DivisionCode        ?? (object)DBNull.Value },
                         { "@DepartmentCode",      input.DepartmentCode      ?? (object)DBNull.Value },
@@ -366,6 +411,7 @@ public class TemplateComponent
                     LEFT JOIN BusinessDomains bd
                     ON t.BusinessDomainCode = bd.Code
                 WHERE t.DocumentTypeCode = '{code}'
+                  AND t.IsDefault = True
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -437,13 +483,74 @@ public class TemplateComponent
             if (exists == 0)
                 throw new CustomException("Templates not found", 200);
 
+            if (input.IsDefault)
+            {
+                string checkDefaultQuery = $@"
+                SELECT COUNT(1)
+                FROM Templates
+                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+                  AND IsDefault = TRUE
+                  AND Id != {input.Id}
+                  AND IsDeleted = FALSE";
+
+                int defaultExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkDefaultQuery));
+
+                if (defaultExists > 0)
+                    throw new CustomException("A default template already exists for this Document Type.", 409);
+            }
+            else
+            {
+                string checkScopeQuery = $@"
+                SELECT COUNT(1)
+                FROM Templates
+                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+                  AND COALESCE(DivisionCode,'') = COALESCE('{input.DivisionCode}','')
+                  AND COALESCE(DepartmentCode,'') = COALESCE('{input.DepartmentCode}','')
+                  AND COALESCE(SubDepartmentCode,'') = COALESCE('{input.SubDepartmentCode}','')
+                  AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
+                  AND IsDefault = FALSE
+                  AND Id != {input.Id}
+                  AND IsDeleted = FALSE";
+
+                int scopeExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkScopeQuery));
+
+                if (scopeExists > 0)
+                    throw new CustomException("A template for this specific scope already exists.", 409);
+            }
+
+            string templateFileUrl = input.TemplateFileURL ?? string.Empty;
+
+            if (input.TemplateFile != null && input.TemplateFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "templates");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(input.TemplateFile.FileName);
+                var fileName = $"TPL_{Guid.NewGuid()}{fileExtension}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await input.TemplateFile.CopyToAsync(stream);
+                }
+
+                templateFileUrl = $"/uploads/templates/{fileName}";
+            }
+
+            // Enforce TemplateType logic
+            if (input.TemplateType == 1 || input.TemplateType == 2)
+            {
+                input.TemplateContent = "";
+            }
+
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE Templates
             SET 
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 TemplateName = '{input.TemplateName}',
-                TemplateFileUrl = '{input.TemplateFileURL}',
+                TemplateFileUrl = '{templateFileUrl}',
                 TemplateType = '{input.TemplateType}',
                 DivisionCode = '{input.DivisionCode}',
                 DepartmentCode = '{input.DepartmentCode}',

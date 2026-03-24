@@ -6,6 +6,7 @@ using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
+using System.IO;
 using System.Text.Json;
 using static Org.BouncyCastle.Crypto.Engines.SM2Engine;
 
@@ -175,15 +176,15 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
-    [HttpGet("get-my-draft-request")]
-    public async Task<IActionResult> GetMyDraftRequests(int companyId, string userId)
+    [HttpPost("get-my-draft-request")]
+    public async Task<IActionResult> GetMyDraftRequests(GetDocumentDto input)
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<object>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetDraftDocumentRequestAsync(companyId, userId),
+                Data = await _documentRequestComponent.GetDraftDocumentRequestAsync(input),
                 Message = "Success",
                 Code = 200
             });
@@ -258,9 +259,74 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    [HttpGet("download-draft-document/{id}")]
+    public async Task<IActionResult> DownloadDraftDocument(int id)
+    {
+        try
+        {
+            var request = await _documentRequestComponent.GetByIdAsync(id);
+            if (string.IsNullOrEmpty(request.DraftFileUrl))
+            {
+                return NotFound(new HttpApiResponse<object>()
+                {
+                    Success = false,
+                    Data = new { },
+                    Message = "This request does not have a physical draft file to download.",
+                    Code = 404
+                });
+            }
+
+            var relativePath = request.DraftFileUrl.TrimStart('/');
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound(new HttpApiResponse<object>()
+                {
+                    Success = false,
+                    Data = new { },
+                    Message = "Physical file does not exist on the server.",
+                    Code = 404
+                });
+            }
+
+            var memory = new MemoryStream();
+            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            {
+                await stream.CopyToAsync(memory);
+            }
+            memory.Position = 0;
+
+            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+            if (!provider.TryGetContentType(filePath, out var contentType))
+            {
+                contentType = "application/octet-stream"; 
+            }
+
+            var fileName = Path.GetFileName(filePath);
+
+            // Important for frontend reading of the File Name
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(memory, contentType, fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpPost("create-draft-document-request")]
-    public async Task<IActionResult> DraftDocumentRequest([FromBody] DraftDocumentRequestDto input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> DraftDocumentRequest([FromForm] DraftDocumentRequestDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -293,7 +359,8 @@ public class DMSDocumentRequestController : Controller
     }
 
     [HttpPost("update-draft-document-request")]
-    public async Task<IActionResult> UpdateDraftDocumentRequest([FromBody] UpdateDraftRequestDto input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdateDraftDocumentRequest([FromForm] UpdateDraftRequestDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -324,6 +391,8 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
 
     [HttpPost("take-workflow-action")]
     public async Task<IActionResult> TakeWorkflowAction([FromBody] ApproveRejectWorkflowStepDto input)
