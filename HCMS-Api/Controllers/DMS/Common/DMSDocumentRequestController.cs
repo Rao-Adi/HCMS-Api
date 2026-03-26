@@ -69,7 +69,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<DocumentRequestReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetMyInboxRequestsAsync(input),
@@ -97,7 +97,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<MyRequestPendingDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<MyRequestPendingDto>>()
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetMyRequestsPendingApprovalAsync(input),

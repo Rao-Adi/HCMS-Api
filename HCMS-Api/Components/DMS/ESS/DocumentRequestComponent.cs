@@ -535,6 +535,31 @@ public class DocumentRequestComponent
             if (request.status != (int)DocumentRequestStatus.Draft)
                 throw new Exception("Only draft requests can be submitted.");
 
+            // UC-22 Validation: Justification is mandatory
+            if (string.IsNullOrWhiteSpace(request.justification))
+                throw new Exception("Justification is required to submit a document request.");
+
+            // UC-22 Validation: Ensure content has been altered for a Revision
+            // Assuming 'Revision' or 'REV' is the code for revision requests. Adjust as per your actual codes.
+            if (request.documentrequesttypecode == "Revision" && request.documentid != null)
+            {
+                var originalDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT d.DocumentURL, dv.Content
+                    FROM Documents d
+                    LEFT JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
+                    WHERE d.Id = @DocumentId
+                    ORDER BY dv.CreatedAt DESC LIMIT 1;", 
+                    new { DocumentId = request.documentid }, tx);
+                
+                if (originalDoc != null)
+                {
+                    bool contentUnchanged = (request.proposedcontent == originalDoc.content) || (string.IsNullOrWhiteSpace(request.proposedcontent) && string.IsNullOrWhiteSpace(originalDoc.content));
+                    bool fileUnchanged = (request.draftfileurl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(request.draftfileurl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
+                    
+                    if (contentUnchanged && fileUnchanged)
+                        throw new Exception("Document Content must be altered from the original version before submitting a revision request.");
+                }
+            }
 
             //-------------------------------------------------
             // UC-22 USER MODIFICATION BEFORE FREEZE
@@ -1094,7 +1119,7 @@ public class DocumentRequestComponent
     //    }
     //}
 
-    public async Task<IEnumerable<DocumentRequestReadDto>> GetMyInboxRequestsAsync(GetPendingRequestDto input)
+    public async Task<PaginationResult<DocumentRequestReadDto>> GetMyInboxRequestsAsync(GetPendingRequestDto input)
     {
         try
         {
@@ -1103,7 +1128,34 @@ public class DocumentRequestComponent
                 throw new Exception("Requests not found.");
 
             var userId = await GetEmployeeID(input.EmployeeCode);
-            var sql = @"SELECT * FROM fn_get_my_inbox_requests(
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "DocumentName",
+                "REQUESTNUMBER" => "RequestNumber",
+                "CREATEDAT" => "CreatedAt",
+                _ => "CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_requests(
                     @CompanyId,
                     @UserId,
                     @RequestStatus,
@@ -1112,19 +1164,42 @@ public class DocumentRequestComponent
                     @SubDepartmentCode,
                     @BusinessDomainCode,
                     @DocumentTypeCode
-                );";
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
-            return await _common.QueryAsync<DocumentRequestReadDto>(sql, new
+            var countSql = $@"SELECT COUNT(1) FROM fn_get_my_inbox_requests(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @DocumentTypeCode
+                ) {whereClause};";
+
+            var queryParams = new
             {
                 input.CompanyId,
-                userId,
+                UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
                 input.SubDepartmentCode,
                 input.BusinessDomainCode,
                 input.DocumentTypeCode
-            });
+            };
+
+            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<DocumentRequestReadDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
 
         }
         catch (Exception ex)
@@ -1571,59 +1646,90 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<IEnumerable<MyRequestPendingDto>> GetMyRequestsPendingApprovalAsync(MyRequestFilterDto filter)
+    public async Task<PaginationResult<MyRequestPendingDto>> GetMyRequestsPendingApprovalAsync(MyRequestFilterDto filter)
     {
         var userId = await GetEmployeeID(filter.Initiator);
         filter.Initiator = userId.ToString();
-        var sql = @"
-            SELECT 
-            dr.*,
 
-            wes.StepOrder        AS CurrentStepOrder,
-            wsd.StepType         AS CurrentStepType,
-            COALESCE(u.EmployeeName, r.Name) AS CurrentAssignedUser,
-            wes.AssignedUserId   AS CurrentAssignedUserId,
-            wes.AssignedRoleId   AS CurrentAssignedRoleId
+        var searchCondition = "";
+        if (!string.IsNullOrWhiteSpace(filter.SearchText))
+        {
+            var search = filter.SearchText.Replace("'", "''").ToUpper();
+            searchCondition = $@"
+              AND (
+                  UPPER(dr.DocumentName) LIKE '%{search}%'
+                  OR UPPER(dr.RequestNumber) LIKE '%{search}%'
+              )";
+        }
 
-        FROM Vw_DocumentRequests dr
+        // Sorting (whitelisted)
+        string sortColumn = filter.SortColumn?.ToUpper() switch
+        {
+            "DOCUMENTNAME" => "dr.DocumentName",
+            "REQUESTNUMBER" => "dr.RequestNumber",
+            "SUBMITTEDAT" => "dr.SubmittedAt",
+            "STATUS" => "dr.Status",
+            _ => "dr.SubmittedAt"
+        };
 
-        LEFT JOIN WorkflowExecutions we
-            ON we.CompanyId = dr.CompanyId
-            AND we.EntityId = dr.Id
-            AND we.EntityType = 'Request'
-            --AND we.Status = 'Running'
-            AND we.Id = (
-                SELECT MAX(Id)
-                FROM WorkflowExecutions we2
-                WHERE we2.CompanyId = dr.CompanyId
-                  AND we2.EntityId = dr.Id
-                  AND we2.EntityType = 'Request'
-            )
+        // Defaulting to DESC to match the original "ORDER BY dr.SubmittedAt DESC"
+        string sortDirection = filter.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+        int offset = (filter.PageNumber - 1) * filter.PageSize;
 
-        LEFT JOIN WorkflowExecutionSteps wes
-            ON wes.CompanyId = we.CompanyId
-            AND wes.WorkflowExecutionId = we.Id
-            --AND wes.IsActive = TRUE               -- keep, but maybe add ORDER BY / LIMIT if multi-steps possible
+        var fromJoins = @"
+            FROM Vw_DocumentRequests dr
+            LEFT JOIN WorkflowExecutions we
+                ON we.CompanyId = dr.CompanyId
+                AND we.EntityId = dr.Id
+                AND we.EntityType = 'Request'
+                AND we.Id = (
+                    SELECT MAX(Id)
+                    FROM WorkflowExecutions we2
+                    WHERE we2.CompanyId = dr.CompanyId
+                      AND we2.EntityId = dr.Id
+                      AND we2.EntityType = 'Request'
+                )
+            LEFT JOIN WorkflowExecutionSteps wes
+                ON wes.CompanyId = we.CompanyId
+                AND wes.WorkflowExecutionId = we.Id
+            LEFT JOIN USERS u ON wes.AssignedUserId = u.Id
+            LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
+            LEFT JOIN WorkflowStepDefinitions wsd 
+                ON wsd.CompanyId = wes.CompanyId
+                AND wsd.Id = wes.StepDefinitionId";
 
-        LEFT JOIN USERS u ON wes.AssignedUserId = u.Id
-        LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
-        LEFT JOIN WorkflowStepDefinitions wsd 
-            ON wsd.CompanyId = wes.CompanyId
-            AND wsd.Id = wes.StepDefinitionId
-
+        var baseWhere = @"
             WHERE dr.CompanyId = @CompanyId
               AND dr.SubmittedBy = @Initiator
               AND dr.IsDeleted = FALSE
-
               AND (@DivisionCode IS NULL OR dr.DivisionCode = @DivisionCode)
               AND (@DepartmentCode IS NULL OR dr.DepartmentCode = @DepartmentCode)
-              AND (@Status IS NULL OR dr.Status = @Status)
+              AND (@Status IS NULL OR dr.Status = @Status)";
 
-            ORDER BY dr.SubmittedAt DESC
-            ";
+        var dataSql = $@"
+            SELECT 
+                dr.*,
+                wes.StepOrder        AS CurrentStepOrder,
+                wsd.StepType         AS CurrentStepType,
+                COALESCE(u.EmployeeName, r.Name) AS CurrentAssignedUser,
+                wes.AssignedUserId   AS CurrentAssignedUserId,
+                wes.AssignedRoleId   AS CurrentAssignedRoleId
+            {fromJoins}
+            {baseWhere}
+            {searchCondition}
+            ORDER BY {sortColumn} {sortDirection}
+            OFFSET {offset} ROWS FETCH NEXT {filter.PageSize} ROWS ONLY;
+        ";
 
-        //return await _common.QueryAsync<MyRequestPendingDto>(sql, filter);
-        var results = await _common.QueryAsync<dynamic>(sql, filter);
+        var countSql = $@"
+            SELECT COUNT(1)
+            {fromJoins}
+            {baseWhere}
+            {searchCondition};
+        ";
+
+        var results = await _common.QueryAsync<dynamic>(dataSql, filter);
+        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, filter);
 
         var dtos = new List<MyRequestPendingDto>();
         foreach (var row in results)
@@ -1664,7 +1770,11 @@ public class DocumentRequestComponent
             });
         }
 
-        return dtos;
+        return new PaginationResult<MyRequestPendingDto>
+        {
+            Items = dtos,
+            TotalCount = totalCount
+        };
     }
 
 

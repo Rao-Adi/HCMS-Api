@@ -263,7 +263,7 @@ builder.Services.AddScoped<ControlTypeComponent>();
 builder.Services.AddScoped<UserAccessLevelComponent>();
 
 
-//builder.Services.AddHostedService<DataSyncService>();
+builder.Services.AddHostedService<DataSyncService>();
 #endregion DMS Service
 
 
