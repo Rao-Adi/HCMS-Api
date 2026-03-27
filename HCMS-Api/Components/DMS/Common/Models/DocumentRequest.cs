@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HCMS_Api.Common.Misc;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
@@ -251,7 +252,7 @@ public class DocumentRequestCreate
     public string Justification { get; set; }
 }
 
-public class GetPendingRequestDto
+public class GetPendingRequestDto : TableFiltersDto
 {
     public int CompanyId { get; set; }
     public int UserId { get; set; }
@@ -276,7 +277,7 @@ public class DraftRequestReadDto
     public DateTime CreatedAt { get; set; }
 }
 
-public class MyRequestFilterDto
+public class MyRequestFilterDto : TableFiltersDto
 {
     public int CompanyId { get; set; }
     public string Initiator { get; set; }  // logged in username

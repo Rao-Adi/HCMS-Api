@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -190,6 +190,61 @@ public class DMSDocumentTrainingController : Controller
                 Success = true,
                 Data = await _documentTrainingComponent.DeleteAsync(id),
                 Message = "Document Training deleted successfully.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-training-assessment-details/{documentId}/{companyId}")]
+    public async Task<IActionResult> GetTrainingAssessmentDetails(int documentId, int companyId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<TrainingAssessmentResultDto>()
+            {
+                Success = true,
+                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId, companyId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("acknowledge-and-send-for-authorization/{documentId}/{companyId}")]
+    public async Task<IActionResult> AcknowledgeAndSendForAuthorization(int documentId, int companyId)
+    {
+        try
+        {
+            var clientIp = _clientContextService.GetClientIP();
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentTrainingComponent.AcknowledgeAndSendForAuthorizationAsync(documentId, companyId, clientIp),
+                Message = "Document successfully acknowledged and sent for authorization.",
                 Code = 200
             });
         }

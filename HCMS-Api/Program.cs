@@ -221,6 +221,7 @@ builder.Services.AddScoped<PFSlipViaEmailComponent>();
 builder.Services.AddScoped<PerformanceJournalPolicyComponent>();
 builder.Services.AddScoped<PerformanceJournalComponent>();
 builder.Services.AddScoped<AttendanceSheetComponent>();
+builder.Services.AddScoped<PeoplePartnersComponent>();
 
 #region DMS Services
 

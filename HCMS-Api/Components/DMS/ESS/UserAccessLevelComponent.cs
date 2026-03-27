@@ -399,6 +399,77 @@ public class UserAccessLevelComponent
         }
     }
 
+    public async Task<List<UserAccessLevelReadDto>> GetByEmployeeCodeAsync(string employeeCode)
+    {
+        try
+        {
+            string query = $@"
+                   SELECT u.*,div.Name as Division, dep.Name as Department,
+                     sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                     FROM UserAccessLevels u 
+                     LEFT JOIN Divisions div 
+                     ON u.divisionCode = div.Code
+                     LEFT JOIN Departments dep
+                     ON u.DepartmentCode = dep.Code
+                     LEFT JOIN SubDepartments sdep
+                     ON u.SubdepartmentCode = sdep.Code 
+                     LEFT JOIN BusinessDomains bd
+                     ON u.BusinessDomainCode = bd.Code
+                     LEFT JOIN Companies c
+                     ON u.CompanyId = c.Id
+                     LEFT JOIN DocumentTypes dt
+                     ON u.DocumentTypeCode = dt.Code
+                WHERE u.EmployeeCode = '{employeeCode}'
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("UserAccessLevels not found", 200);
+
+            var list = new List<UserAccessLevelReadDto>();
+            foreach (DataRow row in dt.Rows)
+            {
+                list.Add(new UserAccessLevelReadDto
+                {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+                    EmployeeCode = row.Field<string>("EmployeeCode"), 
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                    DocumentType = row.Field<string>("DocumentType"),
+                    DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                    IsDeleted = row.Field<bool>("IsDeleted"),
+                    IsActive = row.Field<bool>("IsActive"),
+                    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    CreatedBy = row.Field<string>("CreatedBy"),
+                    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    LastModifiedBy = row.Field<string>("LastModifiedBy")
+                });
+            }
+
+            return list;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 
     public async Task<UserAccessLevelReadDto> UpdateAsync(UserAccessLevelUpdateDto input)
     {

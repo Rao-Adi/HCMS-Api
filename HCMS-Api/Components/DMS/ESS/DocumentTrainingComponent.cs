@@ -204,10 +204,10 @@ public class DocumentTrainingComponent
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dt.Name",
+                "ID" => "dt.Id",
                 "CODE" => "dt.Id",
                 "ISACTIVE" => "dt.IsActive",
-                _ => "dt.Name"
+                _ => "dt.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -218,13 +218,13 @@ public class DocumentTrainingComponent
                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
+                        ON dt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DocumentTraining dep
+                        FROM DocumentTraining dt
                         {whereClause};
                     ";
 
@@ -442,4 +442,101 @@ public class DocumentTrainingComponent
         }
     }
 
+    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId, int companyId)
+    {
+        try
+        {
+            string query = @"
+                SELECT 
+                    u.EmployeeName,
+                    u.EmployeeCode,
+                    dut.TrainingStatus,
+                    dut.AssessmentScore,
+                    dut.TrainingProofUrl
+                FROM DocumentUserTraining dut
+                JOIN Users u ON u.Id = dut.UserId
+                WHERE dut.DocumentId = @DocumentId 
+                  AND dut.CompanyId = @CompanyId
+                  AND dut.IsDeleted = FALSE";
+
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = companyId })).ToList();
+
+            var totalAssigned = userScores.Count;
+            var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed
+            var avgScore = totalCompleted > 0 ? userScores.Where(x => x.TrainingStatus == 1).Average(x => x.AssessmentScore) : 0;
+            var participation = totalAssigned > 0 ? ((decimal)totalCompleted / totalAssigned) * 100 : 0;
+
+            return new TrainingAssessmentResultDto
+            {
+                TotalAssigned = totalAssigned,
+                TotalCompleted = totalCompleted,
+                AverageScore = Math.Round(avgScore, 2),
+                ParticipationPercentage = Math.Round(participation, 2),
+                UserScores = userScores
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId, int companyId, string clientIp)
+    {
+        await using var tx = await _common.BeginTransactionAsync();
+        try
+        {
+            var user = _utilities.GetCurrentUserMap(clientIp);
+            var userId = user.UserID;
+
+            // 1. Mark Document Training as Acknowledged / Ready
+            string updateQuery = @"
+                UPDATE DocumentTraining
+                SET 
+                    ReadyForAuthorization = TRUE,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId 
+                  AND CompanyId = @CompanyId
+                  AND IsDeleted = FALSE";
+            
+            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
+
+            // 2. Transition Document State to 'AuthorizationPending' queue for Authorizer
+            string stateQuery = @"
+                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
+                SELECT @CompanyId, @DocumentId, 
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       (SELECT Id FROM DocumentStates WHERE Code = 'AuthorizationPending' LIMIT 1),
+                       @UserId, NOW()";
+            
+            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
+
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public class TrainingAssessmentResultDto
+{
+    public decimal AverageScore { get; set; }
+    public decimal ParticipationPercentage { get; set; }
+    public int TotalAssigned { get; set; }
+    public int TotalCompleted { get; set; }
+    public List<TrainingUserScoreDto> UserScores { get; set; } = new();
+}
+
+public class TrainingUserScoreDto
+{
+    public string EmployeeName { get; set; } = string.Empty;
+    public string EmployeeCode { get; set; } = string.Empty;
+    public int TrainingStatus { get; set; }
+    public decimal AssessmentScore { get; set; }
+    public string TrainingProofUrl { get; set; } = string.Empty;
 }
