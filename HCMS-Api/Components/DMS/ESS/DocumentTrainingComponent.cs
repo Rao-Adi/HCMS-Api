@@ -502,13 +502,12 @@ public class DocumentTrainingComponent
             
             await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
 
-            // 2. Transition Document State to 'AuthorizationPending' queue for Authorizer
+            // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
             string stateQuery = @"
-                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
+                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
                 SELECT @CompanyId, @DocumentId, 
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       (SELECT Id FROM DocumentStates WHERE Code = 'AuthorizationPending' LIMIT 1),
-                       @UserId, NOW()";
+                       @UserId, NOW(), 'Sent for Authorization'";
             
             await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
 

@@ -1,4 +1,4 @@
-﻿using Dapper;
+﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -2661,5 +2661,268 @@ public class DocumentComponent
         return emplId;
     }
 
+    public async Task<PaginationResult<dynamic>> GetPendingAuthorizationsAsync(GetPendingAuthorization input)
+    {
+        try
+        {
+            // Architecture Note: A document is pending final authorization if it is fully approved,
+            // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      SELECT ds.Code 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                  ) IN ('APPROVED', 'TRAINING_PENDING')
+                  AND (
+                      tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
+                  )";
 
+            // FSD UC-30 Extension: Filter View for SOP vs Other Documents
+            if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
+            {
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP")
+                {
+                    whereClause += " AND UPPER(dt.Code) = 'SOP'";
+                }
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
+                {
+                    whereClause += " AND UPPER(dt.Code) != 'SOP'";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT 
+                    doc.Id AS DocumentId,
+                    doc.DocumentNumber,
+                    doc.Title,
+                    dt.Name AS DocumentType,
+                    dt.Code AS DocumentTypeCode,
+                    dv.Version,
+                    tr.TrainingProofURL,
+                    u.EmployeeName AS Initiator,
+                    doc.CreatedAt
+                FROM Documents doc
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN Users u ON CAST(u.Id AS VARCHAR) = doc.CreatedBy
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM Documents doc 
+                {whereClause};";
+
+            var queryParams = new { CompanyId = input.CompanyId };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
+    public async Task<bool> AuthorizeDocumentPostTrainingAsync(AuthorizeDocumentDto input)
+    {
+        await using var transaction = await _common.BeginTransactionAsync();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(input.Observation))
+                throw new Exception("Observation comment is mandatory for final authorization.");
+
+            // 1. Update Document Effective Date
+            // Depending on policy, you might set a future effective date here, 
+            // but for immediate enforcement, NOW() is used.
+            await _common.ExecuteAsync(@"
+                UPDATE Documents 
+                SET 
+                    EffectiveDate = NOW(), 
+                    LastModifiedAt = NOW(), 
+                    LastModifiedBy = @UserId 
+                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { input.DocumentId, input.CompanyId, input.UserId }, transaction);
+
+            // 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions 
+                SET VersionType = 3, 
+                    IsActive = FALSE 
+                WHERE DocumentId = @DocumentId 
+                  AND VersionType = 2 
+                  AND CompanyId = @CompanyId;",
+                new { input.DocumentId, input.CompanyId }, transaction);
+
+            // 3. Mark the current pending version as Effective
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions 
+                SET VersionType = 2 
+                WHERE DocumentId = @DocumentId 
+                  AND VersionType = 1 
+                  AND CompanyId = @CompanyId;",
+                new { input.DocumentId, input.CompanyId }, transaction);
+
+            // 4. Update Document State History to 'EFFECTIVE'
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                SELECT @CompanyId, @DocumentId, 
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
+                       @UserId, @Observation, NOW();",
+                new { input.CompanyId, input.DocumentId, input.UserId, input.Observation }, transaction);
+
+            await transaction.CommitAsync();
+
+            // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
+            // Assuming RoleId for DCA is known or we look it up. Using a placeholder role fetch mechanism.
+            var dcaUsers = await _common.QueryAsync<int>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { input.CompanyId });
+            
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
+            var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+            
+            foreach (var dcaUser in dcaUsers)
+            {
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, input.CompanyId, input.DocumentId, dcaUser, placeholders);
+            }
+
+            return true;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    public async Task<PaginationResult<dynamic>> GetAuthorizedDocumentsAsync(GetAuthorizedDocumentsDto input)
+    {
+        try
+        {
+            // UC-31: Fetch historical documents where the *current user* was the one 
+            // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND EXISTS (
+                      SELECT 1 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                        AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED')
+                        AND dsh.ChangedBy = @UserId
+                  )";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "DATEOFAUTHORIZATION" => "DateOfAuthorization",
+                "VERSION" => "dv.Version",
+                _ => "DateOfAuthorization"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT 
+                    doc.Id AS DocumentId,
+                    doc.DocumentNumber,
+                    doc.Title,
+                    dt.Name AS DocumentType,
+                    dt.Code AS DocumentTypeCode,
+                    dv.Version,
+                    doc.EffectiveDate,
+                    (SELECT dsh2.ChangedAt 
+                     FROM DocumentStateHistory dsh2 
+                     JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
+                     WHERE dsh2.DocumentId = doc.Id 
+                       AND ds2.Code IN ('EFFECTIVE', 'AUTHORIZED') 
+                       AND dsh2.ChangedBy = @UserId 
+                     ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
+                FROM Documents doc
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM Documents doc 
+                {whereClause};";
+
+            var queryParams = new { CompanyId = input.CompanyId, UserId = input.UserId };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+}
+
+public class AuthorizeDocumentDto
+{
+    public int DocumentId { get; set; }
+    public int CompanyId { get; set; }
+    public string UserId { get; set; }
+    public string Observation { get; set; }
+}
+
+public class GetPendingAuthorization: TableFiltersDto
+{
+    public int CompanyId { get; set; }
+    public string? DocumentCategoryFilter { get; set; }
+}
+
+public class GetAuthorizedDocumentsDto : TableFiltersDto
+{
+    public int CompanyId { get; set; }
+    public string UserId { get; set; }
 }
