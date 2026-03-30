@@ -52,120 +52,139 @@ public class ResponsibilityTransferComponent
             //var prefix = _utilities.GetPrefix(clientIp);
             var userId = "manual"; //_utilities.GetUserid(prefix);
 
-
-            //// Check duplicate by Id OR Name
-            //string checkQuery = $@"
-            //SELECT COUNT(1)
-            //FROM ResponsibilityTransfers
-            //WHERE EmployeeFrom = '{input.EmployeeFrom}' 
-            //  AND IsDeleted = FALSE";
-
-            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            //if (exists > 0)
-            //    throw new CustomException("ResponsibilityTransfers already exists", 200);
-
-            if (input.Attachment == null || input.Attachment.Length == 0)
-                throw new CustomException("Document file is required", 400);
-
-            // 2️⃣ Prepare upload path
-            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
-
-            if (!Directory.Exists(uploadsRoot))
-                Directory.CreateDirectory(uploadsRoot);
-
-            // 3️⃣ Create unique filename
-            var fileExtension = Path.GetExtension(input.Attachment.FileName);
-            var fileName = $"{input.Attachment.FileName}.{fileExtension}";
-            var filePath = Path.Combine(uploadsRoot, fileName);
-
-            // 4️⃣ Save file to disk
-            using (var stream = new FileStream(filePath, FileMode.Create))
+            // FSD UC-16 Validation: Remarks are mandatory.
+            if (string.IsNullOrWhiteSpace(input.Remarks))
             {
-                await input.Attachment.CopyToAsync(stream);
+                throw new CustomException("Remarks field is mandatory.", 400);
             }
 
-            // 5️⃣ Generate URL (adjust domain if needed)
-            var documentUrl = $"/uploads/documents/{fileName}";
+            // UC-16 Business Rule: Cannot transfer responsibilities to self.
+            if (!string.IsNullOrWhiteSpace(input.EmployeeFrom) && input.EmployeeFrom.Equals(input.EmployeeTo, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new CustomException("Cannot transfer responsibilities to self.", 400);
+            }
 
-            // Insert (PostgreSQL syntax)
-            string insertQuery = $@"
+            // FSD UC-16 Post-condition: Route to Division Head for approval.
+            var empDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT DivisionCode 
+                FROM Users 
+                WHERE EmployeeCode = @EmpCode AND IsDeleted = FALSE", new { EmpCode = input.EmployeeFrom });
+            
+            if (empDetails == null || string.IsNullOrWhiteSpace(empDetails.divisioncode))
+            {
+                throw new CustomException("Cannot determine the division for the 'Employee From'.", 400);
+            }
+
+            // Route to Division Head via TransferWorkflowPolicies
+            var policy = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT ApprovalUserId 
+                FROM TransferWorkflowPolicies 
+                WHERE DivisionCode = @DivCode AND IsActive = TRUE AND IsDeleted = FALSE", new { DivCode = empDetails?.divisioncode });
+
+            int approverId = policy?.approvaluserid ?? 0;
+            if (approverId == 0)
+                throw new CustomException("Approval routing policy not found for the user's division.", 400);
+
+            // Attachment handling
+            string? documentUrl = null;
+            if (input.Attachment != null && input.Attachment.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "responsibility-transfers");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileExtension = Path.GetExtension(input.Attachment.FileName);
+                var fileName = $"{Guid.NewGuid()}{fileExtension}"; // Unique filename
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await input.Attachment.CopyToAsync(stream);
+                }
+                documentUrl = $"/uploads/responsibility-transfers/{fileName}";
+            }
+
+            // FSD UC-16 Extension: Handle Permanent Transfer
+            DateTime? effectiveDateTo = input.EffectiveDateTo;
+            if (input.PermanentTransfer)
+            {
+                effectiveDateTo = null;
+            }
+
+            // Parameterized INSERT query to prevent SQL Injection
+            string insertQuery = @"
             INSERT INTO ResponsibilityTransfers
-            (   CompanyId,
-                EmployeeFrom,
-                EmployeeTo,
-                ReasonForTransfer,
-                EffectiveDateFrom,
-                EffectiveDateTo,
-                PermanentTransfer,
-                Attachment,
-                Remarks,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
+            (   CompanyId, EmployeeFrom, EmployeeTo, ReasonForTransfer, EffectiveDateFrom, 
+                EffectiveDateTo, PermanentTransfer, Attachment, Remarks, Status, 
+                ApproverId, IsActive, IsDeleted, CreatedAt, CreatedBy, 
+                LastModifiedAt, LastModifiedBy
             )
             VALUES
-            (
-                '{input.CompanyId}',
-                '{input.EmployeeFrom}',
-                '{input.EmployeeTo}',
-                '{input.ReasonForTransfer}',
-                '{input.EffectiveDateFrom}',
-                '{input.EffectiveDateTo}', 
-                '{input.PermanentTransfer}', 
-                '{documentUrl}', 
-                '{input.Remarks}', 
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
+            (   @CompanyId, @EmployeeFrom, @EmployeeTo, @ReasonForTransfer, @EffectiveDateFrom, 
+                @EffectiveDateTo, @PermanentTransfer, @Attachment, @Remarks, 1, 
+                @ApproverId, TRUE, FALSE, NOW(), @UserId, 
+                NOW(), @UserId
             )
             RETURNING Id;";
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            var insertParams = new
+            {
+                input.CompanyId,
+                input.EmployeeFrom,
+                input.EmployeeTo,
+                input.ReasonForTransfer,
+                input.EffectiveDateFrom,
+                EffectiveDateTo = effectiveDateTo,
+                input.PermanentTransfer,
+                Attachment = documentUrl,
+                input.Remarks,
+                ApproverId = approverId,
+                UserId = userId
+            };
 
-            // Fetch inserted record
-            string selectQuery = $@"
-            SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, insertParams);
+
+            // Parameterized SELECT query
+            string selectQuery = @"
+            SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
             FROM ResponsibilityTransfers rt
             LEFT JOIN Companies c
             ON rt.CompanyId = c.Id
-            WHERE rt.Id = {newId}";
+            LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
+            LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
+            WHERE rt.Id = @Id";
 
-            DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
+            var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
 
-            if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+            if (newRecord == null)
+                throw new Exception("Failed to fetch created responsibility transfer request.");
 
-            DataRow row = dt.Rows[0];
-
+            // Map dynamic object to DTO
             return new ResponsibilityTransferReadDto
             {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                EmployeeFrom = row.Field<string>("EmployeeFrom"),
-                EmployeeTo = row.Field<string>("EmployeeTo"),
-                ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
-                EffectiveDateFrom = row.Field<DateOnly>("EffectiveDateFrom")
-                           .ToDateTime(TimeOnly.MinValue),
-
-                EffectiveDateTo = row.Field<DateOnly>("EffectiveDateTo")
-                         .ToDateTime(TimeOnly.MinValue),
-                PermanentTransfer = row.Field<bool>("PermanentTransfer"),
-                Attachment = row.Field<string>("Attachment"),
-                Remarks = row.Field<string>("Remarks"), 
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                Id = newRecord.id,
+                CompanyId = newRecord.companyid,
+                Company = newRecord.company,
+                EmployeeFrom = newRecord.employeefrom,
+                EmployeeTo = newRecord.employeeto,
+                EmployeeFromName = newRecord.employeefromname,
+                EmployeeToName = newRecord.employeetoname,
+                ReasonForTransfer = newRecord.reasonfortransfer,
+                EffectiveDateFrom = newRecord.effectivedatefrom,
+                EffectiveDateTo = newRecord.effectivedateto,
+                PermanentTransfer = newRecord.permanenttransfer,
+                Attachment = newRecord.attachment,
+                Remarks = newRecord.remarks,
+                Status = newRecord.status,
+                ApproverId = newRecord.approverid,
+                Observation = newRecord.observation,
+                ActionDate = newRecord.actiondate,
+                IsDeleted = newRecord.isdeleted,
+                IsActive = newRecord.isactive,
+                CreatedAt = newRecord.createdat.ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = newRecord.createdby,
+                LastModifiedAt = newRecord.lastmodifiedat.ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = newRecord.lastmodifiedby
             };
         }
         catch
@@ -278,11 +297,19 @@ public class ResponsibilityTransferComponent
                     EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
                     EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
                     ReasonForTransfer = row.Table.Columns.Contains("ReasonForTransfer") ? row.Field<string>("ReasonForTransfer") : string.Empty,
-                    EffectiveDateFrom = row.Table.Columns.Contains("EffectiveDateFrom") ? row.Field<DateTime>("EffectiveDateFrom") : DateTime.Now,
-                    EffectiveDateTo = row.Table.Columns.Contains("EffectiveDateTo") ? row.Field<DateTime>("EffectiveDateTo") : DateTime.Now,
+                    EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
+                    EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
                     PermanentTransfer = row.Table.Columns.Contains("PermanentTransfer") ? row.Field<bool>("PermanentTransfer") : false,
                     Attachment = row.Table.Columns.Contains("Attachment") ? row.Field<string>("Attachment") : string.Empty,
                     Remarks = row.Table.Columns.Contains("Remarks") ? row.Field<string>("Remarks") : string.Empty, 
+                    Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                    ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
+                    Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
+                    ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -340,11 +367,19 @@ public class ResponsibilityTransferComponent
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
-                EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
-                EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
+                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
+                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
                 PermanentTransfer = row.Field<bool>("PermanentTransfer"),
                 Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
+                Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
+                Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
+                ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -427,11 +462,19 @@ public class ResponsibilityTransferComponent
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
-                EffectiveDateFrom = row.Field<DateTime>("EffectiveDateFrom"),
-                EffectiveDateTo = row.Field<DateTime>("EffectiveDateTo"),
+                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
+                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                                     : DateTime.Now,
                 PermanentTransfer = row.Field<bool>("PermanentTransfer"),
                 Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
+                Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
+                Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
+                ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -446,4 +489,138 @@ public class ResponsibilityTransferComponent
         }
     }
 
+    public async Task<PaginationResult<dynamic>> GetMyApprovalsAsync(GetTransferApprovalsDto input)
+    {
+        try
+        {
+            var whereClause = @"
+                WHERE rt.IsDeleted = FALSE 
+                  AND rt.ApproverId = @ApproverId 
+                  AND rt.Status = @Status";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(rt.EmployeeFrom) LIKE '%{search}%'
+                    OR UPPER(rt.EmployeeTo) LIKE '%{search}%'
+                    OR UPPER(rt.ReasonForTransfer) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "EMPLOYEEFROM" => "rt.EmployeeFrom",
+                "ACTIONDATE" => "rt.ActionDate",
+                "CREATEDAT" => "rt.CreatedAt",
+                _ => "rt.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN Companies c ON rt.CompanyId = c.Id
+                LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
+                LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM ResponsibilityTransfers rt
+                {whereClause};";
+
+            var queryParams = new { ApproverId = int.Parse(input.UserId), Status = input.Status };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<bool> TakeActionAsync(ResponsibilityTransferActionDto input)
+    {
+        await using var tx = await _common.BeginTransactionAsync();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(input.Observation))
+                throw new CustomException("Observation is required to submit action.", 400);
+
+            int newStatus = input.Action.ToUpper() switch
+            {
+                "APPROVE" => 2,
+                "REJECT" => 3,
+                "REVERT" => 4,
+                _ => throw new CustomException("Invalid action specified.", 400)
+            };
+
+            var transfer = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT EmployeeFrom, EmployeeTo, Status FROM ResponsibilityTransfers WHERE Id = @Id FOR UPDATE;", 
+                new { Id = input.TransferId }, tx);
+
+            if (transfer == null) throw new CustomException("Transfer request not found.", 404);
+            if (transfer.status != 1) throw new CustomException("This request has already been processed.", 400);
+
+            await _common.ExecuteAsync(@"
+                UPDATE ResponsibilityTransfers
+                SET Status = @Status,
+                    Observation = @Observation,
+                    ActionDate = NOW(),
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @UserId
+                WHERE Id = @Id;", 
+                new { Status = newStatus, input.Observation, input.UserId, Id = input.TransferId }, tx);
+
+            // UC-17: Workflow Transfer Logic
+            if (newStatus == 2)
+            {
+                var empFromId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM Users WHERE EmployeeCode = @Code", new { Code = transfer.employeefrom }, tx);
+                var empToId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM Users WHERE EmployeeCode = @Code", new { Code = transfer.employeeto }, tx);
+
+                await _common.ExecuteAsync(@"
+                    UPDATE WorkflowExecutionSteps
+                    SET AssignedUserId = @EmpToId
+                    WHERE AssignedUserId = @EmpFromId
+                    AND Decision IS NULL
+                    AND IsActive = TRUE;",
+                    new { EmpToId = empToId, EmpFromId = empFromId }, tx);
+            }
+
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public class ResponsibilityTransferActionDto
+{
+    public int TransferId { get; set; }
+    public string Action { get; set; } // "APPROVE", "REJECT", "REVERT"
+    public string Observation { get; set; }
+    public string UserId { get; set; }
+}
+
+public class GetTransferApprovalsDto : TableFiltersDto
+{
+    public int Status { get; set; } // 1=Pending, 2=Approved, 3=Rejected
+    public string UserId { get; set; }
 }
