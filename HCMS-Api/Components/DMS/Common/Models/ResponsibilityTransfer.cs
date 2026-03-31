@@ -47,7 +47,7 @@ public class ResponsibilityTransferReadDto : AuditableEntity
     public string Attachment { get; set; }
     public string Remarks { get; set; }
 
-    public string Status { get; set; }
+    public int Status { get; set; }
     public int ApproverId { get; set; }
     public string Observation { get; set; }
     public string? ActionDate { get; set; } 

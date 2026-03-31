@@ -238,7 +238,7 @@ public class TransferScopePolicyComponent
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM TransferScopePolicies
+                        FROM TransferScopePolicies t
                         {whereClause};
                     ";
 

@@ -83,7 +83,21 @@ public class ResponsibilityTransferComponent
 
             int approverId = policy?.approvaluserid ?? 0;
             if (approverId == 0)
-                throw new CustomException("Approval routing policy not found for the user's division.", 400);
+            {
+                // UC-18 Default Routing: Automatically route to default generic Division Head role
+                var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
+                    SELECT u.Id 
+                    FROM Users u
+                    JOIN UserRoles ur ON u.Id = ur.UserId
+                    JOIN Roles r ON ur.RoleId = r.Id
+                    WHERE u.DivisionCode = @DivCode AND r.Name = 'Division Head' AND u.IsDeleted = FALSE AND u.IsActive = TRUE LIMIT 1", 
+                    new { DivCode = empDetails?.divisioncode });
+
+                approverId = defaultDivHead ?? 0;
+
+                if (approverId == 0)
+                    throw new CustomException("Approval routing policy not found, and no default Division Head could be identified.", 400);
+            }
 
             // Attachment handling
             string? documentUrl = null;
@@ -116,8 +130,8 @@ public class ResponsibilityTransferComponent
             INSERT INTO ResponsibilityTransfers
             (   CompanyId, EmployeeFrom, EmployeeTo, ReasonForTransfer, EffectiveDateFrom, 
                 EffectiveDateTo, PermanentTransfer, Attachment, Remarks, Status, 
-                ApproverId, IsActive, IsDeleted, CreatedAt, CreatedBy, 
-                LastModifiedAt, LastModifiedBy
+                ApproverId, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, 
+                LastModifiedBy
             )
             VALUES
             (   @CompanyId, @EmployeeFrom, @EmployeeTo, @ReasonForTransfer, @EffectiveDateFrom, 
@@ -171,8 +185,8 @@ public class ResponsibilityTransferComponent
                 EmployeeToName = newRecord.employeetoname,
                 ReasonForTransfer = newRecord.reasonfortransfer,
                 EffectiveDateFrom = newRecord.effectivedatefrom,
-                EffectiveDateTo = newRecord.effectivedateto,
-                PermanentTransfer = newRecord.permanenttransfer,
+                EffectiveDateTo = newRecord.effectivedateto ?? null, // Handle nullable DateOnly
+                PermanentTransfer = newRecord.permanenttransfer ?? false, // Handle nullable bool
                 Attachment = newRecord.attachment,
                 Remarks = newRecord.remarks,
                 Status = newRecord.status,
@@ -297,16 +311,16 @@ public class ResponsibilityTransferComponent
                     EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
                     EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
                     ReasonForTransfer = row.Table.Columns.Contains("ReasonForTransfer") ? row.Field<string>("ReasonForTransfer") : string.Empty,
-                    EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
-                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
-                                     : DateTime.Now,
-                    EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
-                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                    EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
+                                     : DateTime.MinValue, // Default to min value, or handle as nullable DateTime?
+                    EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
                                      : DateTime.Now,
                     PermanentTransfer = row.Table.Columns.Contains("PermanentTransfer") ? row.Field<bool>("PermanentTransfer") : false,
                     Attachment = row.Table.Columns.Contains("Attachment") ? row.Field<string>("Attachment") : string.Empty,
                     Remarks = row.Table.Columns.Contains("Remarks") ? row.Field<string>("Remarks") : string.Empty, 
-                    Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                    Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                     ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
                     Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
                     ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
@@ -367,16 +381,16 @@ public class ResponsibilityTransferComponent
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
-                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
-                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
-                                     : DateTime.Now,
-                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
-                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
+                                     : DateTime.MinValue,
+                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
                                      : DateTime.Now,
                 PermanentTransfer = row.Field<bool>("PermanentTransfer"),
                 Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
-                Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
                 Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
                 ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
@@ -422,17 +436,24 @@ public class ResponsibilityTransferComponent
             UPDATE ResponsibilityTransfers
             SET 
                 EmployeeFrom = '{input.EmployeeFrom}',
-                EmployeeTo = '{input.EmployeeTo}',
-                ReasonForTransfer = '{input.ReasonForTransfer}',
-                EffectiveDateFrom = '{input.EffectiveDateFrom}',
-                EffectiveDateTo = '{input.EffectiveDateTo}',
-                PermanentTransfer = '{input.PermanentTransfer}',
-                Attachment = '{input.Attachment}',
-                Remarks = '{input.Remarks}', 
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                EmployeeTo = @EmployeeTo,
+                ReasonForTransfer = @ReasonForTransfer,
+                EffectiveDateFrom = @EffectiveDateFrom,
+                EffectiveDateTo = @EffectiveDateTo,
+                PermanentTransfer = @PermanentTransfer,
+                Attachment = @Attachment,
+                Remarks = @Remarks, 
+                IsActive = @IsActive,
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = @Id";
+
+            var updateParams = new
+            {
+                input.EmployeeFrom, input.EmployeeTo, input.ReasonForTransfer, input.EffectiveDateFrom,
+                input.EffectiveDateTo, input.PermanentTransfer, input.Attachment, input.Remarks,
+                IsActive = input.IsActive, Id = input.Id
+            };
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -462,16 +483,16 @@ public class ResponsibilityTransferComponent
                 EmployeeFrom = row.Field<string>("EmployeeFrom"),
                 EmployeeTo = row.Field<string>("EmployeeTo"),
                 ReasonForTransfer = row.Field<string>("ReasonForTransfer"),
-                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom"))
-                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue)
-                                     : DateTime.Now,
-                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo"))
-                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue)
+                EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
+                                     : DateTime.MinValue,
+                EffectiveDateTo = (row.Table.Columns.Contains("EffectiveDateTo") && !row.IsNull("EffectiveDateTo")) // Assuming DB column is DATE
+                                     ? row.Field<DateOnly>("EffectiveDateTo").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
                                      : DateTime.Now,
                 PermanentTransfer = row.Field<bool>("PermanentTransfer"),
                 Attachment = row.Field<string>("Attachment"),
                 Remarks = row.Field<string>("Remarks"),
-                Status = row.Table.Columns.Contains("Status") ? row.Field<string>("Status") : string.Empty,
+                Status = row.Table.Columns.Contains("Status") ? row.Field<int>("Status") : 0,
                 ApproverId = row.Table.Columns.Contains("ApproverId") ? row.Field<int>("ApproverId") : 0,
                 Observation = row.Table.Columns.Contains("Observation") ? row.Field<string>("Observation") : string.Empty,
                 ActionDate = row.Table.Columns.Contains("ActionDate") && !row.IsNull("ActionDate") ? row.Field<string>("ActionDate") : null,
