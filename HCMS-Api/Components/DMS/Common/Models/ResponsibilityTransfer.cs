@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HCMS_Api.Common.Misc;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
@@ -95,4 +96,9 @@ public class ResponsibilityTransferUpdateDto
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 
+}
+
+public class GetResponsibilityTransferByStatusDto :TableFiltersDto
+{
+    public int StatusId { get; set; }
 }

@@ -2712,7 +2712,7 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT 
+                SELECT
                     doc.Id AS DocumentId,
                     doc.DocumentNumber,
                     doc.Title,
@@ -2721,8 +2721,20 @@ public class DocumentComponent
                     dv.Version,
                     tr.TrainingProofURL,
                     u.EmployeeName AS Initiator,
-                    doc.CreatedAt
-                FROM Documents doc
+                    doc.CreatedAt, div.Name AS DivisionName,
+                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain
+
+                FROM Documents doc 
+                        LEFT JOIN Divisions div
+                        ON doc.DivisionCode = div.Code
+                        LEFT JOIN Departments dep
+                        ON doc.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd
+                        ON doc.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd
+                        ON doc.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c
+                        ON doc.CompanyId = c.Id
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
@@ -2734,6 +2746,7 @@ public class DocumentComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM Documents doc 
+                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
             var queryParams = new { CompanyId = input.CompanyId };

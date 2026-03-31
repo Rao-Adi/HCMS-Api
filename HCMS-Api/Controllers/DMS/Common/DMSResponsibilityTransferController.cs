@@ -32,7 +32,7 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPost("get-all-responsibility-transfer")]
-    public async Task<IActionResult> GetAllResponsibilityTransfer(TableFiltersDto input)
+    public async Task<IActionResult> GetAllResponsibilityTransfer(GetResponsibilityTransferByStatusDto input)
     {
         try
         {

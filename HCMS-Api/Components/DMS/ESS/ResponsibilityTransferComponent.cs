@@ -239,7 +239,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<PaginationResult<ResponsibilityTransferReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<ResponsibilityTransferReadDto>> GetAllAsync(GetResponsibilityTransferByStatusDto input)
     {
         try
         {
@@ -247,14 +247,17 @@ public class ResponsibilityTransferComponent
                 WHERE rt.IsDeleted = False 
                   AND rt.IsActive = " + (input.IsActive ? "True" : "False");
 
+            // Add status filter
+            whereClause += $" AND rt.Status = {input.StatusId}";
+
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(rt.Name) LIKE '%{search}%'
-                    OR UPPER(rt.Id) LIKE '%{search}%'
+                    UPPER(rt.EmployeeFrom) LIKE '%{search}%'
+                    OR UPPER(rt.EmployeeTo) LIKE '%{search}%'
                 )";
             }
 
@@ -276,10 +279,12 @@ public class ResponsibilityTransferComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                         SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
+                         SELECT rt.*, c.Id AS CompanyId, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                             FROM ResponsibilityTransfers rt
                             LEFT JOIN Companies c
                             ON rt.CompanyId = c.Id
+                            LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
+                            LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -310,6 +315,8 @@ public class ResponsibilityTransferComponent
                     Company = row.Field<string>("Company"),
                     EmployeeFrom = row.Table.Columns.Contains("EmployeeFrom") ? row.Field<string>("EmployeeFrom") : string.Empty,
                     EmployeeTo = row.Table.Columns.Contains("EmployeeTo") ? row.Field<string>("EmployeeTo") : string.Empty,
+                    EmployeeFromName = row.Table.Columns.Contains("EmployeeFromName") ? row.Field<string>("EmployeeFromName") : string.Empty,
+                    EmployeeToName = row.Table.Columns.Contains("EmployeeToName") ? row.Field<string>("EmployeeToName") : string.Empty,
                     ReasonForTransfer = row.Table.Columns.Contains("ReasonForTransfer") ? row.Field<string>("ReasonForTransfer") : string.Empty,
                     EffectiveDateFrom = (row.Table.Columns.Contains("EffectiveDateFrom") && !row.IsNull("EffectiveDateFrom")) // Assuming DB column is DATE
                                      ? row.Field<DateOnly>("EffectiveDateFrom").ToDateTime(TimeOnly.MinValue) // Convert DateOnly to DateTime
@@ -643,5 +650,5 @@ public class ResponsibilityTransferActionDto
 public class GetTransferApprovalsDto : TableFiltersDto
 {
     public int Status { get; set; } // 1=Pending, 2=Approved, 3=Rejected
-    public string UserId { get; set; }
+    public string? UserId { get; set; }
 }
