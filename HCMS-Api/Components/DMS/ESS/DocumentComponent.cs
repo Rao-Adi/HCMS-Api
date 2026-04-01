@@ -54,118 +54,113 @@ public class DocumentComponent
 
     public async Task<DocumentReadDto> CreateAsync(DocumentCreateDto input)
     {
+        // UC-32: Next Review Date is a mandatory field
+        if (input.NextReviewDate == default || input.NextReviewDate.Year < 2000)
+            throw new CustomException("A valid Next Review Date is mandatory.", 400);
+
+        // UC-32: Document Number should be provided for Legacy Documents
+        if (string.IsNullOrWhiteSpace(input.DocumentNumber))
+            throw new CustomException("Document Number is required for legacy document upload.", 400);
+
+        if (input.DocumentFile == null || input.DocumentFile.Length == 0)
+            throw new CustomException("Document file is required.", 400);
+
+        // 1️⃣ Extract userId
+        //var clientIp = _clientContextService.GetClientIP();
+        //var prefix = _utilities.GetPrefix(clientIp);
+        var userId = "manual"; //_utilities.GetUserid(prefix);
+
+        // 2️⃣ Prepare upload path
+        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+        if (!Directory.Exists(uploadsRoot))
+            Directory.CreateDirectory(uploadsRoot);
+
+        // 3️⃣ Create unique filename
+        var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
+        var fileName = $"{Guid.NewGuid()}{fileExtension}"; 
+        var filePath = Path.Combine(uploadsRoot, fileName);
+
+        // 4️⃣ Save file to disk
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await input.DocumentFile.CopyToAsync(stream);
+        }
+
+        // 5️⃣ Generate URL
+        var documentUrl = $"/uploads/documents/{fileName}";
+
+        await using var tx = await _common.BeginTransactionAsync();
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            // Check duplicate by DocumentNumber OR Title
+            string checkDuplicateQuery = @"
+                SELECT COUNT(1)
+                FROM Documents
+                WHERE (Title = @Title OR DocumentNumber = @DocumentNumber)
+                  AND IsDeleted = FALSE";
 
-
-            if (input.DocumentFile == null || input.DocumentFile.Length == 0)
-                throw new CustomException("Document file is required", 400);
-
-            // 2️⃣ Prepare upload path
-            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
-
-            if (!Directory.Exists(uploadsRoot))
-                Directory.CreateDirectory(uploadsRoot);
-
-            // 3️⃣ Create unique filename
-            var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
-            var fileName = $"{fileExtension}";
-            var filePath = Path.Combine(uploadsRoot, fileName);
-
-            // 4️⃣ Save file to disk
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await input.DocumentFile.CopyToAsync(stream);
-            }
-
-            // 5️⃣ Generate URL (adjust domain if needed)
-            var documentUrl = $"/uploads/documents/{fileName}";
-
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Documents
-            WHERE Title = '{input.Title}' 
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            int exists = await _common.ExecuteScalarAsync<int>(checkDuplicateQuery, new { input.Title, input.DocumentNumber }, tx);
 
             if (exists > 0)
-                throw new CustomException("Documents already exists", 409);
+                throw new CustomException("Document Title or Document Number already exists.", 409);
 
-            string getLastCodeQuery = @"
-                SELECT DocumentNumber
-                FROM Documents
-                WHERE DocumentNumber IS NOT NULL
-                ORDER BY Id DESC
-                LIMIT 1";
+            // Insert Document
+            string insertQuery = @"
+                INSERT INTO Documents
+                (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                    SubDepartmentCode, BusinessDomainCode, Title, NextReviewdate, DocumentURL, EffectiveDate,
+                    IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                )
+                VALUES
+                (
+                    @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
+                    @SubDepartmentCode, @BusinessDomainCode, @Title, @NextReviewDate, @DocumentUrl, NOW(),
+                    TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                )
+                RETURNING Id;";
 
-            var lastCodeObj = _common.ExecuteScalarQuery(getLastCodeQuery);
-
-            int nextNumber = 1;
-
-            if (lastCodeObj != null)
+            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
             {
-                var lastCode = lastCodeObj.ToString(); // e.g. DIV-0012
-                var numericPart = lastCode.Replace("DOC-", "");
+                input.CompanyId,
+                input.DocumentNumber,
+                input.DocumentTypeCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.Title,
+                input.NextReviewDate,
+                DocumentUrl = documentUrl,
+                UserId = userId
+            }, tx);
 
-                if (int.TryParse(numericPart, out int lastNumber))
-                    nextNumber = lastNumber + 1;
-            }
+            // UC-32: Active Archival - Insert initial effective version
+            string versionQuery = @"
+                INSERT INTO DocumentVersions
+                (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
+                VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());"; // VersionType 2 = Effective
+            
+            await _common.ExecuteAsync(versionQuery, new 
+            { 
+                input.CompanyId, 
+                DocumentId = newId, 
+                Version = string.IsNullOrWhiteSpace(input.Version) ? "1.0" : input.Version, 
+                UserId = userId 
+            }, tx);
 
-            string generatedCode = $"DOC-{nextNumber:D4}";
+            // UC-32: Active Archival - Insert State History (State 4 = EFFECTIVE)
+            string stateQuery = @"
+                INSERT INTO DocumentStateHistory
+                (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
+                VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded', NOW());";
+            
+            await _common.ExecuteAsync(stateQuery, new { input.CompanyId, DocumentId = newId, UserId = userId }, tx);
 
-            // Insert (PostgreSQL syntax)
-            string insertQuery = $@"
-            INSERT INTO Documents
-            (   CompanyId,
-                DocumentNumber,
-                DocumentTypeCode,
-                DivisionCode,
-                DepartmentCode,
-                SubDepartmentCode,
-                BusinessDomainCode,
-                Title,
-                Version, 
-                NextReviewdate, 
-                DocumentURL,
-                IsActive,
-                IsDeleted,
-                CreatedAt,
-                CreatedBy,
-                LastModifiedAt,
-                LastModifiedBy
-            )
-            VALUES
-            (
-                '{input.CompanyId}',
-                '{generatedCode}',
-                '{input.DocumentTypeCode}',
-                '{input.DivisionCode}',
-                '{input.DepartmentCode}',
-                '{input.SubDepartmentCode}', 
-                '{input.BusinessDomainCode}', 
-                '{input.Title}', 
-                '{input.Version}',  
-                '{input.NextReviewDate:yyyy-MM-dd}', 
-                '{documentUrl}',
-                TRUE,
-                FALSE,
-                NOW(),
-                '{userId.Replace("'", "''")}',
-                NOW(),
-                '{userId.Replace("'", "''")}'
-            )
-            RETURNING Id;";
-
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
+            await tx.CommitAsync();
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
+            SELECT doc.*, dt.Name AS DocumentTypeName, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
                         c.Id AS CompanyId, c.Name AS Company
                         FROM Documents doc
@@ -186,7 +181,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new Exception("Failed to fetch created document");
 
             DataRow row = dt.Rows[0];
 
@@ -211,8 +206,11 @@ public class DocumentComponent
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
                 Title = row.Field<string>("Title"),
-                Version = row.Field<string>("Version"),
-                NextReviewDate = row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss"),
+                Version = row.Table.Columns.Contains("Version") && !row.IsNull("Version") ? row.Field<string>("Version") : string.Empty,
+                
+                NextReviewDate = row.Table.Columns.Contains("NextReviewdate") && !row.IsNull("NextReviewdate") 
+                    ? row.Field<DateTime>("NextReviewdate").ToString("yyyy-MM-dd HH:mm:ss") 
+                    : (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate") ? row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -224,6 +222,7 @@ public class DocumentComponent
         }
         catch
         {
+            await tx.RollbackAsync();
             throw;
         }
     }

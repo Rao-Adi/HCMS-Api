@@ -49,9 +49,9 @@ public class WorkflowPolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix); 
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix); 
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
