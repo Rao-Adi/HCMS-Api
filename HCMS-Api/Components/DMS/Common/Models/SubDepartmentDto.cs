@@ -41,9 +41,7 @@ public class SubDepartment
 
 
 public class SubDepartmentCreateDto
-{
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+{ 
 
     public string DepartmentCode { get; set; }
 
@@ -51,9 +49,7 @@ public class SubDepartmentCreateDto
 }
 
 public class SubDepartmentUpdateDto
-{
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+{ 
 
     public string Code { get; set; }
     public string Name { get; set; }
@@ -68,7 +64,7 @@ public class SubDepartmentReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string Code { get; set; }

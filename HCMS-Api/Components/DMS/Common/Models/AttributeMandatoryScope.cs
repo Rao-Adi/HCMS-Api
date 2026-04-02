@@ -30,9 +30,7 @@ public class AttributeMandatoryScope : AuditableEntity
 
 public class AttributeMandatoryScopeCreateDto
 {
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+     
     public int DocumentAttributeId { get; set; }
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -45,10 +43,7 @@ public class AttributeMandatoryScopeCreateDto
 
 public class AttributeMandatoryScopeUpdateDto
 {
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int Id { get; set; } 
 
     public int DocumentAttributeId { get; set; }
     public string? DivisionCode { get; set; }

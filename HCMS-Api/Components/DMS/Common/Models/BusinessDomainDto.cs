@@ -6,9 +6,7 @@ public class BusinessDomainDto
 
 
 public class BusinessDomainCreateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{ 
 
     public string Code { get; set; }
 
@@ -17,11 +15,7 @@ public class BusinessDomainCreateDto
 }
 
 public class BusinessDomainUpdateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
-    public string Company { get; set; } = null!;
-
+{ 
     public string Code { get; set; }
     public string Name { get; set; }
 

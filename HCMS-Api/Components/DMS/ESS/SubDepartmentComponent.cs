@@ -48,6 +48,7 @@ public class SubDepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -128,7 +129,7 @@ public class SubDepartmentComponent
                         )
                         VALUES
                         (
-                            '{input.CompanyId}',
+                            '{CompanyId}',
                             '{generatedCode}',
                             '{input.Name.Replace("'", "''")}',
                             '{input.DepartmentCode.Replace("'", "''")}',
@@ -191,6 +192,7 @@ public class SubDepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -457,6 +459,7 @@ public class SubDepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);

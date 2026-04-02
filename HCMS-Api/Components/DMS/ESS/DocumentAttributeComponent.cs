@@ -48,13 +48,12 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
 
-            if (input.Id < 0)
-                throw new CustomException("DocumentAttribute Id is required.", 400);
-
+             
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
@@ -85,7 +84,7 @@ public class DocumentAttributeComponent
             )
             VALUES
             (
-                {input.CompanyId},
+                {CompanyId},
                 '{input.DocumentTypeCode}',
                 '{input.ControlLabel.Trim()}',
                 '{input.ControlTypeId}',
@@ -155,10 +154,11 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
-
             var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -563,6 +563,7 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);

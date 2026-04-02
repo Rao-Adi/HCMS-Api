@@ -35,9 +35,7 @@ public class TrainingPolicyReadDto : AuditableEntity
 }
 
 public class TrainingPolicyCreateDto
-{
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+{ 
     public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }
     public int? MinimumScore { get; set; }
@@ -47,9 +45,7 @@ public class TrainingPolicyCreateDto
 public class TrainingPolicyUpdateDto
 { 
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+     
 
     public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }

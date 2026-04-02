@@ -59,9 +59,7 @@ public class UserAccessLevelReadDto : AuditableEntity
 public class UserAccessLevelCreateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
+     
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
@@ -80,10 +78,7 @@ public class UserAccessLevelCreateDto
 public class UserAccessLevelUpdateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
-
+     
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;
      

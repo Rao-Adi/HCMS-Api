@@ -449,10 +449,15 @@ public class DocumentTrainingComponent
         }
     }
 
-    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId, int companyId)
+    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId)
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             string query = @"
                 SELECT 
                     u.EmployeeName,
@@ -466,7 +471,7 @@ public class DocumentTrainingComponent
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
 
-            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = companyId })).ToList();
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId })).ToList();
 
             var totalAssigned = userScores.Count;
             var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed
@@ -488,15 +493,16 @@ public class DocumentTrainingComponent
         }
     }
 
-    public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId, int companyId, string clientIp)
-    { 
+    public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId)
+    {
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
+        var userId = _utilities.GetUserid(prefix);
+
         await using var tx = await _common.BeginTransactionAsync();
         try
-        {
-            var user = _utilities.GetCurrentUserMap(clientIp);
-            var userId = user.UserID;
+        { 
 
             // 1. Mark Document Training as Acknowledged / Ready
             string updateQuery = @"
@@ -509,7 +515,7 @@ public class DocumentTrainingComponent
                   AND CompanyId = @CompanyId
                   AND IsDeleted = FALSE";
             
-            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
+            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = userId }, tx);
 
             // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
             string stateQuery = @"
@@ -518,7 +524,7 @@ public class DocumentTrainingComponent
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
                        @UserId, NOW(), 'Sent for Authorization'";
             
-            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = companyId, UserId = userId }, tx);
+            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = userId }, tx);
 
             await tx.CommitAsync();
             return true;

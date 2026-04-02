@@ -48,18 +48,16 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            //if (input.Id > 0)
-            //    throw new CustomException("CabinetStructureTabsConfig code is required.", 200);
 
             // Check duplicate by ID OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM CabinetStructureTabsConfig
-            WHERE (ID = '{input.Id}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
+            WHERE Name = '{input.Name.Replace("'", "''")}')
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -82,7 +80,7 @@ public class CabinetStructureTabsConfigComponent
             )
             VALUES
             ( 
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
                 FALSE,
@@ -135,6 +133,7 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -336,12 +335,14 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+
             int finalId;
             // 1️ Check existence ONLY if Id > 0
-            int exists=0;
+            int exists = 0;
 
             if (input.Id > 0)
             {
@@ -369,7 +370,7 @@ public class CabinetStructureTabsConfigComponent
                         )
                         VALUES
                         ( 
-                            '{input.CompanyId}',
+                            '{CompanyId}',
                             '{input.Name.Replace("'", "''")}',
                             TRUE,
                             FALSE,

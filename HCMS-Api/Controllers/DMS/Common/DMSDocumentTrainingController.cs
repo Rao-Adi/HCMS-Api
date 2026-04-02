@@ -207,15 +207,15 @@ public class DMSDocumentTrainingController : Controller
         }
     }
 
-    [HttpGet("get-training-assessment-details/{documentId}/{companyId}")]
-    public async Task<IActionResult> GetTrainingAssessmentDetails(int documentId, int companyId)
+    [HttpGet("get-training-assessment-details/{documentId}")]
+    public async Task<IActionResult> GetTrainingAssessmentDetails(int documentId)
     {
         try
         {
             return Ok(new HttpApiResponse<TrainingAssessmentResultDto>()
             {
                 Success = true,
-                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId, companyId),
+                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId),
                 Message = "Success",
                 Code = 200
             });
@@ -234,16 +234,15 @@ public class DMSDocumentTrainingController : Controller
         }
     }
 
-    [HttpPost("acknowledge-and-send-for-authorization/{documentId}/{companyId}")]
-    public async Task<IActionResult> AcknowledgeAndSendForAuthorization(int documentId, int companyId)
+    [HttpPost("acknowledge-and-send-for-authorization/{documentId}")]
+    public async Task<IActionResult> AcknowledgeAndSendForAuthorization(int documentId )
     {
         try
-        {
-            var clientIp = _clientContextService.GetClientIP();
+        { 
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentTrainingComponent.AcknowledgeAndSendForAuthorizationAsync(documentId, companyId, clientIp),
+                Data = await _documentTrainingComponent.AcknowledgeAndSendForAuthorizationAsync(documentId),
                 Message = "Document successfully acknowledged and sent for authorization.",
                 Code = 200
             });

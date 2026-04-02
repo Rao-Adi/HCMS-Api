@@ -50,6 +50,7 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -82,7 +83,7 @@ public class TrainingPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentTypeCode}',
                 '{input.TrainingRequired}',
                 '{input.MinimumScore}',
@@ -139,6 +140,7 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -314,6 +316,7 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);

@@ -5,6 +5,7 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
+using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -158,5 +159,33 @@ public class PeoplePartnersComponent
             Items = items, 
             TotalCount = totalCount 
         };
+    }
+
+    public async Task<IQueryable<SelectList2Dto>> GetRoleListAsync()
+    {
+        try
+        {
+            string query = @"
+            select b.name,a.roleid from public.tblempjobprofile a
+            left join public.tblsetupsdetail b
+            on a.roleid= b.sdlid
+            where b.smsid = 189;";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("roleid"),
+                    Value = row.Field<string>("name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 }

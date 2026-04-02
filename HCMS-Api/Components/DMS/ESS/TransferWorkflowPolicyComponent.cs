@@ -48,6 +48,7 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -83,7 +84,7 @@ public class TransferWorkflowPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
+                '{CompanyId}', 
                 '{input.DivisionCode!.Replace("'", "''")}',  
                 '{input.ApprovalRoleId}',
                 '{input.ApprovalUserId}',
@@ -144,6 +145,7 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -328,6 +330,7 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);

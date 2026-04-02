@@ -48,11 +48,10 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.Id))
-            //    throw new CustomException("AttributeMandatoryScope code is required.", 200);
 
             // Check duplicate by DocumentAttributeId OR DivisionCode
             string checkQuery = $@"
@@ -86,7 +85,7 @@ public class AttributeMandatoryScopeComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentAttributeId}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
@@ -166,9 +165,11 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -200,6 +201,7 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -357,6 +359,7 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -449,6 +452,7 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -543,11 +547,10 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.DocumentAttributeId))
-            //    throw new CustomException("Invalid division code.", 200);
 
             // Check existence (DocumentAttributeId is VARCHAR → must be quoted)
             string checkQuery = $@"

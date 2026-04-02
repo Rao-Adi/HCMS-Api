@@ -53,7 +53,8 @@ public class DocumentComponent
 
 
     public async Task<DocumentReadDto> CreateAsync(DocumentCreateDto input)
-    {
+    { 
+
         // UC-32: Next Review Date is a mandatory field
         if (input.NextReviewDate == default || input.NextReviewDate.Year < 2000)
             throw new CustomException("A valid Next Review Date is mandatory.", 400);
@@ -66,6 +67,7 @@ public class DocumentComponent
             throw new CustomException("Document file is required.", 400);
 
         // 1️⃣ Extract userId
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
@@ -121,7 +123,7 @@ public class DocumentComponent
 
             int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
             {
-                input.CompanyId,
+                CompanyId,
                 input.DocumentNumber,
                 input.DocumentTypeCode,
                 input.DivisionCode,
@@ -142,7 +144,7 @@ public class DocumentComponent
             
             await _common.ExecuteAsync(versionQuery, new 
             { 
-                input.CompanyId, 
+                CompanyId, 
                 DocumentId = newId, 
                 Version = string.IsNullOrWhiteSpace(input.Version) ? "1.0" : input.Version, 
                 UserId = userId 
@@ -154,7 +156,7 @@ public class DocumentComponent
                 (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
                 VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded', NOW());";
             
-            await _common.ExecuteAsync(stateQuery, new { input.CompanyId, DocumentId = newId, UserId = userId }, tx);
+            await _common.ExecuteAsync(stateQuery, new { CompanyId, DocumentId = newId, UserId = userId }, tx);
 
             await tx.CommitAsync();
 
@@ -232,6 +234,7 @@ public class DocumentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -655,6 +658,7 @@ public class DocumentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -1243,7 +1247,7 @@ public class DocumentComponent
                 CompanyId,
                 VersionId = versionId,
                 input.DocumentId,
-                input.UserId
+                userId
             }, transaction);
 
             //-------------------------------------------------
@@ -1305,7 +1309,7 @@ public class DocumentComponent
                 CompanyId,
                 input.DocumentId,
                 ExecutionId = executionId,
-                input.UserId
+                userId
             }, transaction);
 
             // Prepare notification data
@@ -1452,7 +1456,7 @@ public class DocumentComponent
                     submitted.ValueNumber,
                     submitted.ValueDate,
                     submitted.ValueBoolean,
-                    input.UserId
+                    userId
                 }, transaction);
             }
         }
@@ -1906,7 +1910,7 @@ public class DocumentComponent
                 ",
             new
             {
-                dto.CompanyId,
+                CompanyId,
                 dto.DocumentId,
                 dto.UserId,
                 ProofUrl = dto.TrainingProofUrl,
@@ -1930,7 +1934,7 @@ public class DocumentComponent
             ",
                 new
                 {
-                    dto.CompanyId,
+                    CompanyId,
                     dto.UserId,
                     dto.DocumentId
                 }, tx);
@@ -2907,6 +2911,11 @@ public class DocumentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // UC-31: Fetch historical documents where the *current user* was the one 
             // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'
             var whereClause = @"
@@ -2967,7 +2976,7 @@ public class DocumentComponent
                 FROM Documents doc 
                 {whereClause};";
 
-            var queryParams = new { CompanyId = input.CompanyId, UserId = input.UserId };
+            var queryParams = new { CompanyId = CompanyId, UserId = input.UserId };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);

@@ -5,8 +5,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
-using System.Data;
-using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
+using System.Data; 
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -49,6 +48,7 @@ public class DocumentTypeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -107,7 +107,7 @@ public class DocumentTypeComponent
                     )
                     VALUES
                     (
-                        {input.CompanyId},
+                        {CompanyId},
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.Description?.Replace("'", "''")}',
@@ -168,6 +168,7 @@ public class DocumentTypeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -374,6 +375,7 @@ public class DocumentTypeComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);

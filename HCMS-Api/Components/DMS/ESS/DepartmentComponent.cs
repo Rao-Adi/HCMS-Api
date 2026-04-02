@@ -49,6 +49,7 @@ public class DepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -129,7 +130,7 @@ public class DepartmentComponent
                     )
                     VALUES
                     (
-                        '{input.CompanyId}',
+                        '{CompanyId}',
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.DivisionCode.Replace("'", "''")}',
@@ -189,6 +190,7 @@ public class DepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
@@ -452,9 +454,11 @@ public class DepartmentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+
             // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Department code is required.", 200);

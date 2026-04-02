@@ -62,11 +62,7 @@ public class DocumentAttributeReadDto : AuditableEntity
 }
 
 public class DocumentAttributeCreateDto
-{ 
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{  
 
     public string DocumentTypeCode { get; set; }
 
@@ -84,10 +80,7 @@ public class DocumentAttributeCreateDto
 
 public class DocumentAttributeUpdateDto
 { 
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+    public int Id { get; set; } 
 
     public string DocumentTypeCode { get; set; }
 

@@ -82,9 +82,7 @@ public class DocumentReadDto : AuditableEntity
 }
 
 public class DocumentCreateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
+{ 
 
     public string DocumentNumber { get; set; } = null!;
 
@@ -112,11 +110,7 @@ public class DocumentCreateDto
 
 public class DocumentUpdateDto : AuditableEntity
 {
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
-
+    public int Id { get; set; } 
 
     [MaxLength(50)]
     public string DocumentNumber { get; set; } = null!;
@@ -140,17 +134,13 @@ public class DocumentUpdateDto : AuditableEntity
 
 public class SubmitDocument
 { 
-    public int DocumentId { get; set; }
-    public int UserId { get; set; }
+    public int DocumentId { get; set; } 
 
     public List<CreateDocumentAttributeValueDto> Attributes { get; set; } = new();
 }
 
 public class CreateDocumentAttributeValueDto
-{ 
-    // CompanyId BIGINT NOT NULL
-    public int CompanyId { get; set; }
-     
+{  
 
     // DocumentAttributeId INT NOT NULL
     public int DocumentAttributeId { get; set; }
@@ -235,8 +225,7 @@ public class GetDocumentDto : TableFiltersDto
 
 
 public class CompleteDocumentTrainingDto
-{
-    public int CompanyId { get; set; }
+{ 
     public int DocumentId { get; set; }
     public long UserId { get; set; }
 
