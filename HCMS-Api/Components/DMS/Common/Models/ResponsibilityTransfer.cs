@@ -55,9 +55,7 @@ public class ResponsibilityTransferReadDto : AuditableEntity
 }
 
 public class ResponsibilityTransferCreateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{ 
 
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
@@ -76,9 +74,7 @@ public class ResponsibilityTransferCreateDto
 public class ResponsibilityTransferUpdateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+     
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }

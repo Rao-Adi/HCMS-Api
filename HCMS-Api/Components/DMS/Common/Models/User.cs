@@ -77,11 +77,8 @@ public class UserReadDto : AuditableEntity
 
 
 public class UserCreateDto
-{
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{ 
+     
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;

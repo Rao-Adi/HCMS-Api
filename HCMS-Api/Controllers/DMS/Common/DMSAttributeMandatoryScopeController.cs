@@ -40,6 +40,13 @@ public class DMSAttributeMandatoryScopeController : Controller
     {
         try
         {
+            var clientIP = _clientContextService.GetClientIP();
+
+            if (string.IsNullOrEmpty(clientIP))
+            {
+                _logger.LogError("Client IP is missing or invalid in the request header.");
+                return Unauthorized(new { message = "Client IP is missing or invalid in the request header." });
+            }
             return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScopeReadDto>>()
             {
                 Success = true,
@@ -68,6 +75,14 @@ public class DMSAttributeMandatoryScopeController : Controller
     {
         try
         {
+            var clientIP = _clientContextService.GetClientIP();
+
+            if (string.IsNullOrEmpty(clientIP))
+            {
+                _logger.LogError("Client IP is missing or invalid in the request header.");
+                return Unauthorized(new { message = "Client IP is missing or invalid in the request header." });
+            }
+
             var selectList = await _attributeMandatoryScopeComponent.GetAllSelectList();
             return Ok(new HttpApiResponse<IList<SelectListDto>>()
             {
@@ -97,6 +112,13 @@ public class DMSAttributeMandatoryScopeController : Controller
     {
         try
         {
+            var clientIP = _clientContextService.GetClientIP();
+
+            if (string.IsNullOrEmpty(clientIP))
+            {
+                _logger.LogError("Client IP is missing or invalid in the request header.");
+                return Unauthorized(new { message = "Client IP is missing or invalid in the request header." });
+            }
             return Ok(new HttpApiResponse<PaginationResult<AttributeMandatoryScopeReadDto>>()
             {
                 Success = true,

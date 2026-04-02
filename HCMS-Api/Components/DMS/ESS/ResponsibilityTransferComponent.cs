@@ -48,9 +48,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
 
             // FSD UC-16 Validation: Remarks are mandatory.
             if (string.IsNullOrWhiteSpace(input.Remarks))
@@ -143,7 +145,7 @@ public class ResponsibilityTransferComponent
 
             var insertParams = new
             {
-                input.CompanyId,
+                CompanyId,
                 input.EmployeeFrom,
                 input.EmployeeTo,
                 input.ReasonForTransfer,
@@ -212,6 +214,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -420,9 +427,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -521,6 +530,12 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             var whereClause = @"
                 WHERE rt.IsDeleted = FALSE 
                   AND rt.ApproverId = @ApproverId 
@@ -563,7 +578,7 @@ public class ResponsibilityTransferComponent
                 FROM ResponsibilityTransfers rt
                 {whereClause};";
 
-            var queryParams = new { ApproverId = int.Parse(input.UserId), Status = input.Status };
+            var queryParams = new { ApproverId = userId, Status = input.Status };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -582,6 +597,11 @@ public class ResponsibilityTransferComponent
 
     public async Task<bool> TakeActionAsync(ResponsibilityTransferActionDto input)
     {
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
         await using var tx = await _common.BeginTransactionAsync();
         try
         {
@@ -611,7 +631,7 @@ public class ResponsibilityTransferComponent
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
                 WHERE Id = @Id;", 
-                new { Status = newStatus, input.Observation, input.UserId, Id = input.TransferId }, tx);
+                new { Status = newStatus, input.Observation, userId, Id = input.TransferId }, tx);
 
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
@@ -643,12 +663,10 @@ public class ResponsibilityTransferActionDto
 {
     public int TransferId { get; set; }
     public string Action { get; set; } // "APPROVE", "REJECT", "REVERT"
-    public string Observation { get; set; }
-    public string UserId { get; set; }
+    public string Observation { get; set; } 
 }
 
 public class GetTransferApprovalsDto : TableFiltersDto
 {
-    public int Status { get; set; } // 1=Pending, 2=Approved, 3=Rejected
-    public string? UserId { get; set; }
+    public int Status { get; set; } // 1=Pending, 2=Approved, 3=Rejected 
 }

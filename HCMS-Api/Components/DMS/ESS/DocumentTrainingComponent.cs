@@ -49,9 +49,11 @@ public class DocumentTrainingComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             if (input.Id <0)
                 throw new CustomException("DocumentTraining code is required.", 400);
 
@@ -155,6 +157,10 @@ public class DocumentTrainingComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -364,9 +370,10 @@ public class DocumentTrainingComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id <0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -482,7 +489,9 @@ public class DocumentTrainingComponent
     }
 
     public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId, int companyId, string clientIp)
-    {
+    { 
+        var prefix = _utilities.GetPrefix(clientIp);
+        //var userId = _utilities.GetUserid(prefix);
         await using var tx = await _common.BeginTransactionAsync();
         try
         {

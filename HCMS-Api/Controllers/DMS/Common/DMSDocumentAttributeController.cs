@@ -92,14 +92,14 @@ public class DMSDocumentAttributeController : Controller
 
 
     [HttpGet("get-document-attributes-by-documentId")]
-    public async Task<IActionResult> GetDocumentAttributeByDocumentTypeCode(int companyId, int documentId)
+    public async Task<IActionResult> GetDocumentAttributeByDocumentTypeCode(int documentId)
     {
         try
         {
             return Ok(new HttpApiResponse<List<DocumentAttributeReadDto2>>()
             {
                 Success = true,
-                Data = await _documentAttributeComponent.GetDocumentAttributesByDocumentIdAsync(companyId, documentId),
+                Data = await _documentAttributeComponent.GetDocumentAttributesByDocumentIdAsync(documentId),
                 Message = "Success",
                 Code = 200
             });

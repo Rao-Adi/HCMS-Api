@@ -48,9 +48,9 @@ public class BusinessDomainComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Document Type name is required.", 200);
 
@@ -179,6 +179,9 @@ public class BusinessDomainComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -433,9 +436,9 @@ public class BusinessDomainComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid Business Domain code.", 200);
 

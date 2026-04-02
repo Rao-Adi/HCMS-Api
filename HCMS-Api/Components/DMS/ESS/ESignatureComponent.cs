@@ -50,9 +50,10 @@ public class ESignatureComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("ESignatures code is required.", 400);
 
@@ -144,6 +145,10 @@ public class ESignatureComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -314,9 +319,10 @@ public class ESignatureComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid Id.", 200);
 

@@ -254,8 +254,6 @@ public class DocumentRequestCreate
 
 public class GetPendingRequestDto : TableFiltersDto
 {
-    public int CompanyId { get; set; }
-    public int UserId { get; set; }
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
@@ -278,8 +276,7 @@ public class DraftRequestReadDto
 }
 
 public class MyRequestFilterDto : TableFiltersDto
-{
-    public int CompanyId { get; set; }
+{ 
     public string Initiator { get; set; }  // logged in username
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
@@ -478,8 +475,7 @@ public class UpdateDraftRequestDto
 
 
 public class SubmitDocumentRequestDto
-{
-    public int CompanyId { get; set; }
+{ 
     public int RequestId { get; set; }
     public int SubmittedBy { get; set; }
 
@@ -492,10 +488,8 @@ public class SubmitDocumentRequestDto
  
 
 public class ApproveRejectWorkflowStepDto
-{
-    public int CompanyId { get; set; }
-    public int StepId { get; set; }
-    public int UserId { get; set; }
+{ 
+    public int StepId { get; set; } 
 
     public string Action { get; set; }
     // Approve

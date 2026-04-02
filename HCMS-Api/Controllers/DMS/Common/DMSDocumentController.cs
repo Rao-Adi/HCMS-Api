@@ -293,15 +293,15 @@ public class DMSDocumentController : Controller
     }
 
 
-    [HttpGet("get-draft-by-request/{companyId}/{requestId}")]
-    public async Task<IActionResult> GetDraftDocumentByRequest(int companyId, int requestId)
+    [HttpGet("get-draft-by-request/{requestId}")]
+    public async Task<IActionResult> GetDraftDocumentByRequest(int requestId)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
             {
                 Success = true,
-                Data = await _documentComponent.GetDraftDocumentByRequestAsync(companyId, requestId),
+                Data = await _documentComponent.GetDraftDocumentByRequestAsync(requestId),
                 Message = "Success",
                 Code = 200
             });

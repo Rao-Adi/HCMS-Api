@@ -129,8 +129,7 @@ public class PendingRequestDto
 
 // DTO for filter parameters
 public class WorkFlowStepsFilterDto
-{
-    public int CompanyId { get; set; }
+{ 
     public int WorkflowPolicyId { get; set; }
     public string StepType { get; set; }
     public string EntityType { get; set; }
@@ -150,8 +149,7 @@ public class WorkFlowStepsFilterDto
 
 
 public class GetStepDefinitionFilterDto
-{
-    public int CompanyId { get; set; }
+{ 
     public string EntityType { get; set; }
     public string DocumentTypeCode { get; set; }
     public string? DivisionCode { get; set; }

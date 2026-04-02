@@ -66,9 +66,9 @@ public class DocumentComponent
             throw new CustomException("Document file is required.", 400);
 
         // 1️⃣ Extract userId
-        //var clientIp = _clientContextService.GetClientIP();
-        //var prefix = _utilities.GetPrefix(clientIp);
-        var userId = "manual"; //_utilities.GetUserid(prefix);
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
 
         // 2️⃣ Prepare upload path
         var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
@@ -232,6 +232,10 @@ public class DocumentComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -651,9 +655,10 @@ public class DocumentComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -1136,6 +1141,12 @@ public class DocumentComponent
 
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             //-------------------------------------------------
             // 1️⃣ Lock Document
             //-------------------------------------------------
@@ -1146,7 +1157,7 @@ public class DocumentComponent
                 WHERE Id = @DocumentId
                 AND CompanyId = @CompanyId
                 FOR UPDATE;",
-            new { input.DocumentId, input.CompanyId }, transaction);
+            new { input.DocumentId, CompanyId }, transaction);
 
             if (doc == null)
                 throw new Exception("Document not found.");
@@ -1176,7 +1187,7 @@ public class DocumentComponent
                 AND IsDeleted = FALSE;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 DocType = doc.documenttypecode,
                 DivisionCode = doc.divisioncode,
                 DepartmentCode = doc.departmentcode,
@@ -1200,7 +1211,7 @@ public class DocumentComponent
                 LIMIT 1;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 PolicyId = policyId
             }, transaction);
 
@@ -1211,7 +1222,7 @@ public class DocumentComponent
             // 4️⃣ Promote Version (Rework Case)
             //-------------------------------------------------
 
-            await PromoteVersionAfterReworkAsync(input.CompanyId, input.DocumentId, input.UserId);
+            await PromoteVersionAfterReworkAsync(CompanyId, input.DocumentId, userId);
 
             //-------------------------------------------------
             // 5️⃣ Create Workflow Execution
@@ -1229,7 +1240,7 @@ public class DocumentComponent
                 RETURNING Id;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 VersionId = versionId,
                 input.DocumentId,
                 input.UserId
@@ -1252,7 +1263,7 @@ public class DocumentComponent
                 WHERE WorkflowPolicyVersionId = @VersionId;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 ExecutionId = executionId,
                 VersionId = versionId
             }, transaction);
@@ -1291,7 +1302,7 @@ public class DocumentComponent
                 );",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 input.DocumentId,
                 ExecutionId = executionId,
                 input.UserId
@@ -1322,7 +1333,7 @@ public class DocumentComponent
             if (firstStepUserId.HasValue)
             {
                 var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle ?? "Unknown" }, { "V#", docVersion ?? "1.0" } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, input.CompanyId, input.DocumentId, firstStepUserId.Value, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, firstStepUserId.Value, placeholders);
             }
 
             return true;
@@ -1339,6 +1350,10 @@ public class DocumentComponent
         //-------------------------------------------------
         // 1️⃣ Load Active Attributes
         //-------------------------------------------------
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
 
         var attributes = await _common.QueryAsync<dynamic>(@"
                 SELECT *
@@ -1349,7 +1364,7 @@ public class DocumentComponent
                 AND IsDeleted = FALSE;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 DocumentTypeCode = documentInfo.documenttypecode
             }, transaction);
 
@@ -1379,7 +1394,7 @@ public class DocumentComponent
                 LIMIT 1;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 AttributeId = attr.id,
                 DivisionCode = documentInfo.divisioncode,
                 DepartmentCode = documentInfo.departmentcode,
@@ -1430,7 +1445,7 @@ public class DocumentComponent
                         ValueBoolean = EXCLUDED.ValueBoolean;",
                 new
                 {
-                    input.CompanyId,
+                    CompanyId,
                     input.DocumentId,
                     AttributeId = submitted.DocumentAttributeId,
                     submitted.ValueText,
@@ -1443,11 +1458,14 @@ public class DocumentComponent
         }
     }
 
-    public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, long userId)
+    public async Task PromoteVersionAfterReworkAsync(string companyId, int documentId, string userId)
     {
         try
         {
-
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp); 
+            //var userId = _utilities.GetUserid(prefix);
 
             //-----------------------------------------
             // 1️⃣ Check Last State Was Rework Draft
@@ -1522,7 +1540,12 @@ public class DocumentComponent
 
         try
         {
-            var userId = await GetEmployeeID(input.EmployeeCode);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+            //var userId = await GetEmployeeID(input.EmployeeCode);
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -1533,7 +1556,7 @@ public class DocumentComponent
                 WHERE CompanyId = @CompanyId
                 AND WorkflowExecutionId = @ExecutionId
                 AND IsActive = TRUE;",
-            new { input.CompanyId, input.ExecutionId }, transaction);
+            new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
@@ -1575,7 +1598,7 @@ public class DocumentComponent
                 LIMIT 1;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 input.ExecutionId,
                 CurrentOrder = currentStep.steporder
             }, transaction);
@@ -1605,7 +1628,7 @@ public class DocumentComponent
                         CompletedAt = NOW()
                     WHERE Id = @ExecutionId
                     AND CompanyId = @CompanyId;",
-                new { input.ExecutionId, input.CompanyId }, transaction);
+                new { input.ExecutionId, CompanyId }, transaction);
 
                 //-------------------------------------------------
                 // Move Document → Approved
@@ -1632,7 +1655,7 @@ public class DocumentComponent
                     );",
                 new
                 {
-                    input.CompanyId,
+                    CompanyId,
                     input.DocumentId,
                     input.ExecutionId,
                     userId
@@ -1643,7 +1666,7 @@ public class DocumentComponent
 
             if (nextStepUserId.HasValue && docInfo != null)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, input.CompanyId, input.DocumentId, nextStepUserId.Value, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, nextStepUserId.Value, notifyPlaceholders);
             }
 
             return true;
@@ -1690,12 +1713,16 @@ public class DocumentComponent
             ↓
         AUTO CREATE TRAINING MATRIX ✅
      */
-    public async Task<bool> MakeDocumentEffectiveAsync(int companyId, int documentId, long userId)
+    public async Task<bool> MakeDocumentEffectiveAsync(string companyId, int documentId, string userId)
     {
         await using var transaction = await _common.BeginTransactionAsync();
 
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
+
             //-----------------------------------------
             // Activate Final Version
             //-----------------------------------------
@@ -1783,8 +1810,12 @@ public class DocumentComponent
         }
     }
 
-    public async Task NotifyPendingUsersAsync(int companyId, int documentId)
+    public async Task NotifyPendingUsersAsync(string companyId, int documentId)
     {
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
         var users = await _common.QueryAsync<dynamic>(@"
             SELECT 
                 dut.UserId,
@@ -1852,6 +1883,10 @@ public class DocumentComponent
 
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             //-----------------------------------------
             // 1️⃣ Update Training Status
             //-----------------------------------------
@@ -1910,7 +1945,7 @@ public class DocumentComponent
         }
     }
 
-    private async Task HandlePostApprovalAsync(int companyId, int documentId, long userId)
+    private async Task HandlePostApprovalAsync(string companyId, int documentId, string userId)
     {
 
         /*
@@ -2093,6 +2128,10 @@ public class DocumentComponent
 
          */
 
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        //var userId = _utilities.GetUserid(prefix);
+
         var rule = await _common.QuerySingleAsync<dynamic>(@"
             SELECT RequiresTraining, RequiresAuthorization
             FROM DocumentStateTransitions
@@ -2127,6 +2166,11 @@ public class DocumentComponent
 
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -2137,13 +2181,13 @@ public class DocumentComponent
                 WHERE CompanyId = @CompanyId
                 AND WorkflowExecutionId = @ExecutionId
                 AND IsActive = TRUE;",
-            new { input.CompanyId, input.ExecutionId }, transaction);
+            new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
 
             // Fetch document info for notifications
-            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, transaction);
+            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, transaction);
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
@@ -2178,7 +2222,7 @@ public class DocumentComponent
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
-            new { input.ExecutionId, input.CompanyId }, transaction);
+            new { input.ExecutionId, CompanyId }, transaction);
 
             //-------------------------------------------------
             // 4️⃣ Move Document → Closed
@@ -2201,11 +2245,11 @@ public class DocumentComponent
                 );",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 input.DocumentId,
                 input.ExecutionId,
                 Comments = input.Observation,
-                input.UserId
+                userId
             }, transaction);
 
             await transaction.CommitAsync();
@@ -2220,9 +2264,9 @@ public class DocumentComponent
             {
                 var notifyPlaceholders = new Dictionary<string, string> {
                     { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString() }, { "Observation", input.Observation ?? "" }
+                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
                 };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, input.CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -2241,6 +2285,11 @@ public class DocumentComponent
 
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -2251,13 +2300,13 @@ public class DocumentComponent
                 WHERE CompanyId = @CompanyId
                 AND WorkflowExecutionId = @ExecutionId
                 AND IsActive = TRUE;",
-            new { input.CompanyId, input.ExecutionId }, transaction);
+            new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
                 throw new Exception("No active approval step found.");
 
             // Fetch document info for notifications
-            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, transaction);
+            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, transaction);
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
@@ -2292,7 +2341,7 @@ public class DocumentComponent
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
-            new { input.ExecutionId, input.CompanyId }, transaction);
+            new { input.ExecutionId, CompanyId }, transaction);
 
             //-------------------------------------------------
             // 4️⃣ Move Document → Draft
@@ -2321,11 +2370,11 @@ public class DocumentComponent
                 );",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 input.DocumentId,
                 input.ExecutionId,
                 Comments = input.Observation,
-                input.UserId
+                userId
             }, transaction);
 
             await transaction.CommitAsync();
@@ -2340,9 +2389,9 @@ public class DocumentComponent
             {
                 var notifyPlaceholders = new Dictionary<string, string> {
                     { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString() }, { "Observation", input.Observation ?? "" }
+                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
                 };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRevertedForRework, input.CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRevertedForRework, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -2358,8 +2407,8 @@ public class DocumentComponent
     public async Task<IEnumerable<dynamic>> GetRequestsPendingFinalizationAsync(GetApprovedRequestForDocumentCreationDto input)
     {
         // Basic validation (you can throw exceptions or handle differently)
-        if (input.CompanyId <= 0)
-            throw new ArgumentException("CompanyId is required", nameof(input.CompanyId));
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
         if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
             throw new ArgumentException("DocumentTypeCode is required", nameof(input.DocumentTypeCode));
 
@@ -2372,7 +2421,7 @@ public class DocumentComponent
 
         var parameters = new
         {
-            CompanyId = input.CompanyId,
+            CompanyId = CompanyId,
             DocumentTypeCode = input.DocumentTypeCode.Trim(),
             DivisionCode = Normalize(input.DivisionCode),
             DepartmentCode = Normalize(input.DepartmentCode),
@@ -2423,8 +2472,14 @@ public class DocumentComponent
         return result ?? Enumerable.Empty<dynamic>();  // never return null list
     }
 
-    public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int companyId, int requestId)
+    public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int requestId)
     {
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
+
         var result = await _common.QueryAsync<dynamic>(@"
 
             SELECT 
@@ -2458,7 +2513,7 @@ public class DocumentComponent
               ORDER BY dsh.ChangedAt DESC
               LIMIT 1
           ) = 1; -- Draft Status ID "
-    , new { companyId, requestId });
+    , new { CompanyId, requestId });
 
         if (result == null)
             throw new Exception("Draft document not available for finalization.");
@@ -2472,10 +2527,11 @@ public class DocumentComponent
         try
         {
 
-            if (input.EmployeeCode == "" || input.EmployeeCode == null)
-                throw new Exception("Requests not found.");
-
-            var userId = await GetEmployeeID(input.EmployeeCode);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+             
 
             var whereClause = "WHERE 1=1";
 
@@ -2530,7 +2586,7 @@ public class DocumentComponent
 
             var queryParams = new
             {
-                input.CompanyId,
+                CompanyId,
                 UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
@@ -2578,7 +2634,7 @@ public class DocumentComponent
                 AND dl.DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = input.CompanyId,
+                    CompanyId = CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -2593,7 +2649,7 @@ public class DocumentComponent
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = input.CompanyId,
+                    CompanyId = CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -2664,6 +2720,11 @@ public class DocumentComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
             var whereClause = @"
@@ -2748,7 +2809,7 @@ public class DocumentComponent
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new { CompanyId = input.CompanyId };
+            var queryParams = new { CompanyId = CompanyId };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2770,6 +2831,12 @@ public class DocumentComponent
         await using var transaction = await _common.BeginTransactionAsync();
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             if (string.IsNullOrWhiteSpace(input.Observation))
                 throw new Exception("Observation comment is mandatory for final authorization.");
 
@@ -2783,7 +2850,7 @@ public class DocumentComponent
                     LastModifiedAt = NOW(), 
                     LastModifiedBy = @UserId 
                 WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-                new { input.DocumentId, input.CompanyId, input.UserId }, transaction);
+                new { input.DocumentId, CompanyId, userId }, transaction);
 
             // 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
             await _common.ExecuteAsync(@"
@@ -2793,7 +2860,7 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId 
                   AND VersionType = 2 
                   AND CompanyId = @CompanyId;",
-                new { input.DocumentId, input.CompanyId }, transaction);
+                new { input.DocumentId, CompanyId }, transaction);
 
             // 3. Mark the current pending version as Effective
             await _common.ExecuteAsync(@"
@@ -2802,7 +2869,7 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId 
                   AND VersionType = 1 
                   AND CompanyId = @CompanyId;",
-                new { input.DocumentId, input.CompanyId }, transaction);
+                new { input.DocumentId, CompanyId }, transaction);
 
             // 4. Update Document State History to 'EFFECTIVE'
             await _common.ExecuteAsync(@"
@@ -2811,20 +2878,20 @@ public class DocumentComponent
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
                        (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
                        @UserId, @Observation, NOW();",
-                new { input.CompanyId, input.DocumentId, input.UserId, input.Observation }, transaction);
+                new { CompanyId, input.DocumentId, userId, input.Observation }, transaction);
 
             await transaction.CommitAsync();
 
             // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
             // Assuming RoleId for DCA is known or we look it up. Using a placeholder role fetch mechanism.
-            var dcaUsers = await _common.QueryAsync<int>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { input.CompanyId });
+            var dcaUsers = await _common.QueryAsync<int>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
             
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
             var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
             
             foreach (var dcaUser in dcaUsers)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, input.CompanyId, input.DocumentId, dcaUser, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders);
             }
 
             return true;
@@ -2921,20 +2988,16 @@ public class DocumentComponent
 
 public class AuthorizeDocumentDto
 {
-    public int DocumentId { get; set; }
-    public int CompanyId { get; set; }
-    public string UserId { get; set; }
+    public int DocumentId { get; set; } 
     public string Observation { get; set; }
 }
 
 public class GetPendingAuthorization: TableFiltersDto
-{
-    public int CompanyId { get; set; }
+{ 
     public string? DocumentCategoryFilter { get; set; }
 }
 
 public class GetAuthorizedDocumentsDto : TableFiltersDto
-{
-    public int CompanyId { get; set; }
+{ 
     public string UserId { get; set; }
 }

@@ -313,6 +313,11 @@ public class WorkflowStepComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             string query = $@"
                 SELECT ws.*
                 FROM Vw_WorkflowStepDefinitions ws
@@ -460,11 +465,13 @@ public class WorkflowStepComponent
         return default(T);
     }
 
-    public async Task<IEnumerable<PendingRequestDto>> GetPendingApprovalsAsync(
-    long companyId,
-    long userId)
+    public async Task<IEnumerable<PendingRequestDto>> GetPendingApprovalsAsync()
     {
 
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
 
         var sql = @"
             SELECT
@@ -510,7 +517,7 @@ public class WorkflowStepComponent
 
         return await _common.QueryAsync<PendingRequestDto>(
             sql,
-            new { CompanyId = companyId, UserId = userId }
+            new { CompanyId = CompanyId, UserId = userId }
         );
 
 
@@ -584,9 +591,12 @@ public class WorkflowStepComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -935,9 +945,14 @@ public class WorkflowStepComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
 
             var user = await GetUsersByFiltersAsync(filters);
-
+            
             //-----------------------------------------
             // 1️⃣ Resolve WorkflowPolicyId
             //-----------------------------------------
@@ -955,7 +970,7 @@ public class WorkflowStepComponent
                 AND IsDeleted = FALSE;",
             new
             {
-                filters.CompanyId,
+                CompanyId,
                 filters.EntityType,
                 filters.DocumentTypeCode,
                 filters.DivisionCode,
@@ -1020,7 +1035,7 @@ public class WorkflowStepComponent
                 AND WorkflowPolicyId = @PolicyId
                 AND IsActive = TRUE
                 LIMIT 1;",
-            new { filters.CompanyId, PolicyId = policyId });
+            new { CompanyId, PolicyId = policyId });
 
             //-----------------------------------------
             // 4️⃣ Create Version IF NOT Exists
@@ -1048,7 +1063,7 @@ public class WorkflowStepComponent
                         'system'
                     )
                     RETURNING Id;",
-                new { filters.CompanyId, PolicyId = policyId });
+                new { CompanyId, PolicyId = policyId });
             }
 
             //-----------------------------------------
@@ -1089,7 +1104,7 @@ public class WorkflowStepComponent
                 );",
             new
             {
-                filters.CompanyId,
+                CompanyId,
                 VersionId = versionId,
                 StepOrder = nextOrder,
                 filters.StepType,
@@ -1126,6 +1141,12 @@ public class WorkflowStepComponent
             string subDepartmentCode,
             string businessDomainCode)
     {
+
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
+
         //-----------------------------------------
         // 1️⃣ Find Policy
         //-----------------------------------------
@@ -1194,6 +1215,11 @@ public class WorkflowStepComponent
 
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             //-----------------------------------------
             // STEP 1 — FETCH USERS
             //-----------------------------------------
@@ -1210,7 +1236,7 @@ public class WorkflowStepComponent
                 ",
                 new
                 {
-                    filters.CompanyId,
+                    CompanyId,
                     PolicyId = filters.WorkflowPolicyId
                 });
 
@@ -1227,7 +1253,7 @@ public class WorkflowStepComponent
              versionId,
              new
              {
-                 filters.CompanyId,
+                 CompanyId,
                  PolicyId = filters.WorkflowPolicyId,
                  VersionNumber = nextVersion,
                  User = user.Id
@@ -1282,19 +1308,19 @@ public class WorkflowStepComponent
             var UserId = user.Id;
             var RequiresAllApprovals = filters.IsParallelApproval;
             var now = DateTime.UtcNow; // or DateTime.Now depending on your DB setup
-            var currentUser = "system"; // Get this from your user context/session
+            
             // ✅ 3. Insert Steps
             var stepSql = @"
-            INSERT INTO WorkflowStepDefinitions
-            (CompanyId,WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, UserId, RequiresAllApprovals,CreatedAt,CreatedBy,LastModifiedAt,LastModifiedBy)
-            VALUES
-            (@CompanyId, @VersionId, @StepOrder, @StepGroup, @StepType, @RoleId, @UserId, @RequiresAllApprovals, @CreatedAt, @CreatedBy,@LastModifiedAt,@LastModifiedBy);
-            ";
+                INSERT INTO WorkflowStepDefinitions
+                (CompanyId,WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, UserId, RequiresAllApprovals,CreatedAt,CreatedBy,LastModifiedAt,LastModifiedBy)
+                VALUES
+                (@CompanyId, @VersionId, @StepOrder, @StepGroup, @StepType, @RoleId, @UserId, @RequiresAllApprovals, @CreatedAt, @CreatedBy,@LastModifiedAt,@LastModifiedBy);
+                ";
             var insertedSteps = await _dapperService.QueryAsync<WorkflowStepReadDto>(
                stepSql,
                new
                {
-                   filters.CompanyId,
+                   CompanyId,
                    VersionId = insertedWorkflowPolicyVersions,
                    stepOrder,   //step.StepOrder,
                    StepGroup = 1, //step.StepGroup == 0 ? 1 : step.StepGroup,
@@ -1305,9 +1331,9 @@ public class WorkflowStepComponent
 
                    // Add these audit fields
                    CreatedAt = now,
-                   CreatedBy = currentUser,
+                   CreatedBy = userId,
                    LastModifiedAt = now,
-                   LastModifiedBy = currentUser
+                   LastModifiedBy = userId
                });
 
             //-----------------------------------------

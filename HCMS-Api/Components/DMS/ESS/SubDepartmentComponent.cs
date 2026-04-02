@@ -48,10 +48,10 @@ public class SubDepartmentComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-                                   // 🔒 Validation
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Sub-Department name is required.", 200);
 
@@ -191,6 +191,10 @@ public class SubDepartmentComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -453,10 +457,10 @@ public class SubDepartmentComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-                                   // 🔒 Mandatory validations
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Sub-Department code is required.", 200);
 

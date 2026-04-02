@@ -49,10 +49,10 @@ public class DepartmentComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // 🔒 Validation
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Department name is required.", 409);
@@ -189,6 +189,10 @@ public class DepartmentComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -448,10 +452,10 @@ public class DepartmentComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-                                   // 🔒 Mandatory validations
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+            // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Department code is required.", 200);
 

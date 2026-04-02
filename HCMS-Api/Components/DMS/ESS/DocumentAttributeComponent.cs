@@ -48,9 +48,10 @@ public class DocumentAttributeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("DocumentAttribute Id is required.", 400);
 
@@ -154,6 +155,10 @@ public class DocumentAttributeComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+
+            var userId = _utilities.GetUserid(prefix);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -288,10 +293,16 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<List<DocumentAttributeReadDto2>> GetDocumentAttributesByDocumentIdAsync(int companyId, int documentId)
+    public async Task<List<DocumentAttributeReadDto2>> GetDocumentAttributesByDocumentIdAsync(int documentId)
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             var query = $@"SELECT 
                         da.Id AS DocumentAttributeId,
                         da.ControlLabel,
@@ -305,7 +316,7 @@ public class DocumentAttributeComponent
                     FROM DocumentAttributeValues dav
                     JOIN DocumentAttributes da
                         ON da.Id = dav.DocumentAttributeId
-                    WHERE dav.CompanyId = {companyId}
+                    WHERE dav.CompanyId = {CompanyId}
                       AND dav.DocumentId = {documentId}
                       AND da.IsDeleted = FALSE
                       AND da.IsActive = TRUE
@@ -552,9 +563,9 @@ public class DocumentAttributeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);            
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"

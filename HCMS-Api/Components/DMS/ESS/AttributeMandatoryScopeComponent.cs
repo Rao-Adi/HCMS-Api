@@ -48,9 +48,9 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             //if (string.IsNullOrWhiteSpace(input.Id))
             //    throw new CustomException("AttributeMandatoryScope code is required.", 200);
 
@@ -166,6 +166,9 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -197,6 +200,10 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             var whereClause = @"
                 WHERE doc.IsDeleted = False 
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
@@ -350,6 +357,10 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
@@ -438,6 +449,10 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
@@ -528,9 +543,9 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             //if (string.IsNullOrWhiteSpace(input.DocumentAttributeId))
             //    throw new CustomException("Invalid division code.", 200);
 

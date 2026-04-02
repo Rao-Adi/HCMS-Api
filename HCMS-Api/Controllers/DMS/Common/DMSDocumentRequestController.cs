@@ -121,14 +121,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-document-observation-details")]
-    public async Task<IActionResult> GetRequestDetails(int companyId, int requestId, string entityType)
+    public async Task<IActionResult> GetRequestDetails(int requestId, string entityType)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetRequestDetailsAsync(companyId, requestId, entityType),
+                Data = await _documentRequestComponent.GetRequestDetailsAsync(requestId, entityType),
                 Message = "Success",
                 Code = 200
             });
@@ -150,14 +150,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-workflow-details")]
-    public async Task<IActionResult> GetWorkflowDetail(int companyId, int requestId, string entityType)
+    public async Task<IActionResult> GetWorkflowDetail(int requestId, string entityType)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(companyId, requestId, entityType),
+                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(requestId, entityType),
                 Message = "Success",
                 Code = 200
             });

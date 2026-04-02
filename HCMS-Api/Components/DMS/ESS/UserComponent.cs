@@ -53,17 +53,18 @@ public class UserComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("User Id is required.", 400);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+           
 
             // Check duplicate by Id OR Name
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE (Id = '{input.Id}' 
+            WHERE (EmployeeCode = '{input.EmployeeCode}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -126,7 +127,7 @@ public class UserComponent
             )
             VALUES
             (
-                {input.CompanyId},
+                {CompanyId},
                 '{generatedCode}',
                 '{input.EmployeeName}',
                 '{input.Email}', 
@@ -207,6 +208,11 @@ public class UserComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -462,9 +468,11 @@ public class UserComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 

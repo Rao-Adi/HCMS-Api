@@ -205,6 +205,11 @@ public class DocumentRequestComponent
 
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
@@ -324,7 +329,7 @@ public class DocumentRequestComponent
 
             if (dto.UserIds?.Any() == true)
             {
-                foreach (var userId in dto.UserIds)
+                foreach (var _userId in dto.UserIds)
                 {
                     await _common.ExecuteAsync(@"
                         INSERT INTO DocumentRequestUserDistributions
@@ -337,7 +342,7 @@ public class DocumentRequestComponent
                     {
                         dto.CompanyId,
                         RequestId = requestId,
-                        UserId = userId,
+                        UserId = _userId,
                         CreatedBy = dto.CreatedByUserId
                     }, transaction);
                 }
@@ -376,6 +381,11 @@ public class DocumentRequestComponent
 
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
@@ -490,6 +500,12 @@ public class DocumentRequestComponent
 
     public async Task<bool> SubmitDraftDocumentRequestAsync(SubmitDocumentRequestDto input)
     {
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
+
         // Optional: ensure draft exists before calling original submit
         var draftExists = await _common.ExecuteScalarAsync<int>(@"
             SELECT COUNT(1)
@@ -500,7 +516,7 @@ public class DocumentRequestComponent
         new
         {
             input.RequestId,
-            input.CompanyId,
+            CompanyId,
             DraftStatus = DocumentRequestStatus.Draft
         });
 
@@ -517,6 +533,12 @@ public class DocumentRequestComponent
 
         try
         {
+
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             //-------------------------------------------------
             // Validate Request
             //-------------------------------------------------
@@ -527,7 +549,7 @@ public class DocumentRequestComponent
                 WHERE Id = @RequestId
                 AND CompanyId = @CompanyId
                 FOR UPDATE;",
-                new { input.RequestId, input.CompanyId }, tx);
+                new { input.RequestId, CompanyId }, tx);
 
             if (request == null)
                 throw new Exception("Request not found.");
@@ -594,7 +616,7 @@ public class DocumentRequestComponent
                          @UserId,@UserId);",
                     new
                     {
-                        input.CompanyId,
+                        CompanyId,
                         input.RequestId,
                         d.DivisionCode,
                         d.DepartmentCode,
@@ -613,7 +635,7 @@ public class DocumentRequestComponent
 
             if (input.UserList?.Any() == true)
             {
-                foreach (var userId in input.UserList)
+                foreach (var _userId in input.UserList)
                 {
                     await _common.ExecuteAsync(@"
                     INSERT INTO DocumentRequestUserDistributions
@@ -624,9 +646,9 @@ public class DocumentRequestComponent
                      @CreatedBy,@CreatedBy);",
                     new
                     {
-                        input.CompanyId,
+                        CompanyId,
                         input.RequestId,
-                        UserId = userId,
+                        UserId = _userId,
                         CreatedBy = input.SubmittedBy
                     }, tx);
                 }
@@ -651,7 +673,7 @@ public class DocumentRequestComponent
                 AND IsDeleted = FALSE;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 DocType = request.documenttypecode,
                 DivisionCode = request.divisioncode,
                 DepartmentCode = request.departmentcode,
@@ -675,7 +697,7 @@ public class DocumentRequestComponent
                 LIMIT 1;",
             new
             {
-                input.CompanyId,
+                CompanyId,
                 PolicyId = policyId
             }, tx);
 
@@ -709,7 +731,7 @@ public class DocumentRequestComponent
                 RETURNING Id;",
                 new
                 {
-                    input.CompanyId,
+                    CompanyId,
                     VersionId = versionId,
                     input.RequestId,
                     UserId = input.SubmittedBy
@@ -744,7 +766,7 @@ public class DocumentRequestComponent
                 WHERE WorkflowPolicyVersionId = @VersionId;",
                 new
                 {
-                    input.CompanyId,
+                    CompanyId,
                     ExecutionId = executionId,
                     VersionId = versionId
                 }, tx);
@@ -808,7 +830,7 @@ public class DocumentRequestComponent
             if (firstStepUserId.HasValue)
             {
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? input.RequestId.ToString() } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, input.CompanyId, (int)input.RequestId, firstStepUserId.Value, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, firstStepUserId.Value, placeholders);
             }
 
             return true;
@@ -1123,11 +1145,14 @@ public class DocumentRequestComponent
     {
         try
         {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
 
             if (input.EmployeeCode == "" || input.EmployeeCode == null)
                 throw new Exception("Requests not found.");
-
-            var userId = await GetEmployeeID(input.EmployeeCode);
+             
 
             var whereClause = "WHERE 1=1";
 
@@ -1182,7 +1207,7 @@ public class DocumentRequestComponent
 
             var queryParams = new
             {
-                input.CompanyId,
+                CompanyId,
                 UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
@@ -1212,10 +1237,11 @@ public class DocumentRequestComponent
     {
         try
         {
-            if (string.IsNullOrEmpty(input.EmployeeCode))
-                throw new Exception("EmployeeCode is required.");
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
 
-            var userId = await GetEmployeeID(input.EmployeeCode);
 
             var whereClause = @"WHERE CompanyId = @CompanyId
                 AND Status = @DraftStatus
@@ -1258,7 +1284,7 @@ public class DocumentRequestComponent
 
             var queryParams = new
             {
-                input.CompanyId,
+                CompanyId,
                 DraftStatus = DocumentRequestStatus.Draft,
                 CreatedBy = userId.ToString()
             };
@@ -1302,7 +1328,7 @@ public class DocumentRequestComponent
                 AND dl.DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = input.CompanyId,
+                    CompanyId = CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1317,7 +1343,7 @@ public class DocumentRequestComponent
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
-                    CompanyId = input.CompanyId,
+                    CompanyId = CompanyId,
                     RequestIds = requestIds
                 })).ToList();
 
@@ -1370,17 +1396,22 @@ public class DocumentRequestComponent
     {
         await using var tx = await _common.BeginTransactionAsync();
 
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix); 
+
         //-------------------------------------------------
         // 1️⃣ Lock Step
         //-------------------------------------------------
 
         var step = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-        SELECT *
-        FROM WorkflowExecutionSteps
-        WHERE Id = @StepId
-        AND CompanyId = @CompanyId
-        FOR UPDATE;",
-            new { input.StepId, input.CompanyId }, tx);
+            SELECT *
+            FROM WorkflowExecutionSteps
+            WHERE Id = @StepId
+            AND CompanyId = @CompanyId
+            FOR UPDATE;",
+            new { input.StepId, CompanyId }, tx);
 
         if (step == null)
             throw new Exception("Step not found.");
@@ -1413,8 +1444,8 @@ public class DocumentRequestComponent
             FROM DocumentRequests dr
             WHERE dr.Id = (SELECT EntityId FROM WorkflowExecutions WHERE Id = @ExecutionId)", new { ExecutionId = executionId }, tx);
             
-        var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = input.UserId }, tx);
-        string approverName = Convert.ToString(approverInfo?.employeename) ?? input.UserId.ToString();
+        var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, tx);
+        string approverName = Convert.ToString(approverInfo?.employeename) ?? userId;
         
         var notifyPlaceholders = new Dictionary<string, string>
         {
@@ -1424,9 +1455,9 @@ public class DocumentRequestComponent
         };
 
         int initiatorId = 0;
-        if (requestInfo != null && requestInfo.createdby != null)
+        if (requestInfo != null && requestInfo!.createdby != null)
         {
-            int.TryParse(Convert.ToString(requestInfo.createdby), out initiatorId);
+            int.TryParse(Convert.ToString(requestInfo!.createdby), out initiatorId);
         }
 
         //-------------------------------------------------
@@ -1500,7 +1531,7 @@ public class DocumentRequestComponent
 
             if (initiatorId > 0)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -1532,7 +1563,7 @@ public class DocumentRequestComponent
 
             if (initiatorId > 0)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, input.CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -1625,9 +1656,9 @@ public class DocumentRequestComponent
                     new { ExecutionId = executionId }, tx);
 
                 await CreateDocumentFromApprovedRequestAsync(
-                    input.CompanyId,
+                    CompanyId,
                     requestId,
-                    input.UserId,
+                    userId,
                     tx);
 
 
@@ -1639,7 +1670,7 @@ public class DocumentRequestComponent
 
         if (nextStepUserId.HasValue && requestInfo != null)
         {
-            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, input.CompanyId, (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
+            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
         }
 
         return true;
@@ -1648,7 +1679,12 @@ public class DocumentRequestComponent
 
     public async Task<PaginationResult<MyRequestPendingDto>> GetMyRequestsPendingApprovalAsync(MyRequestFilterDto filter)
     {
-        var userId = await GetEmployeeID(filter.Initiator);
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
+
         filter.Initiator = userId.ToString();
 
         var searchCondition = "";
@@ -1778,8 +1814,13 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetRequestDetailsAsync(int companyId, int documentId, string entityType)
+    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetRequestDetailsAsync(int documentId, string entityType)
     {
+
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
 
         var sql = $@"
         SELECT 
@@ -1818,148 +1859,25 @@ public class DocumentRequestComponent
 
         return await _common.QueryAsync<DocumentRequestDetailsDto>(sql, new
         {
-            companyId,
+            CompanyId,
             documentId,  // Renamed from requestId for clarity
             entityType   // Should be "Document"
         });
 
-        //var query = $@"
-        //    -----------------------------------------------------
-        //    -- 1️⃣ Document Request
-        //    -----------------------------------------------------
-        //    SELECT *
-        //    FROM Vw_DocumentRequests
-        //    WHERE CompanyId = {companyId}
-        //      AND Id = {requestId}
-        //      --AND SubmittedBy = '{initiator}'
-        //      AND IsDeleted = FALSE;
-
-        //    -----------------------------------------------------
-        //    -- 2️⃣ Workflow Execution
-        //    -----------------------------------------------------
-        //    SELECT *
-        //    FROM WorkflowExecutions
-        //    WHERE CompanyId = {companyId}
-        //      AND EntityId = {requestId}
-        //      AND EntityType = 'Request'
-        //    ORDER BY Id DESC
-        //    LIMIT 1;
-
-        //    -----------------------------------------------------
-        //    -- 3️⃣ Workflow Steps
-        //    -----------------------------------------------------
-        //    SELECT 
-        //        wes.StepOrder,
-        //        wsd.StepType,
-        //        wes.AssignedUserId,
-        //        wes.AssignedRoleId,
-        //        wes.Decision,
-        //        wes.Observation,
-        //        wes.ActionAt,
-        //        wes.IsActive,
-        //        u.EmployeeName
-        //    FROM WorkflowExecutionSteps wes
-        //    INNER JOIN WorkflowExecutions we
-        //        ON we.CompanyId = wes.CompanyId
-        //        AND we.Id = wes.WorkflowExecutionId
-        //    INNER JOIN WorkflowStepDefinitions wsd
-        //        ON wsd.CompanyId = wes.CompanyId
-        //        AND wsd.Id = wes.StepDefinitionId
-        //    INNER JOIN Users u
-        //     ON wsd.UserId = u.Id
-        //    WHERE wes.CompanyId = {companyId}
-        //      AND we.EntityId = {requestId}
-        //      AND we.EntityType = 'Request'
-        //    ORDER BY wes.StepOrder;
-        //    ";
-
-        //var dataSet = await _common.ExecuteSqlQueryMultiple(query);
-
-        //if (dataSet.Tables.Count < 1 || dataSet.Tables[0].Rows.Count == 0)
-        //    return null;
-
-        ////-----------------------------------------------------
-        //// 1️⃣ Map DocumentRequest
-        ////-----------------------------------------------------
-        //var drRow = dataSet.Tables[0].Rows[0];
-
-        //var result = new DocumentRequestDetailsDto
-        //{
-        //    Id = Convert.ToInt32(drRow["Id"]),
-        //    RequestNumber = drRow["RequestNumber"]?.ToString(),
-        //    DocumentName = drRow["DocumentName"]?.ToString(),
-        //    Justification = drRow["Justification"]?.ToString(),
-        //    ProposedContent = drRow["ProposedContent"]?.ToString(),
-        //    Division = drRow["Division"]?.ToString(),
-        //    DivisionCode = drRow["DivisionCode"]?.ToString(),
-        //    Department = drRow["Department"]?.ToString(),
-        //    DepartmentCode = drRow["DepartmentCode"]?.ToString(),
-        //    SubDepartment = drRow["SubDepartment"]?.ToString(),
-        //    SubDepartmentCode = drRow["SubDepartmentCode"]?.ToString(),
-        //    BusinessDomain = drRow["BusinessDomain"]?.ToString(),
-        //    BusinessDomainCode = drRow["BusinessDomainCode"]?.ToString(),
-        //    SubmittedAt = drRow["SubmittedAt"] == DBNull.Value
-        //                    ? null
-        //                    : Convert.ToDateTime(drRow["SubmittedAt"]),
-        //    SubmittedBy = drRow["SubmittedBy"]?.ToString(),
-        //    Status = Convert.ToInt32(drRow["Status"])
-        //};
-
-        ////-----------------------------------------------------
-        //// 2️⃣ Map WorkflowExecution
-        ////-----------------------------------------------------
-        //if (dataSet.Tables.Count > 1 && dataSet.Tables[1].Rows.Count > 0)
-        //{
-        //    var wfRow = dataSet.Tables[1].Rows[0];
-
-        //    result.WorkflowStatus = wfRow["Status"]?.ToString();
-        //    result.WorkflowStartedAt = wfRow["StartedAt"] == DBNull.Value
-        //                                ? null
-        //                                : Convert.ToDateTime(wfRow["StartedAt"]);
-        //    result.WorkflowCompletedAt = wfRow["CompletedAt"] == DBNull.Value
-        //                                ? null
-        //                                : Convert.ToDateTime(wfRow["CompletedAt"]);
-        //}
-
-        ////-----------------------------------------------------
-        //// 3️⃣ Map Workflow Steps
-        ////-----------------------------------------------------
-        //if (dataSet.Tables.Count > 2 && dataSet.Tables[2].Rows.Count > 0)
-        //{
-        //    foreach (DataRow row in dataSet.Tables[2].Rows)
-        //    {
-        //        result.Steps.Add(new WorkflowStepHistoryDto
-        //        {
-        //            UserName = row["EmployeeName"]?.ToString(),
-        //            StepOrder = Convert.ToInt32(row["StepOrder"]),
-        //            StepType = row["StepType"]?.ToString(),
-        //            AssignedUserId = row["AssignedUserId"] == DBNull.Value
-        //                                ? null
-        //                                : Convert.ToInt32(row["AssignedUserId"]),
-        //            AssignedRoleId = row["AssignedRoleId"] == DBNull.Value
-        //                                ? null
-        //                                : Convert.ToInt32(row["AssignedRoleId"]),
-        //            Decision = row["Decision"] == DBNull.Value
-        //                                ? null
-        //                                : row["Decision"].ToString(),
-        //            Observation = row["Observation"]?.ToString(),
-        //            ActionAt = row["ActionAt"] == DBNull.Value
-        //                                ? null
-        //                                : Convert.ToDateTime(row["ActionAt"]),
-        //            IsActive = Convert.ToBoolean(row["IsActive"])
-        //        });
-        //    }
-        //}
-
-        //return result;
+         
     }
 
 
     public async Task<IEnumerable<DocumentRequestDetailsDto>> GetWorkflowDetailsAsync(
-    int companyId,
     int entityId,  // This could be either RequestId or DocumentId
     string entityType)  // "Request" or "Document"
     {
+
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        var prefix = _utilities.GetPrefix(clientIp);
+        var userId = _utilities.GetUserid(prefix);
+
         var sql = $@"
         SELECT 
             we.EntityId,
@@ -1996,7 +1914,7 @@ public class DocumentRequestComponent
 
         return await _common.QueryAsync<DocumentRequestDetailsDto>(sql, new
         {
-            companyId,
+            CompanyId,
             entityId,
             entityType
         });
@@ -2065,12 +1983,17 @@ public class DocumentRequestComponent
          PROMOTE Audience ✅
              ↓
          Document Draft 0.1 Ready */
-    public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, long userId, NpgsqlTransaction transaction)
+    public async Task<int> CreateDocumentFromApprovedRequestAsync(string companyId, int requestId, string userId, NpgsqlTransaction transaction)
     {
         //await using var transaction = await _common.BeginTransactionAsync();
 
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
+
+
             //-----------------------------------------
             // 1️⃣ Get Approved Request
             //-----------------------------------------
@@ -2496,6 +2419,9 @@ public class DocumentRequestComponent
     {
         try
         {
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -2821,9 +2747,10 @@ public class DocumentRequestComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 

@@ -139,8 +139,7 @@ public class DocumentUpdateDto : AuditableEntity
 }
 
 public class SubmitDocument
-{
-    public int CompanyId { get; set; }
+{ 
     public int DocumentId { get; set; }
     public int UserId { get; set; }
 
@@ -173,10 +172,8 @@ public class CreateDocumentAttributeValueDto
 
 
 public class ActionOnDocument
-{
-    public int CompanyId { get; set; }
-    public int DocumentId { get; set; }
-    public int UserId { get; set; }
+{ 
+    public int DocumentId { get; set; } 
     public int ExecutionId { get; set; }
     public string Observation { get; set; }
     public string EmployeeCode { get; set; }
@@ -226,17 +223,14 @@ public  class AllDocumentDto
 }
 
 public class GetDocumentDto : TableFiltersDto
-{
-    public int CompanyId { get; set; }
-    public int UserId { get; set; }
+{  
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-    public string? DocumentTypeCode { get; set; }
-    public string? EmployeeCode { get; set; }
+    public string? DocumentTypeCode { get; set; } 
 
-    public string? RequestStatus { get; set; }
+    public string RequestStatus { get; set; }
 }
 
 
@@ -251,9 +245,7 @@ public class CompleteDocumentTrainingDto
 }
 
 public class GetApprovedRequestForDocumentCreationDto
-{
-    public int CompanyId { get; set; }
-    public int? UserId { get; set; }
+{ 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }

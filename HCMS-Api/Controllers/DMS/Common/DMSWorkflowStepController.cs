@@ -91,15 +91,15 @@ public class DMSWorkflowStepController : Controller
     }
 
 
-    [HttpGet("get-pending-approvals/{companyId}/{userId}")]
-    public async Task<IActionResult> GetPendingApprovals(long companyId, int userId)
+    [HttpGet("get-pending-approvals")]
+    public async Task<IActionResult> GetPendingApprovals()
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<PendingRequestDto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.GetPendingApprovalsAsync(companyId, userId),
+                Data = await _workflowStepComponent.GetPendingApprovalsAsync(),
                 Message = "Success",
                 Code = 200
             });
@@ -117,43 +117,7 @@ public class DMSWorkflowStepController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
-
-
-    //[HttpPost("create-workflow-step")]
-    //public async Task<IActionResult> Create([FromBody] WorkflowStepCreateDto input)
-    //{
-    //    if (!ModelState.IsValid)
-    //    {
-    //        // Return validation errors
-    //        return BadRequest(ModelState);
-    //    }
-
-    //    try
-    //    {
-    //        return Ok(new HttpApiResponse<WorkflowStepReadDto>()
-    //        {
-    //            Success = true,
-    //            Data = await _workflowStepComponent.CreateAsync(input),
-    //            Message = "Workflow Step created successfully.",
-    //            Code = 200
-    //        });
-    //    }
-    //    catch (CustomException ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-    //        return StatusCode(response.Code, response);
-    //    }
-    //}
-
-
+     
     [HttpPost("create-workflow-step")]
     public async Task<IActionResult> Create([FromBody] WorkFlowStepsFilterDto filters)
     {
