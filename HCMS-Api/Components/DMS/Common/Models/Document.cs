@@ -220,7 +220,7 @@ public class GetDocumentDto : TableFiltersDto
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; } 
 
-    public string RequestStatus { get; set; }
+    public string? RequestStatus { get; set; }
 }
 
 

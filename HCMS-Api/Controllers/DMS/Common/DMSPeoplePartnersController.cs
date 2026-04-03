@@ -156,6 +156,27 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    [HttpPost("get-employees-by-role/{roleId}")]
+    public async Task<IActionResult> GetEmployeesByRole(int roleId, [FromBody] TableFiltersDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetEmployeesByRoleIdAsync(roleId, input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-all-roles")]
     public async Task<IActionResult> GetRoleList()
     {

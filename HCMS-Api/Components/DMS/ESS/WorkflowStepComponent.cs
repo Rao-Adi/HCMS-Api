@@ -12,6 +12,7 @@ using System.ComponentModel.Design;
 using System.Data;
 using System.Data.Entity.Infrastructure;
 using System.Transactions;
+using System.Web.Http.Filters;
 using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
@@ -313,11 +314,11 @@ public class WorkflowStepComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-
+            int CompanyId = Convert.ToInt32(_CompanyId);
             string query = $@"
                 SELECT ws.*
                 FROM Vw_WorkflowStepDefinitions ws
@@ -328,16 +329,27 @@ public class WorkflowStepComponent
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
                 -- Allow filtering by specific policy name or ID
-                AND (@DivisionCode = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (@DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (@SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (@BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
+                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
+                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
+                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
                 AND ws.IsActive = TRUE
                 AND ws.IsDeleted = FALSE
                 ORDER BY ws.StepOrder;";
 
-            var results = await _common.QueryAsync<dynamic>(query, input);
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                input.EntityType,
+                input.DocumentTypeCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode
+            };
 
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
+             
             var dtos = new List<WorkflowStepReadDto>();
             foreach (var row in results)
             {
@@ -426,7 +438,7 @@ public class WorkflowStepComponent
 
             //return divisions;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             throw;
         }
@@ -1152,17 +1164,17 @@ public class WorkflowStepComponent
         //-----------------------------------------
 
         var policyId = await _dapperService.ExecuteScalarAsync<int?>(@"
-        SELECT Id
-        FROM WorkflowPolicies
-        WHERE CompanyId = @CompanyId
-        AND EntityType = @EntityType
-        AND DocumentTypeCode = @DocType
-        AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-        AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-        AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-        AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
-        AND IsActive = TRUE
-        AND IsDeleted = FALSE;",
+            SELECT Id
+            FROM WorkflowPolicies
+            WHERE CompanyId = @CompanyId
+            AND EntityType = @EntityType
+            AND DocumentTypeCode = @DocType
+            AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
+            AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
+            AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
+            AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+            AND IsActive = TRUE
+            AND IsDeleted = FALSE;",
         new
         {
             CompanyId = companyId,
@@ -1182,12 +1194,12 @@ public class WorkflowStepComponent
         //-----------------------------------------
 
         var versionId = await _dapperService.ExecuteScalarAsync<int?>(@"
-        SELECT Id
-        FROM WorkflowPolicyVersions
-        WHERE CompanyId = @CompanyId
-        AND WorkflowPolicyId = @PolicyId
-        AND IsActive = TRUE
-        LIMIT 1;",
+            SELECT Id
+            FROM WorkflowPolicyVersions
+            WHERE CompanyId = @CompanyId
+            AND WorkflowPolicyId = @PolicyId
+            AND IsActive = TRUE
+            LIMIT 1;",
         new { CompanyId = companyId, PolicyId = policyId });
 
         if (versionId == null)
@@ -1198,10 +1210,10 @@ public class WorkflowStepComponent
         //-----------------------------------------
 
         var steps = await _dapperService.ExecuteScalarAsync<int>(@"
-        SELECT COUNT(*)
-        FROM WorkflowStepDefinitions
-        WHERE WorkflowPolicyVersionId = @VersionId
-        AND IsDeleted = FALSE;",
+            SELECT COUNT(*)
+            FROM WorkflowStepDefinitions
+            WHERE WorkflowPolicyVersionId = @VersionId
+            AND IsDeleted = FALSE;",
         new { VersionId = versionId });
 
         if (steps == 0)

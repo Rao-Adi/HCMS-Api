@@ -112,7 +112,7 @@ public class DocumentRequestUserDistribution
     public int DocumentRequestId { get; set; }
 
     // UserId BIGINT NOT NULL
-    public long UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     // IsActive BOOLEAN NOT NULL DEFAULT TRUE
     public bool IsActive { get; set; } = true;
@@ -431,8 +431,7 @@ public class DocumentRequestDetailsDto
 ///
 
 public class DraftDocumentRequestDto
-{
-    public long CompanyId { get; set; }
+{ 
     public string DocumentRequestTypeCode { get; set; }
     public string DocumentTypeCode { get; set; }
 
@@ -476,8 +475,7 @@ public class UpdateDraftRequestDto
 
 public class SubmitDocumentRequestDto
 { 
-    public int RequestId { get; set; }
-    public int SubmittedBy { get; set; }
+    public int RequestId { get; set; } 
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }

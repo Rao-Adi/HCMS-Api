@@ -161,15 +161,45 @@ public class PeoplePartnersComponent
         };
     }
 
+    public async Task<PaginationResult<dynamic>> GetEmployeesByRoleIdAsync(int roleId, TableFiltersDto input)
+    {
+        var offset = (input.PageNumber - 1) * input.PageSize;
+        var search = input.SearchText?.Replace("'", "''").ToUpper();
+        
+        var whereClause = "WHERE EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.roleid = @RoleId)";
+        
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%')";
+        }
+
+        string sortColumn = string.IsNullOrWhiteSpace(input.SortColumn) ? "empid" : new string(input.SortColumn.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
+        if (string.IsNullOrWhiteSpace(sortColumn)) sortColumn = "empid";
+        string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+        var queryParams = new { RoleId = roleId, Offset = offset, PageSize = input.PageSize };
+
+        string dataSql = $@"SELECT e.* FROM tblEmployee e {whereClause} ORDER BY e.{sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+        string countSql = $@"SELECT COUNT(1) FROM tblEmployee e {whereClause};";
+
+        var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+        return new PaginationResult<dynamic> 
+        { 
+            Items = items, 
+            TotalCount = totalCount 
+        };
+    }
+
     public async Task<IQueryable<SelectList2Dto>> GetRoleListAsync()
     {
         try
         {
             string query = @"
-            select b.name,a.roleid from public.tblempjobprofile a
-            left join public.tblsetupsdetail b
-            on a.roleid= b.sdlid
-            where b.smsid = 189;";
+            select distinct b.name, a.roleid from public.tblempjobprofile a
+            inner join public.tblsetupsdetail b on a.roleid = b.sdlid
+            where b.smsid = 189 and a.roleid is not null;";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
