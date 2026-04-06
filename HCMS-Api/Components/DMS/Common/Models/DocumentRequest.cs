@@ -113,6 +113,8 @@ public class DocumentRequestUserDistribution
 
     // UserId BIGINT NOT NULL
     public string EmployeeCode { get; set; }
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
 
     // IsActive BOOLEAN NOT NULL DEFAULT TRUE
     public bool IsActive { get; set; } = true;
@@ -124,13 +126,13 @@ public class DocumentRequestUserDistribution
     public string? CreatedAt { get; set; }  
 
     // CreatedBy BIGINT NOT NULL
-    public long CreatedBy { get; set; }
+    public string CreatedBy { get; set; }
 
     // LastModifiedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     public string? LastModifiedAt { get; set; }
 
     // LastModifiedBy BIGINT NOT NULL
-    public long LastModifiedBy { get; set; }
+    public string LastModifiedBy { get; set; }
 }
 
 public class DocumentRoleDistribution
@@ -277,10 +279,11 @@ public class DraftRequestReadDto
 
 public class MyRequestFilterDto : TableFiltersDto
 { 
-    public string Initiator { get; set; }  // logged in username
+    public string? Initiator { get; set; }  // logged in username
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public int? Status { get; set; }       // Pending / Approved / Rejected
+    public int? CompanyId { get; set; } // this will be filled via generic way
 }
 
 public class MyRequestPendingDto  
@@ -456,18 +459,16 @@ public class DraftDocumentRequestDto
 
 public class UpdateDraftRequestDto
 {
-    public int CompanyId { get; set; }
     public int RequestId { get; set; }
 
     public string DocumentName { get; set; }
     public string Justification { get; set; }
-    public string ProposedContent { get; set; }
-    public long ModifiedByUserId { get; set; }
+    public string? ProposedContent { get; set; } 
      
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserList { get; set; }
+    public List<long>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }

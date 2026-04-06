@@ -1,4 +1,6 @@
-﻿﻿namespace HCMS_Api.Components.DMS.Common.Models;
+﻿using HCMS_Api.Common.Misc;
+
+namespace HCMS_Api.Components.DMS.Common.Models;
 
 public class PeoplePartners
 {
@@ -249,6 +251,8 @@ public class tblEmployee
     public string SittingLocation { get; set; }
 
 }
+
+ 
 
 public class tblSetupsdetail
 {

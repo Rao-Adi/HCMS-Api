@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -7,7 +7,8 @@ using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
 using Npgsql;
-using System.Data; 
+using System.Data;
+
 namespace HCMS_Api.Components.DMS.ESS;
 
 public class DocumentRequestComponent
@@ -203,7 +204,7 @@ public class DocumentRequestComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
+            int CompanyId = int.Parse(_CompanyId);
 
 
             string? draftFileUrl = null;
@@ -270,7 +271,7 @@ public class DocumentRequestComponent
                 RETURNING Id;",
             new
             {
-                CompanyId,
+                _CompanyId,
                 RequestType = dto.DocumentRequestTypeCode,
                 dto.DocumentTypeCode,
                 dto.DocumentName,
@@ -282,7 +283,7 @@ public class DocumentRequestComponent
                 dto.SubDepartmentCode,
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Draft,
-                CreatedBy = userId
+                CreatedBy = dto.CreatedByUserId
             }, transaction);
 
             //-----------------------------------------
@@ -306,7 +307,7 @@ public class DocumentRequestComponent
                          @UserId,@UserId);",
                     new
                     {
-                        CompanyId,
+                        _CompanyId,
                         RequestId = requestId,
                         d.DivisionCode,
                         d.DepartmentCode,
@@ -314,7 +315,7 @@ public class DocumentRequestComponent
                         d.BusinessDomainCode,
                         d.RoleId,
                         d.DistributionTypeId,
-                        UserId = userId
+                        UserId = dto.CreatedByUserId
                     }, transaction);
                 }
             }
@@ -329,17 +330,17 @@ public class DocumentRequestComponent
                 {
                     await _common.ExecuteAsync(@"
                         INSERT INTO DocumentRequestUserDistributions
-                        (CompanyId,DocumentRequestId,EmployeeCode,
+                        (CompanyId,DocumentRequestId,UserId,
                          CreatedBy,LastModifiedBy)
                         VALUES
-                        (@CompanyId,@RequestId,@EmployeeCode,
+                        (@CompanyId,@RequestId,@UserId,
                          @CreatedBy,@CreatedBy);",
                     new
                     {
-                        CompanyId,
+                        _CompanyId,
                         RequestId = requestId,
-                        EmployeeCode = _userId,
-                        CreatedBy = userId
+                        UserId = _userId,
+                        CreatedBy = dto.CreatedByUserId
                     }, transaction);
                 }
             }
@@ -355,10 +356,10 @@ public class DocumentRequestComponent
                 (@CompanyId,@RequestId,@Status,@UserId,'Draft Created');",
             new
             {
-                CompanyId,
+                _CompanyId,
                 RequestId = requestId,
                 Status = DocumentRequestStatus.Draft,
-                UserId = userId
+                UserId = dto.CreatedByUserId
             }, transaction);
 
             await transaction.CommitAsync();
@@ -381,8 +382,7 @@ public class DocumentRequestComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
-
+            int CompanyId = int.Parse(_CompanyId);
 
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
@@ -427,7 +427,7 @@ public class DocumentRequestComponent
                 dto.Justification,
                 dto.ProposedContent, 
                 DraftFileUrl = draftFileUrl,
-                UserId = dto.ModifiedByUserId.ToString(), 
+                UserId = userId, 
                 DraftStatus = DocumentRequestStatus.Draft
             },
             transaction);
@@ -450,8 +450,8 @@ public class DocumentRequestComponent
 
             // Insert new distributions
             await InsertDistributionsAsync(CompanyId, dto.RequestId,
-                dto.DistributionList, dto.UserList,
-                dto.ModifiedByUserId, transaction);
+                dto.DistributionList, dto.UserIds,
+                userId, transaction);
 
 
             //-------------------------------------------------
@@ -461,26 +461,18 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentRequestHistory
                 (
-                    CompanyId,
-                    RequestId,
-                    ToStateId,
-                    ChangedBy,
-                    Comments
+                    CompanyId, RequestId, ToStateId, ChangedBy, Comments
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @RequestId,
-                    @Status,
-                    @UserId,
-                    'Draft Updated'
+                    @CompanyId, @RequestId, @Status, @UserId, 'Draft Updated'
                 );",
                 new
                 {
                     CompanyId,
                     dto.RequestId,
                     Status = DocumentRequestStatus.Draft,
-                    UserId = dto.ModifiedByUserId
+                    UserId = userId
                 },
                 transaction);
 
@@ -502,7 +494,7 @@ public class DocumentRequestComponent
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = Convert.ToInt32(_CompanyId);
+        int CompanyId = int.Parse(_CompanyId);
 
 
         // Optional: ensure draft exists before calling original submit
@@ -537,7 +529,8 @@ public class DocumentRequestComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
+            int CompanyId = int.Parse(_CompanyId);
+
             //-------------------------------------------------
             // Validate Request
             //-------------------------------------------------
@@ -829,7 +822,7 @@ public class DocumentRequestComponent
             if (firstStepUserId.HasValue)
             {
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? input.RequestId.ToString() } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId.ToString(), (int)input.RequestId, firstStepUserId.Value, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, firstStepUserId.Value, placeholders);
             }
 
             return true;
@@ -847,7 +840,7 @@ public class DocumentRequestComponent
             long requestId,
             IEnumerable<DistributionListCreateDto> roles,
             IEnumerable<long> users,
-            long userId,
+            string userId,
             IDbTransaction tx)
     {
         if (roles?.Any() == true)
@@ -890,12 +883,12 @@ public class DocumentRequestComponent
                  CreatedBy,LastModifiedBy)
                 VALUES
                 (@CompanyId,@RequestId,@UserId,
-                 @UserId,@EmployeeCode);",
+                 @UserId,@UserId);",
                 new
                 {
                     CompanyId = companyId,
                     RequestId = requestId,
-                    EmployeeCode = uid
+                    UserId = uid
                 }, tx);
             }
         }
@@ -1148,7 +1141,7 @@ public class DocumentRequestComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
+            int CompanyId = int.Parse(_CompanyId);
 
             if (input.EmployeeCode == "" || input.EmployeeCode == null)
                 throw new Exception("Requests not found.");
@@ -1217,7 +1210,48 @@ public class DocumentRequestComponent
                 input.DocumentTypeCode
             };
 
-            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(dataSql, queryParams)).ToList();
+            var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var requests = new List<DocumentRequestReadDto>();
+            foreach (var row in dynamicRequests)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                requests.Add(new DocumentRequestReadDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    RequestNumber = GetValue<string>(dict, "requestnumber"),
+                    DocumentRequestTypeCode = GetValue<string>(dict, "documentrequesttypecode"),
+                    DocumentId = GetValue<int>(dict, "documentid"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    DocumentName = GetValue<string>(dict, "documentname"),
+                    Justification = GetValue<string>(dict, "justification"),
+                    Status = GetValue<int>(dict, "status"),
+                    RowVersion = GetValue<string>(dict, "rowversion"),
+                    ProposedContent = GetValue<string>(dict, "proposedcontent"),
+                    DraftFileUrl = GetValue<string>(dict, "draftfileurl"),
+                    IsContentFinalized = GetValue<bool>(dict, "iscontentfinalized"),
+                    DraftContentLastModifiedAt = GetValue<DateTime?>(dict, "draftcontentlastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    DraftContentLastModifiedBy = GetValue<string>(dict, "draftcontentlastmodifiedby"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby")
+                });
+            }
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             return new PaginationResult<DocumentRequestReadDto>
@@ -1241,7 +1275,7 @@ public class DocumentRequestComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
+            int CompanyId = int.Parse(_CompanyId);
 
             var whereClause = @"WHERE CompanyId = @CompanyId
                 AND Status = @DraftStatus
@@ -1289,7 +1323,48 @@ public class DocumentRequestComponent
                 CreatedBy = userId.ToString()
             };
 
-            var requests = (await _common.QueryAsync<DocumentRequestReadDto>(dataSql, queryParams)).ToList();
+            var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var requests = new List<DocumentRequestReadDto>();
+            foreach (var row in dynamicRequests)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                requests.Add(new DocumentRequestReadDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    RequestNumber = GetValue<string>(dict, "requestnumber"),
+                    DocumentRequestTypeCode = GetValue<string>(dict, "documentrequesttypecode"),
+                    DocumentId = GetValue<int>(dict, "documentid"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    DocumentName = GetValue<string>(dict, "documentname"),
+                    Justification = GetValue<string>(dict, "justification"),
+                    Status = GetValue<int>(dict, "status"),
+                    RowVersion = GetValue<string>(dict, "rowversion"),
+                    ProposedContent = GetValue<string>(dict, "proposedcontent"),
+                    DraftFileUrl = GetValue<string>(dict, "draftfileurl"),
+                    IsContentFinalized = GetValue<bool>(dict, "iscontentfinalized"),
+                    DraftContentLastModifiedAt = GetValue<DateTime?>(dict, "draftcontentlastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    DraftContentLastModifiedBy = GetValue<string>(dict, "draftcontentlastmodifiedby"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby")
+                });
+            }
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             if (!requests.Any())
@@ -1337,9 +1412,10 @@ public class DocumentRequestComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT *
-                FROM DocumentRequestUserDistributions
-                WHERE CompanyId = @CompanyId
+                SELECT drd.*, e.firstname ,e.lastname
+                FROM DocumentRequestUserDistributions drd 
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
+                WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
@@ -1385,9 +1461,9 @@ public class DocumentRequestComponent
                 TotalCount = totalCount
             };
         }
-        catch(Exception ex)
+        catch
         {
-            throw ex;
+            throw;
         }
     }
    
@@ -1400,7 +1476,7 @@ public class DocumentRequestComponent
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = Convert.ToInt32(_CompanyId);
+        int CompanyId = int.Parse(_CompanyId);
 
         //-------------------------------------------------
         // 1️⃣ Lock Step
@@ -1532,7 +1608,7 @@ public class DocumentRequestComponent
 
             if (initiatorId > 0)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId.ToString(), (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -1564,7 +1640,7 @@ public class DocumentRequestComponent
 
             if (initiatorId > 0)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId.ToString(), (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
             }
 
             return true;
@@ -1629,7 +1705,7 @@ public class DocumentRequestComponent
                     SET Status = 'Completed',
                         CompletedAt = NOW()
                     WHERE Id = @ExecutionId;",
-                        new { ExecutionId = executionId }, tx);
+                    new { ExecutionId = executionId }, tx);
 
                 await _common.ExecuteAsync(@"
                     UPDATE DocumentRequests
@@ -1657,7 +1733,7 @@ public class DocumentRequestComponent
                     new { ExecutionId = executionId }, tx);
 
                 await CreateDocumentFromApprovedRequestAsync(
-                    CompanyId.ToString(),
+                    CompanyId,
                     requestId,
                     userId,
                     tx);
@@ -1671,7 +1747,7 @@ public class DocumentRequestComponent
 
         if (nextStepUserId.HasValue && requestInfo != null)
         {
-            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId.ToString(), (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
+            await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, nextStepUserId.Value, notifyPlaceholders);
         }
 
         return true;
@@ -1684,10 +1760,12 @@ public class DocumentRequestComponent
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = Convert.ToInt32(_CompanyId);
+        int CompanyId = int.Parse(_CompanyId);
 
         filter.Initiator = userId.ToString();
-        
+        filter.CompanyId = CompanyId;
+        filter.Initiator = userId;
+
         var searchCondition = "";
         if (!string.IsNullOrWhiteSpace(filter.SearchText))
         {
@@ -1822,7 +1900,7 @@ public class DocumentRequestComponent
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = Convert.ToInt32(_CompanyId);
+        int CompanyId = int.Parse(_CompanyId);
 
         var sql = $@"
         SELECT 
@@ -1879,7 +1957,7 @@ public class DocumentRequestComponent
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = Convert.ToInt32(_CompanyId);
+        int CompanyId = int.Parse(_CompanyId);
 
         var sql = $@"
         SELECT 
@@ -1986,7 +2064,7 @@ public class DocumentRequestComponent
          PROMOTE Audience ✅
              ↓
          Document Draft 0.1 Ready */
-    public async Task<int> CreateDocumentFromApprovedRequestAsync(string companyId, int requestId, string userId, NpgsqlTransaction transaction)
+    public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string userId, NpgsqlTransaction transaction)
     {
         //await using var transaction = await _common.BeginTransactionAsync();
 
@@ -2018,33 +2096,14 @@ public class DocumentRequestComponent
             var documentId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
                 (
-                    CompanyId,
-                    DocumentNumber,
-                    RequestId,
-                    DocumentTypeCode,
-                    Title,
-                    DivisionCode,
-                    DepartmentCode,
-                    SubDepartmentCode,
-                    BusinessDomainCode,
-                    DocumentURL,
-                    CreatedBy,
-                    LastModifiedBy
+                    CompanyId, DocumentNumber, RequestId, DocumentTypeCode, Title, DivisionCode, DepartmentCode,
+                    SubDepartmentCode, BusinessDomainCode, DocumentURL, CreatedBy, LastModifiedBy
                 )
                 VALUES
                 (
                     @CompanyId,
                     'DOC-' || nextval('document_seq'),
-                    @RequestId,
-                    @DocumentTypeCode,
-                    @Title,
-                    @DivisionCode,
-                    @DepartmentCode,
-                    @SubDepartmentCode,
-                    @BusinessDomainCode,
-                    @DocumentUrl,
-                    @UserId,
-                    @UserId
+                    @RequestId, @DocumentTypeCode, @Title, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @UserId, @UserId
                 )
                 RETURNING Id
                 ", new
@@ -2067,23 +2126,11 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
             (
-                CompanyId,
-                DocumentId,
-                Version,
-                VersionType,
-                Content,
-                CreatedBy,
-                LastModifiedBy
+                CompanyId, DocumentId, Version, VersionType, Content, CreatedBy, LastModifiedBy
             )
             VALUES
             (
-                @CompanyId,
-                @DocumentId,
-                '0.1',
-                1,
-                @Content,
-                @UserId,
-                @UserId
+                @CompanyId, @DocumentId, '0.1', 1, @Content, @UserId, @UserId
             )
             ", new
             {
@@ -2099,17 +2146,11 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentStateHistory
             (
-                CompanyId,
-                DocumentId,
-                ToStateId,
-                ChangedBy
+                CompanyId, DocumentId, ToStateId, ChangedBy
             )
             VALUES
             (
-                @CompanyId,
-                @DocumentId,
-                1,
-                @UserId
+                @CompanyId, @DocumentId, 1, @UserId
             )
             ", new { companyId, documentId, userId }, transaction);
 
@@ -2750,9 +2791,11 @@ public class DocumentRequestComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);

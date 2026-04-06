@@ -1145,11 +1145,11 @@ public class DocumentComponent
 
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             //-------------------------------------------------
             // 1️⃣ Lock Document
@@ -1462,7 +1462,7 @@ public class DocumentComponent
         }
     }
 
-    public async Task PromoteVersionAfterReworkAsync(string companyId, int documentId, string userId)
+    public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string userId)
     {
         try
         {
@@ -1544,10 +1544,11 @@ public class DocumentComponent
 
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             //var userId = await GetEmployeeID(input.EmployeeCode);
             //-------------------------------------------------
@@ -1717,7 +1718,7 @@ public class DocumentComponent
             ↓
         AUTO CREATE TRAINING MATRIX ✅
      */
-    public async Task<bool> MakeDocumentEffectiveAsync(string companyId, int documentId, string userId)
+    public async Task<bool> MakeDocumentEffectiveAsync(int companyId, int documentId, string userId)
     {
         await using var transaction = await _common.BeginTransactionAsync();
 
@@ -1814,7 +1815,7 @@ public class DocumentComponent
         }
     }
 
-    public async Task NotifyPendingUsersAsync(string companyId, int documentId)
+    public async Task NotifyPendingUsersAsync(int companyId, int documentId)
     {
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
@@ -1949,7 +1950,7 @@ public class DocumentComponent
         }
     }
 
-    private async Task HandlePostApprovalAsync(string companyId, int documentId, string userId)
+    private async Task HandlePostApprovalAsync(int companyId, int documentId, string userId)
     {
 
         /*
@@ -2170,10 +2171,11 @@ public class DocumentComponent
 
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
@@ -2239,13 +2241,7 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @DocumentId,
-                    2,
-                    5,
-                    @ExecutionId,
-                    @Comments,
-                    @UserId
+                    @CompanyId, @DocumentId, 2, 5, @ExecutionId, @Comments, @UserId
                 );",
             new
             {
@@ -2259,9 +2255,9 @@ public class DocumentComponent
             await transaction.CommitAsync();
 
             int initiatorId = 0;
-            if (docInfo != null && docInfo.createdby != null)
+            if (docInfo != null && docInfo!.createdby != null)
             {
-                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+                int.TryParse(Convert.ToString(docInfo!.createdby), out initiatorId);
             }
 
             if (initiatorId > 0)
@@ -2289,10 +2285,11 @@ public class DocumentComponent
 
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
@@ -2835,10 +2832,11 @@ public class DocumentComponent
         await using var transaction = await _common.BeginTransactionAsync();
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
 
             if (string.IsNullOrWhiteSpace(input.Observation))
