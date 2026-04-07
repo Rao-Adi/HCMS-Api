@@ -177,6 +177,27 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    [HttpPost("get-employees-by-filters")]
+    public async Task<IActionResult> GetEmployeesByFilters([FromBody] EmployeeFilterDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetEmployeesByCustomFiltersAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("create-employee")]
     public async Task<IActionResult> CreateEmployee([FromBody] EmployeeCreateDto input)
     {
@@ -218,6 +239,30 @@ public class DMSPeoplePartnersController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
+    [HttpGet("get-all-designations")]
+    public async Task<IActionResult> GetAllDesignationList()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IQueryable<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetDesignationListAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
 
     [HttpGet("get-all-employee-list")]
     public async Task<IActionResult> GetAllSelectList()

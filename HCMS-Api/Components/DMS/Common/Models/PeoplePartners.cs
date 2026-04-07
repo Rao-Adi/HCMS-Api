@@ -1,4 +1,5 @@
-﻿﻿using HCMS_Api.Common.Misc;
+﻿using HCMS_Api.Common.Misc;
+using System.Collections.Generic;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
@@ -18,6 +19,16 @@ public class EmployeeCreateDto
     public DateTime? DateofBirth { get; set; }
     public DateTime? DateJoin { get; set; }
     public string ReportTo { get; set; }
+}
+
+public class EmployeeFilterDto : TableFiltersDto
+{
+    public int? ReportingTo { get; set; } // e.g. reportingto >= n
+    public int? DesignationId { get; set; } // Maps to e.dsgId
+    public int? RoleId { get; set; } // Maps to TblEmpJobProfile.RoleId
+    public bool? IsHeadOfDivision { get; set; }
+    public bool? IsHeadOfDepartment { get; set; }
+    public bool? IsHeadOfSubDepartment { get; set; }
 }
 
 

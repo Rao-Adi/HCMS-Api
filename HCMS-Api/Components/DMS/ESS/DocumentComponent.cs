@@ -2491,13 +2491,8 @@ public class DocumentComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
 
-            var parameters = new
-            {
-                CompanyId = int.Parse(CompanyId),
-                RequestId = requestId, 
-            };
 
-            var query = $@"
+            var result = await _common.QueryAsync<dynamic>(@"
                 SELECT 
                 d.Id AS DocumentId,
                 d.Title,
@@ -2528,14 +2523,13 @@ public class DocumentComponent
                     AND dsh.DocumentId = d.Id
                   ORDER BY dsh.ChangedAt DESC
                   LIMIT 1
-              ) = 1; -- Draft Status ID ";
-
-            var result = await _common.QueryAsync<dynamic>(query, parameters);
+              ) = 1; -- Draft Status ID "
+            , new { CompanyId = int.Parse(CompanyId), RequestId = requestId });
 
             if (result == null)
                 throw new Exception("Draft document not available for finalization.");
 
-            return result ?? Enumerable.Empty<dynamic>();  // never return null list
+            return result;
 
 
         }

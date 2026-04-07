@@ -193,6 +193,64 @@ public class PeoplePartnersComponent
         };
     }
 
+    public async Task<PaginationResult<dynamic>> GetEmployeesByCustomFiltersAsync(EmployeeFilterDto input)
+    {
+        var offset = (input.PageNumber - 1) * input.PageSize;
+        var search = input.SearchText?.Replace("'", "''").ToUpper();
+        
+        var conditions = new List<string> { "1=1" };
+        
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            conditions.Add($"(UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%')");
+        }
+
+        if (input.ReportingTo.HasValue)
+        {
+            conditions.Add("e.ReportTo >= @ReportingTo");
+        }
+
+        if (input.DesignationId.HasValue)
+        {
+            conditions.Add("e.dsgId = @DesignationId");
+        }
+
+        if (input.RoleId.HasValue)
+        {
+            conditions.Add("EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.roleid = @RoleId)");
+        }
+
+        // Dynamic Role Checking for Head of Divisions/Departments based on standard setup detail names
+        var headRoles = new List<string>();
+        if (input.IsHeadOfDivision == true) headRoles.Add("'Division Head'");
+        if (input.IsHeadOfDepartment == true) headRoles.Add("'Department Head'");
+        if (input.IsHeadOfSubDepartment == true) headRoles.Add("'Sub-Department Head'");
+
+        if (headRoles.Any())
+        {
+            string rolesList = string.Join(",", headRoles);
+            conditions.Add($@"EXISTS (
+                SELECT 1 FROM TblEmpJobProfile p 
+                INNER JOIN tblsetupsdetail b ON p.roleid = b.sdlid 
+                WHERE p.empid = e.empid AND b.smsid = 189 AND b.name IN ({rolesList})
+            )");
+        }
+
+        string whereClause = "WHERE " + string.Join(" AND ", conditions);
+        string sortColumn = string.IsNullOrWhiteSpace(input.SortColumn) ? "empid" : new string(input.SortColumn.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
+        if (string.IsNullOrWhiteSpace(sortColumn)) sortColumn = "empid";
+        string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+        var queryParams = new { ReportingTo = input.ReportingTo, DesignationId = input.DesignationId, RoleId = input.RoleId, Offset = offset, PageSize = input.PageSize };
+        string dataSql = $@"SELECT e.* FROM tblEmployee e {whereClause} ORDER BY e.{sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+        string countSql = $@"SELECT COUNT(1) FROM tblEmployee e {whereClause};";
+
+        var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+        return new PaginationResult<dynamic> { Items = items, TotalCount = totalCount };
+    }
+
     public async Task<int> CreateEmployeeAsync(EmployeeCreateDto input)
     {
         try
@@ -259,6 +317,40 @@ public class PeoplePartnersComponent
                 {
                     Code = row.Field<string>("empcode"),
                     Value = row.Field<string>("firstname") + " " + row.Field<string>("lastname")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<IQueryable<SelectList2Dto>> GetDesignationListAsync()
+    {
+        try
+        {
+            string query = @"
+                SELECT DISTINCT 
+                    dsgid AS Designation_Id, 
+                    jobtitle AS Designation_Value 
+                FROM 
+                    public.tblempjobprofile 
+                WHERE 
+                    active = true 
+                ORDER BY 
+                    jobtitle;";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("Designation_Id"),
+                    Value = row.Field<string>("Designation_Value")
                 })
                 .ToList();
 
