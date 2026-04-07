@@ -5,6 +5,7 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
+using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -192,6 +193,32 @@ public class PeoplePartnersComponent
         };
     }
 
+    public async Task<int> CreateEmployeeAsync(EmployeeCreateDto input)
+    {
+        try
+        {
+            string insertQuery = $@"
+                INSERT INTO tblEmployee
+                (
+                    EmpCode, CompanyId, FirstName, LastName, Email, MobileNumber, 
+                    dptId, dsgId, DateofBirth, DateJoin, Reportto Active
+                )
+                VALUES
+                (
+                    @EmpCode, @CompanyId, @FirstName, @LastName, @Email, @MobileNumber, 
+                    @dptId, @dsgId, @DateofBirth, @DateJoin, @ReportTo 1
+                )
+                RETURNING EmpId;";
+
+            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, input);
+            return newId;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
     public async Task<IQueryable<SelectList2Dto>> GetRoleListAsync()
     {
         try
@@ -208,6 +235,30 @@ public class PeoplePartnersComponent
                 {
                     Id = row.Field<int>("roleid"),
                     Value = row.Field<string>("name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<IQueryable<SelectListDto>> GetAllEmployeeList()
+    {
+        try
+        {
+            string query = @"select empcode,firstname,lastname from tblEmployee;";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectListDto
+                {
+                    Code = row.Field<string>("empcode"),
+                    Value = row.Field<string>("firstname") + " " + row.Field<string>("lastname")
                 })
                 .ToList();
 

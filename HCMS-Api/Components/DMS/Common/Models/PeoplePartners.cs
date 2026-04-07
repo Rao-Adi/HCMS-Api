@@ -1,9 +1,23 @@
-﻿using HCMS_Api.Common.Misc;
+﻿﻿using HCMS_Api.Common.Misc;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
 
 public class PeoplePartners
 {
+}
+
+public class EmployeeCreateDto
+{ 
+    public int? CompanyId { get; set; }
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public string Email { get; set; }
+    public string MobileNumber { get; set; }
+    public int? dptId { get; set; }
+    public int? dsgId { get; set; }
+    public DateTime? DateofBirth { get; set; }
+    public DateTime? DateJoin { get; set; }
+    public string ReportTo { get; set; }
 }
 
 

@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -1143,9 +1143,6 @@ public class DocumentRequestComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            if (input.EmployeeCode == "" || input.EmployeeCode == null)
-                throw new Exception("Requests not found.");
-             
 
             var whereClause = "WHERE 1=1";
 
@@ -1159,6 +1156,17 @@ public class DocumentRequestComponent
                     OR UPPER(RequestNumber) LIKE '%{search}%'
                 )";
             }
+            
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND DocumentTypeCode = @DocumentTypeCode";
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
@@ -1176,12 +1184,7 @@ public class DocumentRequestComponent
             var dataSql = $@"SELECT * FROM fn_get_my_inbox_requests(
                     @CompanyId,
                     @UserId,
-                    @RequestStatus,
-                    @DivisionCode,
-                    @DepartmentCode,
-                    @SubDepartmentCode,
-                    @BusinessDomainCode,
-                    @DocumentTypeCode
+                    @RequestStatus
                 )
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
@@ -1190,12 +1193,7 @@ public class DocumentRequestComponent
             var countSql = $@"SELECT COUNT(1) FROM fn_get_my_inbox_requests(
                     @CompanyId,
                     @UserId,
-                    @RequestStatus,
-                    @DivisionCode,
-                    @DepartmentCode,
-                    @SubDepartmentCode,
-                    @BusinessDomainCode,
-                    @DocumentTypeCode
+                    @RequestStatus
                 ) {whereClause};";
 
             var queryParams = new

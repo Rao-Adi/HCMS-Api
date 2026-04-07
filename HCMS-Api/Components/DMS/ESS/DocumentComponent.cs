@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using Dapper;
+﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -53,7 +53,7 @@ public class DocumentComponent
 
 
     public async Task<DocumentReadDto> CreateAsync(DocumentCreateDto input)
-    { 
+    {
 
         // UC-32: Next Review Date is a mandatory field
         if (input.NextReviewDate == default || input.NextReviewDate.Year < 2000)
@@ -79,7 +79,7 @@ public class DocumentComponent
 
         // 3️⃣ Create unique filename
         var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
-        var fileName = $"{Guid.NewGuid()}{fileExtension}"; 
+        var fileName = $"{Guid.NewGuid()}{fileExtension}";
         var filePath = Path.Combine(uploadsRoot, fileName);
 
         // 4️⃣ Save file to disk
@@ -141,13 +141,13 @@ public class DocumentComponent
                 INSERT INTO DocumentVersions
                 (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
                 VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());"; // VersionType 2 = Effective
-            
-            await _common.ExecuteAsync(versionQuery, new 
-            { 
-                CompanyId, 
-                DocumentId = newId, 
-                Version = string.IsNullOrWhiteSpace(input.Version) ? "1.0" : input.Version, 
-                UserId = userId 
+
+            await _common.ExecuteAsync(versionQuery, new
+            {
+                CompanyId,
+                DocumentId = newId,
+                Version = string.IsNullOrWhiteSpace(input.Version) ? "1.0" : input.Version,
+                UserId = userId
             }, tx);
 
             // UC-32: Active Archival - Insert State History (State 4 = EFFECTIVE)
@@ -155,7 +155,7 @@ public class DocumentComponent
                 INSERT INTO DocumentStateHistory
                 (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
                 VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded', NOW());";
-            
+
             await _common.ExecuteAsync(stateQuery, new { CompanyId, DocumentId = newId, UserId = userId }, tx);
 
             await tx.CommitAsync();
@@ -209,9 +209,9 @@ public class DocumentComponent
 
                 Title = row.Field<string>("Title"),
                 Version = row.Table.Columns.Contains("Version") && !row.IsNull("Version") ? row.Field<string>("Version") : string.Empty,
-                
-                NextReviewDate = row.Table.Columns.Contains("NextReviewdate") && !row.IsNull("NextReviewdate") 
-                    ? row.Field<DateTime>("NextReviewdate").ToString("yyyy-MM-dd HH:mm:ss") 
+
+                NextReviewDate = row.Table.Columns.Contains("NextReviewdate") && !row.IsNull("NextReviewdate")
+                    ? row.Field<DateTime>("NextReviewdate").ToString("yyyy-MM-dd HH:mm:ss")
                     : (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate") ? row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty),
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -489,7 +489,7 @@ public class DocumentComponent
                 BusinessDomain = row.Field<string>("BusinessDomain"),
                 BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
 
-                Title = row.Field<string>("Title"), 
+                Title = row.Field<string>("Title"),
 
                 NextReviewDate = row.Field<string>("NextReviewDate"),
                 DocumentURL = row.Field<string>("DocumentURL"),
@@ -1468,7 +1468,7 @@ public class DocumentComponent
         {
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp); 
+            var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
 
             //-----------------------------------------
@@ -2407,31 +2407,34 @@ public class DocumentComponent
 
     public async Task<IEnumerable<dynamic>> GetRequestsPendingFinalizationAsync(GetApprovedRequestForDocumentCreationDto input)
     {
-        // Basic validation (you can throw exceptions or handle differently)
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-
-        if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
-            throw new ArgumentException("DocumentTypeCode is required", nameof(input.DocumentTypeCode));
-
-
-        // ────────────────────────────────────────────────
-        // Convert empty strings → null (this is the key fix)
-        // ────────────────────────────────────────────────
-        string? Normalize(string? value) =>
-            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-        var parameters = new
+        try
         {
-            CompanyId = CompanyId,
-            DocumentTypeCode = input.DocumentTypeCode.Trim(),
-            DivisionCode = Normalize(input.DivisionCode),
-            DepartmentCode = Normalize(input.DepartmentCode),
-            SubDepartmentCode = Normalize(input.SubDepartmentCode),
-            BusinessDomainCode = Normalize(input.BusinessDomainCode),
-            // UserId = input.UserId   // add only if you're actually using it in WHERE
-        };
 
-        const string sql = $@"
+            // Basic validation (you can throw exceptions or handle differently)
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
+            if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                throw new ArgumentException("DocumentTypeCode is required", nameof(input.DocumentTypeCode));
+
+
+            // ────────────────────────────────────────────────
+            // Convert empty strings → null (this is the key fix)
+            // ────────────────────────────────────────────────
+            string? Normalize(string? value) =>
+                string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+            var parameters = new
+            {
+                CompanyId = int.Parse(CompanyId),
+                DocumentTypeCode = input.DocumentTypeCode.Trim(),
+                DivisionCode = Normalize(input.DivisionCode),
+                DepartmentCode = Normalize(input.DepartmentCode),
+                SubDepartmentCode = Normalize(input.SubDepartmentCode),
+                BusinessDomainCode = Normalize(input.BusinessDomainCode),
+                // UserId = input.UserId   // add only if you're actually using it in WHERE
+            };
+
+            const string sql = $@"
                 SELECT 
                     dr.Id,
                     dr.RequestNumber,
@@ -2468,58 +2471,78 @@ public class DocumentComponent
                 ORDER BY dr.RequestNumber DESC;   -- most recent requests first (common preference)
                 ";
 
-        var result = await _common.QueryAsync<dynamic>(sql, parameters);
+            var result = await _common.QueryAsync<dynamic>(sql, parameters);
 
-        return result ?? Enumerable.Empty<dynamic>();  // never return null list
+            return result ?? Enumerable.Empty<dynamic>();  // never return null list
+
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
     }
 
     public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int requestId)
     {
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        var userId = _utilities.GetUserid(prefix);
+        try
+        {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+
+            var parameters = new
+            {
+                CompanyId = int.Parse(CompanyId),
+                RequestId = requestId, 
+            };
+
+            var query = $@"
+                SELECT 
+                d.Id AS DocumentId,
+                d.Title,
+                d.DivisionCode,
+                d.DepartmentCode,
+                d.SubDepartmentCode,
+                d.BusinessDomainCode,
+                d.NextReviewDate,
+                dr.RequestNumber,
+                dv.Version,
+                dv.Content,
+                dr.DraftFileURL
+            FROM DocumentRequests dr
+            INNER JOIN Documents d
+                ON d.CompanyId = dr.CompanyId
+                AND d.Id = dr.DocumentId
+            INNER JOIN DocumentVersions dv
+                ON dv.CompanyId = d.CompanyId
+                AND dv.DocumentId = d.Id
+                AND dv.VersionType = 1  -- Draft Version
+            WHERE dr.CompanyId = @CompanyId
+              AND dr.Id = @RequestId
+              -- Fixed: Ensure the single latest state record is exactly 'Draft' (1)
+              AND (
+                  SELECT dsh.ToStateId
+                  FROM DocumentStateHistory dsh
+                  WHERE dsh.CompanyId = d.CompanyId
+                    AND dsh.DocumentId = d.Id
+                  ORDER BY dsh.ChangedAt DESC
+                  LIMIT 1
+              ) = 1; -- Draft Status ID ";
+
+            var result = await _common.QueryAsync<dynamic>(query, parameters);
+
+            if (result == null)
+                throw new Exception("Draft document not available for finalization.");
+
+            return result ?? Enumerable.Empty<dynamic>();  // never return null list
 
 
-        var result = await _common.QueryAsync<dynamic>(@"
-
-            SELECT 
-            d.Id AS DocumentId,
-            d.Title,
-            d.DivisionCode,
-            d.DepartmentCode,
-            d.SubDepartmentCode,
-            d.BusinessDomainCode,
-            d.NextReviewDate,
-            dr.RequestNumber,
-            dv.Version,
-            dv.Content,
-            dr.DraftFileURL
-        FROM DocumentRequests dr
-        INNER JOIN Documents d
-            ON d.CompanyId = dr.CompanyId
-            AND d.Id = dr.DocumentId
-        INNER JOIN DocumentVersions dv
-            ON dv.CompanyId = d.CompanyId
-            AND dv.DocumentId = d.Id
-            AND dv.VersionType = 1  -- Draft Version
-        WHERE dr.CompanyId = @CompanyId
-          AND dr.Id = @RequestId
-          -- Fixed: Ensure the single latest state record is exactly 'Draft' (1)
-          AND (
-              SELECT dsh.ToStateId
-              FROM DocumentStateHistory dsh
-              WHERE dsh.CompanyId = d.CompanyId
-                AND dsh.DocumentId = d.Id
-              ORDER BY dsh.ChangedAt DESC
-              LIMIT 1
-          ) = 1; -- Draft Status ID "
-    , new { CompanyId, requestId });
-
-        if (result == null)
-            throw new Exception("Draft document not available for finalization.");
-
-        return result;
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
     }
 
 
@@ -2532,7 +2555,7 @@ public class DocumentComponent
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-             
+
 
             var whereClause = "WHERE 1=1";
 
@@ -2887,10 +2910,10 @@ public class DocumentComponent
             // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
             // Assuming RoleId for DCA is known or we look it up. Using a placeholder role fetch mechanism.
             var dcaUsers = await _common.QueryAsync<int>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
-            
+
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
             var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
-            
+
             foreach (var dcaUser in dcaUsers)
             {
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders);
@@ -2995,16 +3018,16 @@ public class DocumentComponent
 
 public class AuthorizeDocumentDto
 {
-    public int DocumentId { get; set; } 
+    public int DocumentId { get; set; }
     public string Observation { get; set; }
 }
 
-public class GetPendingAuthorization: TableFiltersDto
-{ 
+public class GetPendingAuthorization : TableFiltersDto
+{
     public string? DocumentCategoryFilter { get; set; }
 }
 
 public class GetAuthorizedDocumentsDto : TableFiltersDto
-{ 
+{
     public string UserId { get; set; }
 }

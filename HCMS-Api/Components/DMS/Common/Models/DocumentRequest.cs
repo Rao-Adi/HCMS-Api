@@ -260,8 +260,7 @@ public class GetPendingRequestDto : TableFiltersDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-    public string? DocumentTypeCode { get; set; }
-    public string? EmployeeCode { get; set; }
+    public string? DocumentTypeCode { get; set; } 
 
     public string? RequestStatus { get; set; }
 }
