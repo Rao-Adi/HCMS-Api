@@ -29,6 +29,10 @@ public class EmployeeFilterDto : TableFiltersDto
     public bool? IsHeadOfDivision { get; set; }
     public bool? IsHeadOfDepartment { get; set; }
     public bool? IsHeadOfSubDepartment { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 }
 
 

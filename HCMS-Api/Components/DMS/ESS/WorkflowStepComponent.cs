@@ -7,6 +7,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.HCMS.ESS;
+using Microsoft.AspNetCore.Http.HttpResults;
 using StackExchange.Redis;
 using System.ComponentModel.Design;
 using System.Data;
@@ -349,7 +350,7 @@ public class WorkflowStepComponent
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
-             
+
             var dtos = new List<WorkflowStepReadDto>();
             foreach (var row in results)
             {
@@ -654,7 +655,7 @@ public class WorkflowStepComponent
 		               ON ws.DocumentTypeCode = dt.Code
 		               LEFT JOIN Companies c
 		               ON ws.CompanyId = c.id
-                       LEFT JOIN Users u
+                       LEFT JOIN tblEmployee u
                        ON ws.UserId = u.Id  
                          LEFT JOIN UserRoles ur
                          ON u.Id = ur.UserId
@@ -957,14 +958,17 @@ public class WorkflowStepComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
 
-            var user = await GetEmployeesByAccessFiltersAsync(filters);
-            
+            var users = await GetEmployeesByAccessFiltersAsync(filters);
+
+            filters.CompanyId = CompanyId; // Ensure CompanyId is set in filters for downstream queries
+
             //-----------------------------------------
             // 1️⃣ Resolve WorkflowPolicyId
             //-----------------------------------------
@@ -997,7 +1001,21 @@ public class WorkflowStepComponent
 
             if (policyId == null)
             {
-                policyId = await _dapperService.ExecuteScalarAsync<int>(@"
+                //policyId = await _dapperService.ExecuteScalarAsync<int>(@"
+                //    INSERT INTO WorkflowPolicies
+                //    (
+                //        CompanyId, Name, EntityType, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                //        DocumentTypeCode, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,  LastModifiedBy
+                //    )
+                //    VALUES
+                //    (
+                //        @CompanyId, 'Configured Policy', @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
+                //        @DocumentTypeCode, TRUE, FALSE, NOW(), 'system',  NOW(), 'system'
+                //    )
+                //    RETURNING Id;",
+                //filters);
+
+                policyId = await _dapperService.ExecuteAsync(@"
                     INSERT INTO WorkflowPolicies
                     (
                         CompanyId, Name, EntityType, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
@@ -1006,10 +1024,20 @@ public class WorkflowStepComponent
                     VALUES
                     (
                         @CompanyId, 'Configured Policy', @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
-                        @DocumentTypeCode, TRUE, FALSE, NOW(), 'system',  NOW(), 'system'
+                        @DocumentTypeCode, TRUE, FALSE, NOW(), @CreatedBy,  NOW(), @CreatedBy
                     )
                     RETURNING Id;",
-                filters);
+                new
+                {
+                    CompanyId,
+                    EntityType = filters.EntityType,
+                    DivisionCode = filters.DivisionCode,
+                    DepartmentCode = filters.DepartmentCode,
+                    SubDepartmentCode = filters.SubDepartmentCode,
+                    BusinessDomainCode = filters.BusinessDomainCode,
+                    DocumentTypeCode = filters.DocumentTypeCode,
+                    CreatedBy = userId
+                });
             }
 
             //-----------------------------------------
@@ -1038,10 +1066,10 @@ public class WorkflowStepComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @PolicyId, 1, TRUE, NOW(), 'system'
+                        @CompanyId, @PolicyId, 1, TRUE, NOW(), @CreatedBy
                     )
                     RETURNING Id;",
-                new { CompanyId, PolicyId = policyId });
+                new { CompanyId, PolicyId = policyId, CreatedBy = userId });
             }
 
             //-----------------------------------------
@@ -1058,26 +1086,30 @@ public class WorkflowStepComponent
             // 6️⃣ Insert Step
             //-----------------------------------------
 
-            await _dapperService.ExecuteAsync(@"
-                INSERT INTO WorkflowStepDefinitions
-                (
-                    CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, UserId, 
-                    RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
-                )
-                VALUES
-                (
-                    @CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, @UserId, @RequiresAllApprovals, TRUE, FALSE, NOW(), 'system', NOW(), 'system'
-                );",
-            new
+            foreach (var user in users)
             {
-                CompanyId,
-                VersionId = versionId,
-                StepOrder = nextOrder,
-                filters.StepType,
-                user.RoleId,
-                UserId = userId,
-                RequiresAllApprovals = filters.IsParallelApproval
-            });
+                await _dapperService.ExecuteAsync(@"
+                    INSERT INTO WorkflowStepDefinitions
+                    (
+                        CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, UserId, 
+                        RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
+                    )
+                    VALUES
+                    (
+                        @CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, @UserId, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
+                    );",
+                new
+                {
+                    CompanyId,
+                    VersionId = versionId,
+                    StepOrder = nextOrder,
+                    filters.StepType,
+                    user.RoleId,
+                    UserId = user.Id, // Fixed: Maps to the fetched User's ID, not the logged-in administrator
+                    RequiresAllApprovals = filters.IsParallelApproval,
+                    CreatedBy = userId
+                });
+            }
 
             //-----------------------------------------
             // 7️⃣ Return Updated Steps
@@ -1190,7 +1222,8 @@ public class WorkflowStepComponent
             // STEP 1 — FETCH USERS
             //-----------------------------------------
 
-            var user = await GetEmployeesByAccessFiltersAsync(filters);
+            var users = await GetEmployeesByAccessFiltersAsync(filters);
+            var user = users.FirstOrDefault() ?? throw new CustomException("No users found matching the criteria", 404);
 
 
             int nextVersion = await _dapperService.ExecuteScalarAsync<int>(
@@ -1274,7 +1307,7 @@ public class WorkflowStepComponent
             var UserId = user.Id;
             var RequiresAllApprovals = filters.IsParallelApproval;
             var now = DateTime.UtcNow; // or DateTime.Now depending on your DB setup
-            
+
             // ✅ 3. Insert Steps
             var stepSql = @"
                 INSERT INTO WorkflowStepDefinitions
@@ -1518,39 +1551,47 @@ public class WorkflowStepComponent
         }
     }
 
-    public async Task<UserReadDto> GetEmployeesByAccessFiltersAsync(WorkFlowStepsFilterDto filters)
+    public async Task<IEnumerable<UserReadDto>> GetEmployeesByAccessFiltersAsync(WorkFlowStepsFilterDto filters)
     {
         try
         {
+            string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int companyId = int.TryParse(companyIdStr, out int cId) ? cId : 0;
+
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
-            // Production-ready query with Fallback Logic for Designations
+            if (companyId > 0)
+                whereConditions.Add("e.CompanyId = @CompanyId");
+            parameters.Add("@CompanyId", companyId);
+
+            // Production-ready query with Robust TRIM and Padding matching
             string baseQuery = @"
                 SELECT DISTINCT 
                        e.empid AS Id, 
                        e.companyid AS CompanyId, 
-                       e.empcode AS EmployeeCode, 
+                       TRIM(e.empcode) AS EmployeeCode, 
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
                        e.email AS Email,
                        ual.DivisionCode,
                        ual.DepartmentCode,
                        ual.SubDepartmentCode,
                        ual.BusinessDomainCode,
-                       COALESCE(des_pj.name, des_emp.name) AS Designation,
-                       COALESCE(des_pj.code, des_emp.code) AS DesignationCode
+                       COALESCE(des.name, des_fallback.name) AS Designation,
+                       COALESCE(des.code, des_fallback.code) AS DesignationCode,
+                       ejp.roleid AS RoleId
                 FROM tblEmployee e
                 INNER JOIN UserAccessLevels ual 
-                    ON LTRIM(RTRIM(e.empcode), '0') = LTRIM(RTRIM(ual.EmployeeCode), '0')
+                    ON TRIM(LEADING '0' FROM TRIM(e.empcode::text)) = TRIM(LEADING '0' FROM TRIM(ual.EmployeeCode::text))
                     AND ual.IsActive = TRUE 
                     AND ual.IsDeleted = FALSE
                 LEFT JOIN public.tblempjobprofile ejp 
-                    ON e.empid = ejp.empid AND ejp.active = TRUE
-                LEFT JOIN public.tblsetupsdetail des_pj 
-                    ON ejp.ddsgid = des_pj.sdlid
-                LEFT JOIN public.tblsetupsdetail des_emp 
-                    ON e.dsgid = des_emp.sdlid
-                WHERE 1=1";
+                    ON e.empid = ejp.empid
+                LEFT JOIN public.tblsetupsdetail des 
+                    ON ejp.dsgid = des.sdlid
+                LEFT JOIN public.tblsetupsdetail des_fallback 
+                    ON e.dsgid = des_fallback.sdlid
+                WHERE e.Active = 1";
 
             // 1. Access Level Filters
             if (!string.IsNullOrEmpty(filters.DocumentTypeCode))
@@ -1573,24 +1614,42 @@ public class WorkflowStepComponent
                 whereConditions.Add("ual.SubDepartmentCode = @SubDeptCode");
                 parameters.Add("@SubDeptCode", filters.SubDepartmentCode);
             }
+            if (!string.IsNullOrEmpty(filters.BusinessDomainCode))
+            {
+                whereConditions.Add("ual.BusinessDomainCode = @BusDomainCode");
+                parameters.Add("@BusDomainCode", filters.BusinessDomainCode);
+            }
 
-            // 2. Designation Filter (Checks both Job Profile and Employee Table)
+            // 2. Designation Filter (Match against integer dsgid)
             if (filters.DesignationCodes != null && filters.DesignationCodes.Any())
             {
-                // Note: Ensuring we pass the list as an array for the ANY operator
-                var dsgIds = filters.DesignationCodes.Select(x => Convert.ToInt32(x)).ToArray();
-                whereConditions.Add("(ejp.ddsgid = ANY(@DsgIds) OR e.dsgid = ANY(@DsgIds))");
-                parameters.Add("@DsgIds", dsgIds);
+                var designationParams = new List<string>();
+                int paramIndex = 0;
+
+                foreach (var codeStr in filters.DesignationCodes)
+                {
+                    // Guard against [0] values when UI dropdown is cleared
+                    if (int.TryParse(codeStr, out int dsgId) && dsgId > 0)
+                    {
+                        var paramName = $"@DesignationId{paramIndex}";
+                        designationParams.Add(paramName);
+                        parameters.Add(paramName, dsgId);
+                        paramIndex++;
+                    }
+                }
+
+                if (designationParams.Any())
+                {
+                    string paramJoin = string.Join(",", designationParams);
+                    whereConditions.Add($"(e.dsgid IN ({paramJoin}) OR ejp.dsgid IN ({paramJoin}) OR ejp.ddsgid IN ({paramJoin}) OR ejp.inddsgid IN ({paramJoin}))");
+                }
             }
 
             // 3. Role Filter (Specific to Job Profile)
             if (filters.Roles != null && filters.Roles.Any())
             {
-                //var roleIds = filters.Roles.Select(int.Parse).ToList();
-                //whereConditions.Add("ejp.roleid = ANY(@RoleIds)");
-                //parameters.Add("@RoleIds", roleIds);
-
-                var roleList = filters.Roles.ToList();
+                // Guard against [0] values when UI dropdown is cleared
+                var roleList = filters.Roles.Where(r => r > 0).ToList();
                 var roleParams = new List<string>();
 
                 for (int i = 0; i < roleList.Count; i++)
@@ -1600,7 +1659,27 @@ public class WorkflowStepComponent
                     parameters.Add(paramName, roleList[i]);
                 }
 
-                whereConditions.Add($"EXISTS (SELECT 1 FROM TblEmpJobProfile ejp WHERE ejp.EmpId = e.EmpId AND ejp.RoleId IN ({string.Join(",", roleParams)}))");
+                if (roleParams.Any())
+                {
+                    whereConditions.Add($"(ejp.roleid IN ({string.Join(",", roleParams)}) OR ejp.droleid IN ({string.Join(",", roleParams)}) OR ejp.indroleid IN ({string.Join(",", roleParams)}))");
+                }
+            }
+
+            // 4. Direct Employee Selection (Fallback if frontend passes explicit users)
+            if (filters.EmployeeCodes != null && filters.EmployeeCodes.Any())
+            {
+                var employeeCodeList = filters.EmployeeCodes.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
+                var employeeCodeParams = new List<string>();
+
+                for (int i = 0; i < employeeCodeList.Count; i++)
+                {
+                    var paramName = $"@EmployeeCode{i}";
+                    employeeCodeParams.Add(paramName);
+                    parameters.Add(paramName, employeeCodeList[i]);
+                }
+
+                if (employeeCodeParams.Any())
+                    whereConditions.Add($"TRIM(e.EmpCode) IN ({string.Join(",", employeeCodeParams)})");
             }
 
             if (whereConditions.Any())
@@ -1608,42 +1687,12 @@ public class WorkflowStepComponent
 
             baseQuery += " ORDER BY EmployeeName";
 
-            // Using QueryFirstOrDefault to safely handle single record return
-            var resultList = (await _dapperService.QuerySingleAsync<UserReadDto>(baseQuery, parameters));
+            var resultList = await _dapperService.QueryAsync<UserReadDto>(baseQuery, parameters);
 
-            if (resultList == null)
+            if (resultList == null || !resultList.Any())
                 throw new CustomException("No users found matching the criteria", 404);
 
-            var divisions = new UserReadDto
-            {
-                Id = resultList.Id,
-                CompanyId = resultList.CompanyId,
-                Company = resultList.Company,
-                EmployeeCode = resultList.EmployeeCode,
-                EmployeeName = resultList.EmployeeName,
-                Email = resultList.Email,
-
-                Division = resultList.Division,
-                DivisionCode = resultList.DivisionCode,
-
-                Department = resultList.Department,
-                DepartmentCode = resultList.DepartmentCode,
-
-                SubDepartment = resultList.SubDepartment,
-                SubDepartmentCode = resultList.SubDepartmentCode,
-
-                BusinessDomain = resultList.BusinessDomain,
-                BusinessDomainCode = resultList.BusinessDomainCode,
-
-                Designation = resultList.Designation,
-                DesignationCode = resultList.DesignationCode,
-
-                ReportingTo = resultList.ReportingTo,
-                Grade = resultList.Grade,
-
-            };
-
-            return divisions;
+            return resultList;
         }
         catch (Exception)
         {
