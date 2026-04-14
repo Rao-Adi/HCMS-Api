@@ -311,7 +311,7 @@ public class WorkflowStepComponent
         }
     }
 
-    public async Task<List<WorkflowStepReadDto>> GetByDocumentTypeCodeAsync(GetStepDefinitionFilterDto input)
+    public async Task<List<WorkflowStepDefiniationReadDto>> GetByDocumentTypeCodeAsync(GetStepDefinitionFilterDto input)
     {
         try
         {
@@ -351,30 +351,42 @@ public class WorkflowStepComponent
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
 
-            var dtos = new List<WorkflowStepReadDto>();
+            var dtos = new List<WorkflowStepDefiniationReadDto>();
             foreach (var row in results)
             {
                 // Cast row to IDictionary<string, object> to access properties safely
                 var rowDict = row as IDictionary<string, object>;
 
-                dtos.Add(new WorkflowStepReadDto
+                dtos.Add(new WorkflowStepDefiniationReadDto
                 {
                     Id = GetValue<int>(rowDict, "companyid"),
 
                     CompanyId = GetValue<int>(rowDict, "companyid"),
                     Company = GetValue<string>(rowDict, "company"),
 
+                    WorkflowPolicyId = GetValue<int>(rowDict, "workflowpolicyid"),
+                    WorkflowPolicyName = GetValue<string>(rowDict, "workflowpolicyname"),
+
                     WorkflowPolicyVersionId = GetValue<int>(rowDict, "workflowpolicyversionid"),
+
                     StepOrder = GetValue<int>(rowDict, "steporder"),
+                    StepGroup = GetValue<int>(rowDict, "stepgroup"),
+                    StepType = GetValue<string>(rowDict, "steptype"),
+
                     RoleId = GetValue<int>(rowDict, "roleid"),
+                    UserRole = GetValue<string>(rowDict, "role"),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
+                    RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
 
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = GetValue<string>(rowDict, "employeename"),
+                    EmployeeName = GetValue<string>(rowDict, "firstname") + " "+ GetValue<string>(rowDict, "lastname"),
 
                     Designation = GetValue<string>(rowDict, "designation"),
-                    UserRole = GetValue<string>(rowDict, "userrole"),
+                    DesignationCode = GetValue<string>(rowDict, "designationcode"),
+
+                    DocumentType = GetValue<string>(rowDict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),                    
 
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
@@ -609,101 +621,78 @@ public class WorkflowStepComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
 
+            if (input.Id <= 0)
+                throw new CustomException("Invalid step ID.", 400);
 
-            if (input.Id < 0)
-                throw new CustomException("Invalid division code.", 200);
-
-            // Check existence (Id is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM WorkflowStepDefinitions
-            WHERE Id = '{input.Id}'
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            int exists = await _dapperService.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM WorkflowStepDefinitions WHERE Id = @Id AND IsDeleted = FALSE",
+                new { Id = input.Id });
 
             if (exists == 0)
-                throw new CustomException("WorkflowStepDefinitions not found", 200);
+                throw new CustomException("Workflow Step not found", 404);
 
-            // Update (PostgreSQL boolean + timestamp)
-            string updateQuery = $@"
-            UPDATE WorkflowStepDefinitions
-            SET 
-                WorkflowPolicyId = '{input.WorkflowPolicyId}', 
-                Sequence = '{input.Sequence}',
-                RoleId = '{input.RoleId}',
-                UserId = '{input.UserId}',
-                ApprovalLevel = '{input.ApprovalLevel}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            string updateQuery = @"
+                UPDATE WorkflowStepDefinitions
+                SET 
+                    StepOrder = @StepOrder,
+                    RoleId = @RoleId,
+                    UserId = @UserId,
+                    ApprovalLevel = @ApprovalLevel,
+                    RequiresAllApprovals = @RequiresAllApprovals,
+                    IsActive = @IsActive,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @ModifiedBy
+                WHERE Id = @Id";
 
-            bool updated = _common.ExecuteNonQuery(updateQuery);
+            var updateParams = new
+            {
+                StepOrder = input.Sequence,
+                RoleId = input.RoleId > 0 ? input.RoleId : (int?)null,
+                UserId = input.UserId > 0 ? input.UserId : (int?)null,
+                ApprovalLevel = input.ApprovalLevel > 0 ? input.ApprovalLevel : (int?)null,
+                RequiresAllApprovals = input.IsParallelApproval,
+                IsActive = input.IsActive,
+                ModifiedBy = userId,
+                Id = input.Id
+            };
 
-            if (!updated)
-                throw new Exception("Update failed");
+            await _dapperService.ExecuteAsync(updateQuery, updateParams);
 
             // Return updated record
-            string selectQuery = $@" 
-            SELECT ws.*,wfp.Name AS WorkflowPolicyName, u.EmployeeCode, u.EmployeeName,
-                  des.Name as Designation, dt.Name AS DocumentType, r.Name AS UserRole,c.Name AS Company
-                  FROM WorkflowStepDefinitions ws
-                       LEFT JOIN WorkflowPolicies wfp
-                       ON ws.WorkflowPolicyId = wfp.Id
-		               LEFT JOIN DocumentTypes dt
-		               ON ws.DocumentTypeCode = dt.Code
-		               LEFT JOIN Companies c
-		               ON ws.CompanyId = c.id
-                       LEFT JOIN tblEmployee u
-                       ON ws.UserId = u.Id  
-                         LEFT JOIN UserRoles ur
-                         ON u.Id = ur.UserId
-                             LEFT JOIN Roles r
-                             ON ur.RoleId = r.Id
-                             LEFT JOIN Designations des ON u.DesignationCode = des.Code 
-            WHERE ws.Id = '{input.Id}'";
+            string selectQuery = @"
+                SELECT * 
+                FROM Vw_WorkflowStepDefinitions
+                WHERE Id = @Id";
 
-            DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
+            var resultList = await _dapperService.QueryAsync<dynamic>(selectQuery, new { Id = input.Id });
+            var rowDict = resultList.FirstOrDefault() as IDictionary<string, object>;
 
-            if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
-
-            DataRow row = dt.Rows[0];
+            if (rowDict == null)
+                throw new Exception("Failed to fetch updated workflow step.");
 
             return new WorkflowStepReadDto
             {
-                Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-
-                WorkflowPolicyVersionId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
-                StepOrder = row.Table.Columns.Contains("StepOrder") ? row.Field<int>("StepOrder") : 0,
-                RoleId = row.Field<int?>("RoleId") ?? 0,
-                UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
-                ApprovalLevel = row.Table.Columns.Contains("ApprovalLevel") ? row.Field<int>("ApprovalLevel") : 0,
-
-                EmployeeCode = row.Field<string>("EmployeeCode"),
-                EmployeeName = row.Field<string>("EmployeeName"),
-
-                Designation = row.Field<string>("Designation"),
-                UserRole = row.Field<string>("UserRole"),
-
-
-                CanEdit = row.Table.Columns.Contains("CanEdit") && row.Field<bool?>("CanEdit") == true,
-                IsParallelApproval = row.Table.Columns.Contains("IsParallelApproval") && row.Field<bool?>("IsParallelApproval") == true,
-                RequireCrossFunctionalHead = row.Table.Columns.Contains("RequireCrossFunctionalHead") && row.Field<bool?>("RequireCrossFunctionalHead") == true,
-
-
-                IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-                IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                Id = GetValue<int>(rowDict, "id"),
+                CompanyId = GetValue<int>(rowDict, "companyid"),
+                Company = GetValue<string>(rowDict, "company"),
+                WorkflowPolicyVersionId = GetValue<int>(rowDict, "workflowpolicyversionid"),
+                StepOrder = GetValue<int>(rowDict, "steporder"),
+                RoleId = GetValue<int>(rowDict, "roleid"),
+                UserId = GetValue<int>(rowDict, "userid"),
+                ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
+                EmployeeCode = GetValue<string>(rowDict, "employeecode"),
+                EmployeeName = GetValue<string>(rowDict, "employeename"),
+                Designation = GetValue<string>(rowDict, "designation"),
+                UserRole = GetValue<string>(rowDict, "userrole"),
+                CanEdit = GetValue<bool>(rowDict, "canedit"),
+                IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
+                IsActive = GetValue<bool>(rowDict, "isactive"),
+                IsDeleted = GetValue<bool>(rowDict, "isdeleted"),
+                CreatedAt = GetValue<string>(rowDict, "createdat"),
+                CreatedBy = GetValue<string>(rowDict, "createdby"),
+                LastModifiedAt = GetValue<string>(rowDict, "lastmodifiedat"),
+                LastModifiedBy = GetValue<string>(rowDict, "lastmodifiedby")
             };
         }
         catch

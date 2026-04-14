@@ -68,7 +68,7 @@ public class DMSWorkflowStepController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<List<WorkflowStepReadDto>>()
+            return Ok(new HttpApiResponse<List<WorkflowStepDefiniationReadDto>>()
             {
                 Success = true,
                 Data = await _workflowStepComponent.GetByDocumentTypeCodeAsync(input),

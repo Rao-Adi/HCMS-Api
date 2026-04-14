@@ -103,7 +103,7 @@ public class TrainingPolicyComponent
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON t.CompanyId = c.Id
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -116,7 +116,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -235,7 +235,7 @@ public class TrainingPolicyComponent
                 .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
@@ -277,10 +277,10 @@ public class TrainingPolicyComponent
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TrainingPolicies t
                     LEFT JOIN Companies c
-                    ON r.CompanyId = c.Id
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                    ON t.CompanyId = c.Id
+                WHERE t.Id = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -292,7 +292,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -356,7 +356,7 @@ public class TrainingPolicyComponent
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON t.CompanyId = c.Id
             WHERE Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -369,7 +369,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
