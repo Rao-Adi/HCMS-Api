@@ -52,7 +52,7 @@ public class NotificationComponent
     /// <summary>
     /// Triggers a system notification aligned with the predefined Notification Matrix.
     /// </summary>
-    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, int recipientUserId, Dictionary<string, string> placeholders)
+    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders)
     {
         try
         {
@@ -61,7 +61,7 @@ public class NotificationComponent
             string insertQuery = $@"
             INSERT INTO Notifications
             (   CompanyId,
-                UserId,
+                EmployeeCode,
                 Title,
                 Message,
                 NotificationType,

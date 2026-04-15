@@ -263,6 +263,7 @@ public class GetPendingRequestDto : TableFiltersDto
     public string? DocumentTypeCode { get; set; } 
 
     public string? RequestStatus { get; set; }
+    public int EmpId { get; set; }
 }
 
 public class DraftRequestReadDto
@@ -467,7 +468,7 @@ public class UpdateDraftRequestDto
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserIds { get; set; }
+    public List<string>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
@@ -479,14 +480,16 @@ public class SubmitDocumentRequestDto
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserList { get; set; }
+    public List<string>? UserIds { get; set; }
 }
 
 
  
 
 public class ApproveRejectWorkflowStepDto
-{ 
+{
+    public int EmpId { get; set; }
+
     public int StepId { get; set; } 
 
     public string Action { get; set; }

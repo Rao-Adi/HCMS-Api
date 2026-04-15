@@ -44,7 +44,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE CompanyId = @CompanyId";
         if (!string.IsNullOrWhiteSpace(search))
             whereClause += $" AND (UPPER(name) LIKE '%{search}%' OR UPPER(code) LIKE '%{search}%')";
@@ -70,7 +70,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE CompanyId = @CompanyId";
         if (!string.IsNullOrWhiteSpace(search))
             whereClause += $" AND (UPPER(userempname) LIKE '%{search}%' OR UPPER(userempcode) LIKE '%{search}%' OR UPPER(applicationid) LIKE '%{search}%')";
@@ -96,7 +96,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE companyId = @CompanyId";
         if (!string.IsNullOrWhiteSpace(search))
             whereClause += $" AND (UPPER(userempname) LIKE '%{search}%' OR UPPER(userempcode) LIKE '%{search}%' OR UPPER(applicationid) LIKE '%{search}%')";
@@ -122,7 +122,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE CompanyId = @CompanyId";
         if (!string.IsNullOrWhiteSpace(search))
             whereClause += $" AND (UPPER(jobtitle) LIKE '%{search}%' OR UPPER(jobcode) LIKE '%{search}%')";
@@ -148,7 +148,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE e.CompanyId = @CompanyId AND e.Active = 1";
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -158,7 +158,7 @@ public class PeoplePartnersComponent
         string sortColumn = string.IsNullOrWhiteSpace(input.SortColumn) ? "empid" : new string(input.SortColumn.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
         if (string.IsNullOrWhiteSpace(sortColumn)) sortColumn = "empid";
         if (sortColumn.Equals("empid", StringComparison.OrdinalIgnoreCase)) sortColumn = "e.empid";
-        
+
         string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
         var queryParams = new { CompanyId = companyId, Offset = offset, PageSize = input.PageSize };
@@ -176,22 +176,39 @@ public class PeoplePartnersComponent
         var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
         var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
-        return new PaginationResult<dynamic> 
-        { 
-            Items = items, 
-            TotalCount = totalCount 
+        return new PaginationResult<dynamic>
+        {
+            Items = items,
+            TotalCount = totalCount
         };
     }
 
+    public async Task<dynamic> GetAllEmployeeByEmpIdAsync(int empId)
+    {
+        string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(companyIdStr);
+
+        var whereClause = "WHERE e.CompanyId = @CompanyId AND e.EmpId = @EmpId AND e.Active = 1";
+
+        var queryParams = new { CompanyId = companyId, EmpId = empId };
+
+        string baseQuery = $@"FROM tblEmployee e";
+
+        string dataSql = $@"SELECT e.* {baseQuery} {whereClause};"; 
+
+        var item = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).FirstOrDefault();
+
+        return item;
+    }
     public async Task<PaginationResult<dynamic>> GetEmployeesByRoleIdAsync(int roleId, TableFiltersDto input)
     {
         string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var whereClause = "WHERE e.CompanyId = @CompanyId AND EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.roleid = @RoleId)";
-        
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%')";
@@ -209,10 +226,10 @@ public class PeoplePartnersComponent
         var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
         var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
-        return new PaginationResult<dynamic> 
-        { 
-            Items = items, 
-            TotalCount = totalCount 
+        return new PaginationResult<dynamic>
+        {
+            Items = items,
+            TotalCount = totalCount
         };
     }
 
@@ -222,9 +239,9 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
-        
+
         var conditions = new List<string> { "e.CompanyId = @CompanyId" };
-        
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             conditions.Add($"(UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%')");
@@ -282,17 +299,18 @@ public class PeoplePartnersComponent
         if (string.IsNullOrWhiteSpace(sortColumn)) sortColumn = "empid";
         string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-        var queryParams = new { 
+        var queryParams = new
+        {
             CompanyId = companyId,
-            ReportingTo = input.ReportingTo, 
-            DesignationId = input.DesignationId, 
-            RoleId = input.RoleId, 
+            ReportingTo = input.ReportingTo,
+            DesignationId = input.DesignationId,
+            RoleId = input.RoleId,
             DivisionCode = input.DivisionCode,
             DepartmentCode = input.DepartmentCode,
             SubDepartmentCode = input.SubDepartmentCode,
             BusinessDomainCode = input.BusinessDomainCode,
-            Offset = offset, 
-            PageSize = input.PageSize 
+            Offset = offset,
+            PageSize = input.PageSize
         };
         string dataSql = $@"SELECT e.* FROM tblEmployee e {whereClause} ORDER BY e.{sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
         string countSql = $@"SELECT COUNT(1) FROM tblEmployee e {whereClause};";
@@ -366,7 +384,7 @@ public class PeoplePartnersComponent
         {
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
 
-            string query = $@"select empcode,firstname,lastname from tblEmployee where CompanyId = '{CompanyId}';";
+            string query = $@"select empcode, firstname, midname, lastname from tblEmployee where CompanyId = '{CompanyId}';";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -374,7 +392,7 @@ public class PeoplePartnersComponent
                 .Select(row => new SelectListDto
                 {
                     Code = row.Field<string>("empcode"),
-                    Value = row.Field<string>("firstname") + " " + row.Field<string>("lastname")
+                    Value = row.Field<string>("firstname") + " " + row.Field<string>("midname") + " " + row.Field<string>("lastname")
                 })
                 .ToList();
 
@@ -390,7 +408,7 @@ public class PeoplePartnersComponent
     public async Task<IQueryable<SelectList2Dto>> GetDesignationListAsync()
     {
         try
-        { 
+        {
 
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
 

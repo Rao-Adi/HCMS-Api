@@ -25,6 +25,7 @@ public class DocumentComponent
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly NotificationComponent _notificationComponent;
+    private readonly PeoplePartnersComponent _peoplePartnersComponent;
     public DocumentComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -34,7 +35,8 @@ public class DocumentComponent
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
         DMSCommon common,
-        NotificationComponent notificationComponent
+        NotificationComponent notificationComponent,
+        PeoplePartnersComponent peoplePartnersComponent
         )
     {
         _http = http;
@@ -46,6 +48,7 @@ public class DocumentComponent
         _dapperService = dapper;
         _common = common;
         _notificationComponent = notificationComponent;
+        _peoplePartnersComponent = peoplePartnersComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -769,376 +772,7 @@ public class DocumentComponent
         }
     }
 
-
-
-
-    //public async Task<DocumentReadDto> CreateDraftFromApprovedRequestAsync2(DocumentCreateDto input)
-    //{
-    //    //await using var conn = new NpgsqlConnection(_connectionString);
-    //    //await conn.OpenAsync();
-
-    //    await using var tx = await conn.BeginTransactionAsync();
-
-    //    try
-    //    {
-    //        //var userId = _currentUserService.UserId;
-    //        //var companyId = _currentUserService.CompanyId;
-    //        var userId = "";
-    //        var companyId = "";
-    //        //------------------------------------------------
-    //        // ✅ 1. Validate Request is APPROVED
-    //        //------------------------------------------------
-
-    //        var requestStatus = await _common.ExecuteScalarAsync<string>(
-    //            @"SELECT Status
-    //          FROM DocumentRequests
-    //          WHERE CompanyId = @CompanyId
-    //          AND Id = @RequestId",
-    //            new { CompanyId = companyId, input.RequestId }, tx);
-
-    //        if (requestStatus != "Approved")
-    //            throw new CustomException("Document can only be created from an approved request.");
-
-    //        //------------------------------------------------
-    //        // ✅ 2. Generate Document Number SAFELY
-    //        //------------------------------------------------
-
-    //        var documentNumber = await _common.ExecuteScalarAsync<string>(
-    //            @"SELECT generate_document_number(@CompanyId);",
-    //            new { CompanyId = companyId }, tx);
-
-    //        //------------------------------------------------
-    //        // ✅ 3. Upload File FIRST
-    //        //------------------------------------------------
-
-    //        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/documents");
-    //        Directory.CreateDirectory(uploadsRoot);
-
-    //        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(input.DocumentFile.FileName)}";
-    //        var filePath = Path.Combine(uploadsRoot, fileName);
-
-    //        await using (var stream = new FileStream(filePath, FileMode.Create))
-    //        {
-    //            await input.DocumentFile.CopyToAsync(stream);
-    //        }
-
-    //        var documentUrl = $"/uploads/documents/{fileName}";
-
-    //        //------------------------------------------------
-    //        // ✅ 4. Insert Document (DRAFT STATE)
-    //        //------------------------------------------------
-
-    //        var documentId = await _common.ExecuteScalarAsync<long>(
-    //        @"
-    //    INSERT INTO Documents
-    //    (
-    //        CompanyId,
-    //        DocumentNumber,
-    //        DocumentTypeCode,
-    //        Title,
-    //        DocumentURL,
-    //        CreatedBy
-    //    )
-    //    VALUES
-    //    (
-    //        @CompanyId,
-    //        @DocumentNumber,
-    //        @DocumentTypeCode,
-    //        @Title,
-    //        @Url,
-    //        @UserId
-    //    )
-    //    RETURNING Id;
-    //    ",
-    //        new
-    //        {
-    //            CompanyId = companyId,
-    //            DocumentNumber = documentNumber,
-    //            input.DocumentTypeCode,
-    //            Title = input.Title,
-    //            Url = documentUrl,
-    //            UserId = userId
-    //        }, tx);
-
-    //        //------------------------------------------------
-    //        // ✅ 5. Insert Version (MANDATORY)
-    //        //------------------------------------------------
-
-    //        await _common.ExecuteAsync(
-    //        @"
-    //                INSERT INTO DocumentVersions
-    //                (
-    //                    CompanyId,
-    //                    DocumentId,
-    //                    Version,
-    //                    CreatedBy
-    //                )
-    //                VALUES
-    //                (
-    //                    @CompanyId,
-    //                    @DocumentId,
-    //                    '1.0',
-    //                    @UserId
-    //                )",
-    //        new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
-
-    //        //------------------------------------------------
-    //        // ✅ 6. Insert STATE HISTORY
-    //        //------------------------------------------------
-
-    //        await conn.ExecuteAsync(
-    //        @"
-    //                INSERT INTO DocumentStateHistory
-    //                (
-    //                    CompanyId,
-    //                    DocumentId,
-    //                    ToStateId,
-    //                    ChangedBy
-    //                )
-    //                SELECT
-    //                    @CompanyId,
-    //                    @DocumentId,
-    //                    Id,
-    //                    @UserId
-    //                FROM DocumentStates
-    //                WHERE Code = 'Draft';
-    //                ",
-    //        new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
-
-    //        //------------------------------------------------
-    //        // ✅ 7. START WORKFLOW EXECUTION
-    //        //------------------------------------------------
-
-    //        var workflowVersionId = await conn.ExecuteScalarAsync<long>(
-    //        @"
-    //                SELECT Id
-    //                FROM WorkflowPolicyVersions
-    //                WHERE CompanyId = @CompanyId
-    //                AND DocumentTypeCode = @DocumentTypeCode
-    //                AND IsActive = TRUE
-    //                LIMIT 1;
-    //                ",
-    //        new { CompanyId = companyId, input.DocumentTypeCode }, tx);
-
-    //        var executionId = await _common.ExecuteScalarAsync<long>(
-    //        @"
-    //                INSERT INTO WorkflowExecutions
-    //                (
-    //                    CompanyId,
-    //                    WorkflowPolicyVersionId,
-    //                    EntityType,
-    //                    EntityId,
-    //                    Status,
-    //                    StartedBy
-    //                )
-    //                VALUES
-    //                (
-    //                    @CompanyId,
-    //                    @WorkflowVersionId,
-    //                    'Document',
-    //                    @DocumentId,
-    //                    'Running',
-    //                    @UserId
-    //                )
-    //                RETURNING Id;
-    //                ",
-    //                new
-    //                {
-    //                    CompanyId = companyId,
-    //                    WorkflowVersionId = workflowVersionId,
-    //                    DocumentId = documentId,
-    //                    UserId = userId
-    //                }, tx);
-
-    //        //------------------------------------------------
-    //        // ✅ 8. COMMIT
-    //        //------------------------------------------------
-
-    //        await tx.CommitAsync();
-
-    //        return new DocumentReadDto
-    //        {
-    //            Id = (int)documentId,
-    //            DocumentNumber = documentNumber,
-    //            DocumentURL = documentUrl
-    //        };
-    //    }
-    //    catch
-    //    {
-    //        await tx.RollbackAsync();
-    //        throw;
-    //    }
-    //}
-
-    //public async Task<int> CreateOrUpdateDocumentAsync(DocumentCreateDto input, long userId)
-    //{
-    //    await using var transaction = await _common.BeginTransactionAsync();
-
-    //    try
-    //    {
-    //        int documentId;
-
-    //        //-----------------------------------------
-    //        // 1️⃣ If New Document
-    //        //-----------------------------------------
-    //        if (input.DocumentId == null)
-    //        {
-    //            // Validate Request if provided
-    //            if (input.RequestId != null)
-    //            {
-    //                var requestValid = await _common.ExecuteScalarAsync<int>(@"
-    //            SELECT COUNT(*)
-    //            FROM DocumentRequests
-    //            WHERE Id = @RequestId
-    //              AND Status = 3 -- Approved
-    //            ", new { input.RequestId });
-
-    //                if (requestValid == 0)
-    //                    throw new Exception("Invalid or unapproved request");
-    //            }
-
-    //            documentId = await _common.ExecuteScalarAsync<int>(@"
-    //                INSERT INTO Documents
-    //                (
-    //                    CompanyId,
-    //                    DocumentNumber,
-    //                    RequestId,
-    //                    DocumentTypeCode,
-    //                    Title,
-    //                    DivisionCode,
-    //                    DepartmentCode,
-    //                    SubDepartmentCode,
-    //                    BusinessDomainCode,
-    //                    CreatedBy,
-    //                    LastModifiedBy
-    //                )
-    //                VALUES
-    //                (
-    //                    @CompanyId,
-    //                    CONCAT('DOC-', NOW()::timestamp),
-    //                    @RequestId,
-    //                    @DocumentTypeCode,
-    //                    @Title,
-    //                    @DivisionCode,
-    //                    @DepartmentCode,
-    //                    @SubDepartmentCode,
-    //                    @BusinessDomainCode,
-    //                    @UserId,
-    //                    @UserId
-    //                )
-    //                RETURNING Id
-    //        ", new
-    //            {
-    //                input.CompanyId,
-    //                input.RequestId,
-    //                input.DocumentTypeCode,
-    //                input.Title,
-    //                input.DivisionCode,
-    //                input.DepartmentCode,
-    //                input.SubDepartmentCode,
-    //                input.BusinessDomainCode,
-    //                userId
-    //            });
-
-    //            // Insert initial draft version
-    //            await _common.ExecuteAsync(@"
-    //                INSERT INTO DocumentVersions
-    //                (
-    //                    CompanyId,
-    //                    DocumentId,
-    //                    Version,
-    //                    VersionType,
-    //                    Content,
-    //                    CreatedBy
-    //                )
-    //                VALUES
-    //                (
-    //                    @CompanyId,
-    //                    @DocumentId,
-    //                    '0.1',
-    //                    1,
-    //                    @Content,
-    //                    @UserId
-    //                )
-    //                ", new
-    //            {
-    //                input.CompanyId,
-    //                documentId,
-    //                input.Content,
-    //                userId
-    //            });
-
-    //            // Insert Draft state
-    //            await _common.ExecuteAsync(@"
-    //                INSERT INTO DocumentStateHistory
-    //                (
-    //                    CompanyId,
-    //                    DocumentId,
-    //                    ToStateId,
-    //                    ChangedBy
-    //                )
-    //                VALUES
-    //                (
-    //                    @CompanyId,
-    //                    @DocumentId,
-    //                    1,
-    //                    @UserId
-    //                )
-    //                ", new
-    //            {
-    //                input.CompanyId,
-    //                documentId,
-    //                userId
-    //            });
-    //        }
-    //        else
-    //        {
-    //            documentId = input.DocumentId.Value;
-
-    //            // Update metadata only
-    //            await _common.ExecuteAsync(@"
-    //                UPDATE Documents
-    //                SET Title = @Title,
-    //                    LastModifiedBy = @UserId,
-    //                    LastModifiedAt = NOW()
-    //                WHERE Id = @DocumentId
-    //                  AND CompanyId = @CompanyId
-    //                ", new
-    //            {
-    //                input.CompanyId,
-    //                documentId,
-    //                input.Title,
-    //                userId
-    //            });
-
-    //            // Update draft content (do NOT insert new version yet)
-    //            await _common.ExecuteAsync(@"
-    //                UPDATE DocumentVersions
-    //                SET Content = @Content,
-    //                    LastModifiedBy = @UserId,
-    //                    LastModifiedAt = NOW()
-    //                WHERE CompanyId = @CompanyId
-    //                  AND DocumentId = @DocumentId
-    //                  AND VersionType = 1
-    //                ", new
-    //            {
-    //                input.CompanyId,
-    //                documentId,
-    //                input.Content,
-    //                userId
-    //            });
-    //        }
-
-    //        await transaction.CommitAsync();
-    //        return documentId;
-    //    }
-    //    catch
-    //    {
-    //        await transaction.RollbackAsync();
-    //        throw;
-    //    }
-    //}
-
+     
     public async Task<bool> SubmitDocumentAsync(SubmitDocument input)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -1313,7 +947,7 @@ public class DocumentComponent
             }, transaction);
 
             // Prepare notification data
-            int? firstStepUserId = null;
+            string? firstStepUserId = null;
             string? docTitle = null;
             string? docVersion = null;
             var firstStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -1327,17 +961,17 @@ public class DocumentComponent
 
             if (firstStepInfo != null && firstStepInfo.assigneduserid != null)
             {
-                firstStepUserId = (int)firstStepInfo.assigneduserid;
+                firstStepUserId = firstStepInfo.assigneduserid;
                 docTitle = Convert.ToString(firstStepInfo.title);
                 docVersion = Convert.ToString(firstStepInfo.version);
             }
 
             await transaction.CommitAsync();
 
-            if (firstStepUserId.HasValue)
+            if (firstStepUserId != string.Empty)
             {
                 var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle ?? "Unknown" }, { "V#", docVersion ?? "1.0" } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, firstStepUserId.Value, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, firstStepUserId, placeholders);
             }
 
             return true;
@@ -1592,7 +1226,7 @@ public class DocumentComponent
             // 3️⃣ Find Next Step
             //-------------------------------------------------
 
-            int? nextStepUserId = null;
+            string? nextStepUserId = null;
             var nextStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -1622,7 +1256,7 @@ public class DocumentComponent
                 new { NextStepId = nextStep.id, input.Observation }, transaction);
 
                 if (nextStep.assigneduserid != null)
-                    nextStepUserId = (int)nextStep.assigneduserid;
+                    nextStepUserId = nextStep.assigneduserid;
             }
             else
             {
@@ -1642,21 +1276,11 @@ public class DocumentComponent
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentStateHistory
                     (
-                        CompanyId,
-                        DocumentId,
-                        FromStateId,
-                        ToStateId,
-                        WorkflowExecutionId,
-                        ChangedBy
+                        CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, ChangedBy
                     )
                     VALUES
                     (
-                        @CompanyId,
-                        @DocumentId,
-                        2,
-                        3,
-                        @ExecutionId,
-                        @UserId
+                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @UserId
                     );",
                 new
                 {
@@ -1669,9 +1293,9 @@ public class DocumentComponent
 
             await transaction.CommitAsync();
 
-            if (nextStepUserId.HasValue && docInfo != null)
+            if (nextStepUserId != string.Empty && docInfo != null)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, nextStepUserId.Value, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, nextStepUserId, notifyPlaceholders);
             }
 
             return true;
@@ -1762,12 +1386,12 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserTraining
                 (
-                    CompanyId, DocumentId, UserId, TrainingMode, TrainingStatus, CreatedBy, LastModifiedBy
+                    CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, CreatedBy, LastModifiedBy
                 )
                 SELECT
                     CompanyId,
                     DocumentId,
-                    UserId,
+                    EmployeeCode,
                     1,   -- e.g. Read & Acknowledge
                     0,   -- Pending
                     @UserId,
@@ -1794,13 +1418,14 @@ public class DocumentComponent
                 WHERE d.Id = @DocumentId
                 ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = documentId });
 
-            int initiatorId = 0;
-            if (docInfo != null && docInfo.createdby != null)
+            string initiatorId = "";
+            if (docInfo != null && docInfo!.createdby != null)
             {
-                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+                //int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+                initiatorId = docInfo!.createdby;
             }
 
-            if (initiatorId > 0)
+            if (initiatorId != string.Empty)
             {
                 var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("yyyy-MM-dd") } };
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders);
@@ -1823,11 +1448,11 @@ public class DocumentComponent
 
         var users = await _common.QueryAsync<dynamic>(@"
             SELECT 
-                dut.UserId,
+                dut.EmployeeCode,
                 u.Email,
                 d.Title
             FROM DocumentUserTraining dut
-            JOIN Users u ON u.Id = dut.UserId
+            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode
             JOIN Documents d ON d.Id = dut.DocumentId
             WHERE dut.CompanyId = @CompanyId
               AND dut.DocumentId = @DocumentId
@@ -1905,7 +1530,7 @@ public class DocumentComponent
                     LastModifiedBy = @UserId
                 WHERE CompanyId = @CompanyId
                   AND DocumentId = @DocumentId
-                  AND UserId = @UserId
+                  AND EmployeeCode = @UserId
                   AND IsActive = TRUE
                   AND IsDeleted = FALSE;
                 ",
@@ -2177,6 +1802,8 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
+            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -2193,7 +1820,7 @@ public class DocumentComponent
                 throw new Exception("No active approval step found.");
 
             // Fetch document info for notifications
-            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, transaction);
+           string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
@@ -2254,17 +1881,18 @@ public class DocumentComponent
 
             await transaction.CommitAsync();
 
-            int initiatorId = 0;
+            string initiatorId = "";
             if (docInfo != null && docInfo!.createdby != null)
             {
-                int.TryParse(Convert.ToString(docInfo!.createdby), out initiatorId);
+                //int.TryParse(Convert.ToString(docInfo!.createdby), out initiatorId);
+                initiatorId = docInfo!.createddby;
             }
 
-            if (initiatorId > 0)
+            if (initiatorId != string.Empty)
             {
                 var notifyPlaceholders = new Dictionary<string, string> {
                     { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
+                    { "Approver", approverName ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
                 };
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
             }
@@ -2291,6 +1919,8 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
+            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -2307,7 +1937,8 @@ public class DocumentComponent
                 throw new Exception("No active approval step found.");
 
             // Fetch document info for notifications
-            var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, transaction);
+            string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
+
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
@@ -2380,17 +2011,18 @@ public class DocumentComponent
 
             await transaction.CommitAsync();
 
-            int initiatorId = 0;
-            if (docInfo != null && docInfo.createdby != null)
+            string initiatorId = "";
+            if (docInfo != null && docInfo!.createdby != null)
             {
-                int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+                //int.TryParse(Convert.ToString(docInfo.createdby), out initiatorId);
+                initiatorId = docInfo!.createdby;
             }
 
-            if (initiatorId > 0)
+            if (initiatorId != string.Empty)
             {
                 var notifyPlaceholders = new Dictionary<string, string> {
                     { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", Convert.ToString(approverInfo?.employeename) ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
+                    { "Approver", approverName ?? userId.ToString() }, { "Observation", input.Observation ?? "" }
                 };
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRevertedForRework, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
             }
@@ -2718,21 +2350,7 @@ public class DocumentComponent
     }
 
 
-
-    private async Task<int> GetEmployeeID(string employeeCode)
-    {
-        await using var tx = await _common.BeginTransactionAsync();
-
-        var emplId = await _common.ExecuteScalarAsync<int>(@"
-            Select Id from Users Where EmployeeCode = @EmployeeCode ",
-                new
-                {
-                    EmployeeCode = employeeCode
-                },
-                tx);
-
-        return emplId;
-    }
+     
 
     public async Task<PaginationResult<dynamic>> GetPendingAuthorizationsAsync(GetPendingAuthorization input)
     {
@@ -2798,9 +2416,9 @@ public class DocumentComponent
                     dt.Code AS DocumentTypeCode,
                     dv.Version,
                     tr.TrainingProofURL,
-                    u.EmployeeName AS Initiator,
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
                     doc.CreatedAt, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain
+                    dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain
 
                 FROM Documents doc 
                         LEFT JOIN Divisions div
@@ -2816,7 +2434,7 @@ public class DocumentComponent
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                LEFT JOIN Users u ON CAST(u.Id AS VARCHAR) = doc.CreatedBy
+                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -2903,7 +2521,7 @@ public class DocumentComponent
 
             // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
             // Assuming RoleId for DCA is known or we look it up. Using a placeholder role fetch mechanism.
-            var dcaUsers = await _common.QueryAsync<int>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
+            var dcaUsers = await _common.QueryAsync<string>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
             var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
