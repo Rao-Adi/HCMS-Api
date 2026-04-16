@@ -2175,23 +2175,24 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserDistributions
                 (
-                    CompanyId, DocumentId, UserId, CreatedBy
+                    CompanyId, DocumentId, EmployeeCode, CreatedBy
                 )
                 SELECT
-                    CompanyId, @DocumentId, UserId, @UserId
+                    CompanyId, @DocumentId, @EmployeeCode, @CreatedBy
                 FROM DocumentRequestUserDistributions
                 WHERE DocumentRequestId = @RequestId;",
             new
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                UserId = userId
+                EmployeeCode = userId,
+                CreatedBy = userId
             }, transaction);
 
             //await transaction.CommitAsync();
             return documentId;
         }
-        catch
+        catch (Exception ex)
         {
             //await transaction.RollbackAsync();
             throw;

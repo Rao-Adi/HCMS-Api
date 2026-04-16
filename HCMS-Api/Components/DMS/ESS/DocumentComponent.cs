@@ -661,10 +661,11 @@ public class DocumentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -959,9 +960,9 @@ public class DocumentComponent
                 WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.IsActive = TRUE
                 ORDER BY dv.CreatedAt DESC LIMIT 1;", new { ExecutionId = executionId }, transaction);
 
-            if (firstStepInfo != null && firstStepInfo.assigneduserid != null)
+            if (firstStepInfo != null && firstStepInfo!.assigneduserid != null)
             {
-                firstStepUserId = firstStepInfo.assigneduserid;
+                firstStepUserId = firstStepInfo!.assigneduserid;
                 docTitle = Convert.ToString(firstStepInfo.title);
                 docVersion = Convert.ToString(firstStepInfo.version);
             }
@@ -988,10 +989,11 @@ public class DocumentComponent
         //-------------------------------------------------
         // 1️⃣ Load Active Attributes
         //-------------------------------------------------
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
+        int CompanyId = int.Parse(_CompanyId);
 
         var attributes = await _common.QueryAsync<dynamic>(@"
                 SELECT *
@@ -1513,10 +1515,12 @@ public class DocumentComponent
 
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+
             //-----------------------------------------
             // 1️⃣ Update Training Status
             //-----------------------------------------
@@ -1982,23 +1986,11 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
                 (
-                    CompanyId,
-                    DocumentId,
-                    FromStateId,
-                    ToStateId,
-                    WorkflowExecutionId,
-                    Comments,
-                    ChangedBy
+                    CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, Comments, ChangedBy
                 )
                 VALUES
                 (
-                    @CompanyId,
-                    @DocumentId,
-                    2,
-                    1,
-                    @ExecutionId,
-                    @Comments,
-                    @UserId
+                    @CompanyId, @DocumentId, 2, 1, @ExecutionId, @Comments, @UserId
                 );",
             new
             {
@@ -2118,10 +2110,11 @@ public class DocumentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
 
             var result = await _common.QueryAsync<dynamic>(@"
@@ -2156,7 +2149,7 @@ public class DocumentComponent
                   ORDER BY dsh.ChangedAt DESC
                   LIMIT 1
               ) = 1; -- Draft Status ID "
-            , new { CompanyId = int.Parse(CompanyId), RequestId = requestId });
+            , new { CompanyId = CompanyId, RequestId = requestId });
 
             if (result == null)
                 throw new Exception("Draft document not available for finalization.");
@@ -2177,12 +2170,18 @@ public class DocumentComponent
         try
         {
 
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
-
+            //get Employee details by Id
+            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            if(empDetail == null)
+            {
+                throw new Exception("Employe dosen't exist.");
+            }
             var whereClause = "WHERE 1=1";
 
             // Search
@@ -2237,7 +2236,7 @@ public class DocumentComponent
             var queryParams = new
             {
                 CompanyId,
-                UserId = userId,
+                UserId = empDetail.empcode,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
@@ -2356,10 +2355,11 @@ public class DocumentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
@@ -2524,7 +2524,7 @@ public class DocumentComponent
             var dcaUsers = await _common.QueryAsync<string>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
-            var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+            var placeholders = new Dictionary<string, string> { { "Doc Name", docInfo?.title ?? "Document" }, { "V#", "Latest" } };
 
             foreach (var dcaUser in dcaUsers)
             {
@@ -2544,10 +2544,11 @@ public class DocumentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             // UC-31: Fetch historical documents where the *current user* was the one 
             // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'

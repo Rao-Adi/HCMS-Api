@@ -188,7 +188,7 @@ public class PeoplePartnersComponent
         string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(companyIdStr);
 
-        var whereClause = "WHERE e.CompanyId = @CompanyId AND e.EmpId = @EmpId AND e.Active = 1";
+        var whereClause = "WHERE e.CompanyId = @CompanyId AND e.EmpId = @EmpId";
 
         var queryParams = new { CompanyId = companyId, EmpId = empId };
 

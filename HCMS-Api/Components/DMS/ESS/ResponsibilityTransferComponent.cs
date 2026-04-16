@@ -68,9 +68,9 @@ public class ResponsibilityTransferComponent
 
             // FSD UC-16 Post-condition: Route to Division Head for approval.
             var empDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT DivisionCode 
-                FROM Users 
-                WHERE EmployeeCode = @EmpCode AND IsDeleted = FALSE", new { EmpCode = input.EmployeeFrom });
+                SELECT * 
+                FROM tblEmployee 
+                WHERE empCode = @EmpCode AND IsDeleted = FALSE", new { EmpCode = input.EmployeeFrom });
             
             if (empDetails == null || string.IsNullOrWhiteSpace(empDetails.divisioncode))
             {
@@ -89,8 +89,8 @@ public class ResponsibilityTransferComponent
                 // UC-18 Default Routing: Automatically route to default generic Division Head role
                 var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
                     SELECT u.Id 
-                    FROM Users u
-                    JOIN UserRoles ur ON u.Id = ur.UserId
+                    FROM tblEmployee u
+                    JOIN UserRoles ur ON u.empcode = ur.UserId
                     JOIN Roles r ON ur.RoleId = r.Id
                     WHERE u.DivisionCode = @DivCode AND r.Name = 'Division Head' AND u.IsDeleted = FALSE AND u.IsActive = TRUE LIMIT 1", 
                     new { DivCode = empDetails?.divisioncode });
@@ -166,8 +166,8 @@ public class ResponsibilityTransferComponent
             FROM ResponsibilityTransfers rt
             LEFT JOIN Companies c
             ON rt.CompanyId = c.Id
-            LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
-            LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
+            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
             WHERE rt.Id = @Id";
 
             var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
@@ -288,10 +288,9 @@ public class ResponsibilityTransferComponent
             string query = $@"
                          SELECT rt.*, c.Id AS CompanyId, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                             FROM ResponsibilityTransfers rt
-                            LEFT JOIN Companies c
-                            ON rt.CompanyId = c.Id
-                            LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
-                            LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
+                            LEFT JOIN Companies c ON rt.CompanyId = c.Id
+                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -567,8 +566,8 @@ public class ResponsibilityTransferComponent
                 SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                 FROM ResponsibilityTransfers rt
                 LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                LEFT JOIN Users uf ON rt.EmployeeFrom = uf.EmployeeCode
-                LEFT JOIN Users ut ON rt.EmployeeTo = ut.EmployeeCode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -636,8 +635,8 @@ public class ResponsibilityTransferComponent
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
             {
-                var empFromId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM Users WHERE EmployeeCode = @Code", new { Code = transfer.employeefrom }, tx);
-                var empToId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM Users WHERE EmployeeCode = @Code", new { Code = transfer.employeeto }, tx);
+                var empFromId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM tblEmployee WHERE empCode = @Code", new { Code = transfer.employeefrom }, tx);
+                var empToId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM tblEmployee WHERE empCode = @Code", new { Code = transfer.employeeto }, tx);
 
                 await _common.ExecuteAsync(@"
                     UPDATE WorkflowExecutionSteps

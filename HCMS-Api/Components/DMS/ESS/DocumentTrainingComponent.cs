@@ -460,13 +460,13 @@ public class DocumentTrainingComponent
 
             string query = @"
                 SELECT 
-                    u.EmployeeName,
-                    u.EmployeeCode,
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                    u.empcode AS EmployeeCode,
                     dut.TrainingStatus,
                     dut.AssessmentScore,
                     dut.TrainingProofUrl
                 FROM DocumentUserTraining dut
-                JOIN Users u ON u.Id = dut.UserId
+                JOIN tblEmployee u ON u.empId = dut.EmployeeCode
                 WHERE dut.DocumentId = @DocumentId 
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
