@@ -1892,7 +1892,11 @@ public class DocumentRequestComponent
                         userId,
                         tx);
 
-
+                    var nextStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT AssignedUserId FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND StepOrder = @Next;", new { ExecutionId = executionId, Next = next.Value }, tx);
+                    if (nextStepInfo != null && nextStepInfo!.assigneduserid != null)
+                    {
+                        nextStepUserId = nextStepInfo!.assigneduserid;
+                    }
                     //await CreateDocumentFromApprovedRequestAsync(input.CompanyId, executionId, input.UserId, tx);
                 }
             }

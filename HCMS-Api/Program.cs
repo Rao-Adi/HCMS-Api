@@ -262,6 +262,7 @@ builder.Services.AddScoped<CompanyComponent>();
 builder.Services.AddScoped<DocumentRequestTypeComponent>();  
 builder.Services.AddScoped<ControlTypeComponent>();  
 builder.Services.AddScoped<UserAccessLevelComponent>();
+builder.Services.AddScoped<DashboardComponent>();
 
 
 builder.Services.AddHostedService<DataSyncService>();
