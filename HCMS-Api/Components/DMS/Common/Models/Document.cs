@@ -166,8 +166,7 @@ public class ActionOnDocument
     public int EmpId { get; set; } 
     public int DocumentId { get; set; } 
     public int ExecutionId { get; set; }
-    public string Observation { get; set; }
-    public string EmployeeCode { get; set; }
+    public string Observation { get; set; } 
 }
 
 public  class AllDocumentDto

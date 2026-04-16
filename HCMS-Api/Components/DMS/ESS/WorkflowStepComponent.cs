@@ -748,21 +748,7 @@ public class WorkflowStepComponent
             //-----------------------------------------
 
             if (policyId == null)
-            {
-                //policyId = await _dapperService.ExecuteScalarAsync<int>(@"
-                //    INSERT INTO WorkflowPolicies
-                //    (
-                //        CompanyId, Name, EntityType, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
-                //        DocumentTypeCode, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,  LastModifiedBy
-                //    )
-                //    VALUES
-                //    (
-                //        @CompanyId, 'Configured Policy', @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
-                //        @DocumentTypeCode, TRUE, FALSE, NOW(), 'system',  NOW(), 'system'
-                //    )
-                //    RETURNING Id;",
-                //filters);
-
+            { 
                 policyId = await _dapperService.ExecuteAsync(@"
                     INSERT INTO WorkflowPolicies
                     (
@@ -836,6 +822,20 @@ public class WorkflowStepComponent
 
             foreach (var user in users)
             {
+                // Check if employee already exists in this workflow version
+                var existingStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(1)
+                    FROM WorkflowStepDefinitions
+                    WHERE WorkflowPolicyVersionId = @VersionId
+                    AND UserId = @UserId
+                    AND IsDeleted = FALSE;",
+                    new { VersionId = versionId, UserId = user.EmployeeCode });
+
+                if (existingStepCount > 0)
+                {
+                    throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
+                }
+
                 await _dapperService.ExecuteAsync(@"
                     INSERT INTO WorkflowStepDefinitions
                     (
@@ -878,6 +878,8 @@ public class WorkflowStepComponent
             throw;
         }
     }
+
+
     public async Task<int> ValidateWorkflowIsReadyAsync(
             int companyId,
             string entityType,

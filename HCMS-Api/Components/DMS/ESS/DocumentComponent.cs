@@ -1186,7 +1186,7 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            //var userId = await GetEmployeeID(input.EmployeeCode);
+            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -1209,7 +1209,19 @@ public class DocumentComponent
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
                 WHERE d.Id = @DocumentId
                 ORDER BY dv.CreatedAt DESC LIMIT 1;", new { DocumentId = input.DocumentId }, transaction);
-            var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
+
+            //var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
+
+            string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
+
+            var notifyPlaceholders = new Dictionary<string, string>
+            {
+                { "ID", Convert.ToString(docInfo?.requestnumber) ?? "Unknown" },
+                { "Approver", approverName },
+                { "Observation", input.Observation ?? "" }
+            };
+
+            
 
             //-------------------------------------------------
             // 2️⃣ Approve Current Step
@@ -1229,6 +1241,7 @@ public class DocumentComponent
             //-------------------------------------------------
 
             string? nextStepUserId = null;
+
             var nextStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -1282,14 +1295,14 @@ public class DocumentComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @UserId
+                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @ChangedBy
                     );",
                 new
                 {
                     CompanyId,
                     input.DocumentId,
                     input.ExecutionId,
-                    userId
+                    ChangedBy = userId
                 }, transaction);
             }
 

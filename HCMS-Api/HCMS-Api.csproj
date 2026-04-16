@@ -48,6 +48,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Components\DMS\Docs\" />
     <Folder Include="Components\HCMS\Common\Dapper\" />
     <Folder Include="Services\DMS\" />
   </ItemGroup>

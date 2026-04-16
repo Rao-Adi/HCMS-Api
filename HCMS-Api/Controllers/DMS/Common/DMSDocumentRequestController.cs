@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -533,6 +533,41 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+    [HttpPost("create-and-submit-document-request")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> CreateAndSubmitDocumentRequest([FromForm] DraftDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<long>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.CreateAndSubmitDocumentRequestAsync(input),
+                Message = "Document Request submitted successfully.",
+                Code = 201
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
 
 
     //[HttpPost("create-document-request")]

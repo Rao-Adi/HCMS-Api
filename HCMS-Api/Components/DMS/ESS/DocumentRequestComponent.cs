@@ -496,6 +496,187 @@ public class DocumentRequestComponent
         return await SubmitDocumentRequestAsync(input);
     }
 
+    public async Task<long> CreateAndSubmitDocumentRequestAsync(DraftDocumentRequestDto dto)
+    {
+        await using var transaction = await _common.BeginTransactionAsync();
+
+        try
+        {
+            // 1. Get User/Company Info
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+
+            // Validation: Justification is mandatory for submission
+            if (string.IsNullOrWhiteSpace(dto.Justification))
+                throw new CustomException("Justification is required to submit a document request.", 400);
+
+            // 2. Handle File Upload
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileName = $"{dto.DraftFile.FileName}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
+            // 3. Insert Document Request with 'Submitted' status
+            var requestId = await _common.ExecuteScalarAsync<long>(@"
+                INSERT INTO DocumentRequests
+                (
+                    CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
+                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, 
+                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy
+                )
+                VALUES
+                (
+                    @CompanyId, 'DR-' || nextval('document_request_seq'), @RequestType, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
+                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, 
+                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId
+                )
+                RETURNING Id;",
+            new
+            {
+                CompanyId,
+                RequestType = dto.DocumentRequestTypeCode,
+                dto.DocumentTypeCode,
+                dto.DocumentName,
+                dto.Justification,
+                dto.ProposedContent,
+                DraftFileUrl = draftFileUrl,
+                dto.DivisionCode,
+                dto.DepartmentCode,
+                dto.SubDepartmentCode,
+                dto.BusinessDomainCode,
+                Status = DocumentRequestStatus.Submitted,
+                UserId = userId
+            }, transaction);
+
+            // 4. Insert Distribution Lists
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds.Select(u => u.ToString()), userId, transaction);
+
+
+            // 5. Workflow Execution Logic
+            var policyId = await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id FROM WorkflowPolicies
+                WHERE CompanyId = @CompanyId AND EntityType = 'Request' AND DocumentTypeCode = @DocType
+                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
+                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
+                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
+                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND IsActive = TRUE AND IsDeleted = FALSE;",
+            new
+            {
+                CompanyId,
+                DocType = dto.DocumentTypeCode,
+                dto.DivisionCode,
+                dto.DepartmentCode,
+                dto.SubDepartmentCode,
+                dto.BusinessDomainCode
+            }, transaction);
+
+            if (policyId == null)
+                throw new CustomException("No workflow policy defined for selected Cabinet Scope.", 404);
+
+            var versionId = await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id FROM WorkflowPolicyVersions
+                WHERE CompanyId = @CompanyId AND WorkflowPolicyId = @PolicyId AND IsActive = TRUE LIMIT 1;",
+            new { CompanyId, PolicyId = policyId }, transaction);
+
+            if (versionId == null)
+                throw new CustomException("Active workflow policy version not found.", 404);
+
+            var executionId = await _common.ExecuteScalarAsync<long>(@"
+                INSERT INTO WorkflowExecutions (CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy)
+                VALUES (@CompanyId, @WorkflowPolicyVersionId, @EntityType, @EntityId, @Status, @StartedBy)
+                RETURNING Id;",
+                new
+                {
+                    CompanyId,
+                    WorkflowPolicyVersionId = versionId,
+                    EntityType = "Request",
+                    EntityId = requestId,
+                    Status = "Running",
+                    StartedBy = userId
+                }, transaction);
+
+            var insertedSteps = await _common.ExecuteAsync(@"
+                INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, StepOrder, Observation, IsActive)
+                SELECT @CompanyId, @ExecutionId, Id, UserId, RoleId, StepOrder, '', FALSE
+                FROM WorkflowStepDefinitions
+                WHERE WorkflowPolicyVersionId = @VersionId;",
+                new
+                {
+                    CompanyId,
+                    ExecutionId = executionId,
+                    VersionId = versionId
+                }, transaction);
+
+            if (insertedSteps < 1)
+                throw new CustomException("Workflow misconfigured — no steps defined for this policy version.", 409);
+
+            await _common.ExecuteAsync(@"
+                UPDATE WorkflowExecutionSteps
+                SET IsActive = TRUE
+                WHERE WorkflowExecutionId = @ExecutionId
+                AND StepOrder = (SELECT MIN(StepOrder) FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId);",
+                new { ExecutionId = executionId }, transaction);
+
+            // 6. History
+            await InsertHistoryAsync(CompanyId, requestId, DocumentRequestStatus.Submitted, userId, "Request Created and Submitted", transaction);
+
+
+            // 7. Prepare and Send Notification
+
+            // Prepare notification data
+            string? firstStepUserId = null;
+            string? requestNumber = null;
+            var firstStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.AssignedUserId, dr.RequestNumber
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN DocumentRequests dr ON dr.Id = we.EntityId
+                WHERE wes.WorkflowExecutionId = @ExecutionId
+                AND wes.IsActive = TRUE;", new { ExecutionId = executionId }, transaction);
+
+            if (firstStep != null && firstStep!.assigneduserid != null)
+            {
+                firstStepUserId = firstStep!.assigneduserid;
+                requestNumber = Convert.ToString(firstStep.requestnumber);
+            }
+
+
+            if (!String.IsNullOrEmpty(firstStepUserId))
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? requestId.ToString() } };
+                //await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, firstStepUserId, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, firstStepUserId, placeholders);
+            }
+
+
+            // 8. Commit
+            await transaction.CommitAsync();
+
+            return requestId;
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     private async Task<bool> SubmitDocumentRequestAsync(SubmitDocumentRequestDto input)
     {
         await using var tx = await _common.BeginTransactionAsync();
@@ -861,7 +1042,7 @@ public class DocumentRequestComponent
         int companyId,
         long requestId,
         DocumentRequestStatus status,
-        long userId,
+        string userId,
         string comments,
         IDbTransaction tx)
     {
