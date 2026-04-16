@@ -222,6 +222,7 @@ public class GetDocumentDto : TableFiltersDto
     public string? DocumentTypeCode { get; set; } 
 
     public string? RequestStatus { get; set; }
+    public int EmpId { get; set; }
 }
 
 
