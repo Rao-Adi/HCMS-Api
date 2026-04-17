@@ -207,21 +207,29 @@ public class PeoplePartnersComponent
         var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
 
-        var whereClause = "WHERE e.CompanyId = @CompanyId AND EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.roleid = @RoleId)";
+        var whereClause = "WHERE e.CompanyId = @CompanyId AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1";
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%')";
+            whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%' OR UPPER(COALESCE(des.name, des_fallback.name)) LIKE '%{search}%' OR UPPER(r.name) LIKE '%{search}%')";
         }
 
         string sortColumn = string.IsNullOrWhiteSpace(input.SortColumn) ? "empid" : new string(input.SortColumn.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
         if (string.IsNullOrWhiteSpace(sortColumn)) sortColumn = "empid";
+        if (sortColumn.Equals("empid", StringComparison.OrdinalIgnoreCase)) sortColumn = "e.empid";
         string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
         var queryParams = new { CompanyId = companyId, RoleId = roleId, Offset = offset, PageSize = input.PageSize };
 
-        string dataSql = $@"SELECT e.* FROM tblEmployee e {whereClause} ORDER BY e.{sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
-        string countSql = $@"SELECT COUNT(1) FROM tblEmployee e {whereClause};";
+        string baseQuery = $@"
+            FROM tblEmployee e
+            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+            LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
+            LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
+            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid";
+
+        string dataSql = $@"SELECT e.*, COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role {baseQuery} {whereClause} ORDER BY {sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+        string countSql = $@"SELECT COUNT(1) {baseQuery} {whereClause};";
 
         var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
         var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);

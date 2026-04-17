@@ -948,7 +948,8 @@ public class DocumentRequestComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId 
-                          AND e.Active = 1 AND ejp.Active = TRUE
+                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
                         new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, tx);
