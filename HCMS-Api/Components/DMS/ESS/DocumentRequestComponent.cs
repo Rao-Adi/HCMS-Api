@@ -1289,7 +1289,7 @@ public class DocumentRequestComponent
 
 
             //get Employee details by Id
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
 
             var whereClause = "WHERE 1=1";
 
@@ -1630,7 +1630,7 @@ public class DocumentRequestComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
             //-------------------------------------------------
             // 1️⃣ Lock Step
             //-------------------------------------------------

@@ -183,7 +183,7 @@ public class PeoplePartnersComponent
         };
     }
 
-    public async Task<dynamic> GetAllEmployeeByEmpIdAsync(int empId)
+    public async Task<dynamic> GetEmployeeByEmpIdAsync(int empId)
     {
         string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(companyIdStr);

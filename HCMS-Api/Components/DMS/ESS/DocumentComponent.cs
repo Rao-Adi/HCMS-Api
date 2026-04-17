@@ -1186,7 +1186,7 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -1819,7 +1819,7 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
 
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
@@ -1936,7 +1936,7 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
 
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
@@ -2190,7 +2190,7 @@ public class DocumentComponent
             int CompanyId = int.Parse(_CompanyId);
 
             //get Employee details by Id
-            var empDetail = await _peoplePartnersComponent.GetAllEmployeeByEmpIdAsync(input.EmpId);
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
             if(empDetail == null)
             {
                 throw new Exception("Employe dosen't exist.");
