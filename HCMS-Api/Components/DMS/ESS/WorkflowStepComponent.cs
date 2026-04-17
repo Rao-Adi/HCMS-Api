@@ -336,7 +336,7 @@ public class WorkflowStepComponent
                 AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
                 AND ws.IsActive = TRUE
                 AND ws.IsDeleted = FALSE
-                ORDER BY ws.StepOrder;";
+                ORDER BY ws.StepOrder, ws.employeecode ASC;";
 
             var queryParams = new
             {
@@ -357,9 +357,14 @@ public class WorkflowStepComponent
                 // Cast row to IDictionary<string, object> to access properties safely
                 var rowDict = row as IDictionary<string, object>;
 
+                string fName = GetValue<string>(rowDict, "firstname");
+                string mName = GetValue<string>(rowDict, "midname");
+                string lName = GetValue<string>(rowDict, "lastname");
+                string employeeName = string.Join(" ", new[] { fName, mName, lName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
                 dtos.Add(new WorkflowStepDefiniationReadDto
                 {
-                    Id = GetValue<int>(rowDict, "companyid"),
+                    Id = GetValue<int>(rowDict, "id"),
 
                     CompanyId = GetValue<int>(rowDict, "companyid"),
                     Company = GetValue<string>(rowDict, "company"),
@@ -381,7 +386,7 @@ public class WorkflowStepComponent
                     RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
 
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = GetValue<string>(rowDict, "firstname") + " " + GetValue<string>(rowDict, "midname") + " " + GetValue<string>(rowDict, "lastname"),
+                    EmployeeName = employeeName,
 
                     Designation = GetValue<string>(rowDict, "designation"),
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
@@ -501,11 +506,11 @@ public class WorkflowStepComponent
                 LEFT JOIN public.tblempjobprofile ejp 
                     ON ((wes.AssignedRoleId IS NOT NULL AND ejp.roleid = wes.AssignedRoleId)
                         OR (wes.AssignedDesignationId IS NOT NULL AND ejp.dsgid = wes.AssignedDesignationId))
-                    AND ejp.Active = TRUE
+                    AND COALESCE(ejp.Active, TRUE) = TRUE
                 LEFT JOIN public.tblEmployee e 
                     ON e.empid = ejp.empid 
                     AND e.CompanyId = @CompanyId 
-                    AND e.Active = 1
+                    AND COALESCE(e.Active, 1) = 1
                 WHERE wes.WorkflowExecutionId = @ExecutionId 
                   AND wes.StepOrder = @StepOrder
                   AND wes.CompanyId = @CompanyId
@@ -563,7 +568,7 @@ public class WorkflowStepComponent
                     SELECT ejp.roleid
                     FROM public.tblempjobprofile ejp
                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND ejp.Active = TRUE
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND COALESCE(ejp.Active, TRUE) = TRUE
                 )
                 OR
                 wes.AssignedDesignationId IN
@@ -571,7 +576,7 @@ public class WorkflowStepComponent
                     SELECT ejp.dsgid
                     FROM public.tblempjobprofile ejp
                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND ejp.Active = TRUE
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND COALESCE(ejp.Active, TRUE) = TRUE
                 )
             )
 
@@ -1252,7 +1257,7 @@ public class WorkflowStepComponent
                     ON ejp.dsgid = des.sdlid
                 LEFT JOIN public.tblsetupsdetail des_fallback 
                     ON e.dsgid = des_fallback.sdlid
-                WHERE e.Active = 1";
+                WHERE COALESCE(e.Active, 1) = 1";
 
             // 1. Access Level Filters
             if (!string.IsNullOrEmpty(filters.DocumentTypeCode))

@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common.Misc;
+﻿﻿using HCMS_Api.Common.Misc;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -396,8 +396,10 @@ public class DocumentRequestDetailsDto
     public string Division { get; set; }
     public string Department { get; set; }
     public string SubDepartment { get; set; }
+    public int? DesignationId { get; set; }
     public string Designation { get; set; }
 
+    public int? RoleId { get; set; }
     // r.Name AS RoleName
     public string RoleName { get; set; }
 
