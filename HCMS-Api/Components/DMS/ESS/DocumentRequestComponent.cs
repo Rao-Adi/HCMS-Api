@@ -24,6 +24,7 @@ public class DocumentRequestComponent
     private readonly DocumentComponent _documentComponent;
     private readonly NotificationComponent _notificationComponent;
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
+    private readonly WorkflowStepComponent _workflowStepComponent;
     public DocumentRequestComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -35,7 +36,8 @@ public class DocumentRequestComponent
         DMSCommon common,
         DocumentComponent documentComponent,
         NotificationComponent notificationComponent,
-        PeoplePartnersComponent peoplePartnersComponent
+        PeoplePartnersComponent peoplePartnersComponent,
+        WorkflowStepComponent workflowStepComponent
         )
     {
         _http = http;
@@ -49,6 +51,7 @@ public class DocumentRequestComponent
         _documentComponent = documentComponent;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
+        _workflowStepComponent = workflowStepComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -611,17 +614,52 @@ public class DocumentRequestComponent
                     StartedBy = userId
                 }, transaction);
 
-            var insertedSteps = await _common.ExecuteAsync(@"
-                INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, StepOrder, Observation, IsActive)
-                SELECT @CompanyId, @ExecutionId, Id, UserId, RoleId, StepOrder, '', FALSE
+            var stepDefs = await _common.QueryAsync<dynamic>(@"
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new
+                WHERE WorkflowPolicyVersionId = @VersionId
+                ORDER BY StepOrder;", new { VersionId = versionId }, transaction);
+
+            int runningStepOrder = 1;
+            int insertedSteps = 0;
+
+            foreach (var stepDef in stepDefs)
+            {
+                if (stepDef.userid != null)
                 {
-                    CompanyId,
-                    ExecutionId = executionId,
-                    VersionId = versionId
-                }, transaction);
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+                    runningStepOrder++;
+                    insertedSteps++;
+                }
+                else if (stepDef.roleid != null || stepDef.designationid != null)
+                {
+                    var employees = await _common.QueryAsync<string>(@"
+                        SELECT TRIM(e.empcode)
+                        FROM public.tblempjobprofile ejp
+                        INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId 
+                          AND e.Active = 1 AND ejp.Active = TRUE
+                          AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
+                        ORDER BY e.empid ASC;",
+                        new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
+
+                    if (!employees.Any())
+                        throw new CustomException("Workflow misconfigured — no active employees found for a configured Role/Designation step.", 409);
+
+                    foreach (var empCode in employees)
+                    {
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = empCode, StepOrder = runningStepOrder }, transaction);
+                        runningStepOrder++;
+                        insertedSteps++;
+                    }
+                }
+            }
 
             if (insertedSteps < 1)
                 throw new CustomException("Workflow misconfigured — no steps defined for this policy version.", 409);
@@ -670,7 +708,7 @@ public class DocumentRequestComponent
 
             return requestId;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             await transaction.RollbackAsync();
             throw;
@@ -882,25 +920,52 @@ public class DocumentRequestComponent
                     StartedBy = userId
                 }, tx);
 
-            //-------------------------------------------------
-            // Insert Steps (SNAPSHOT)
-            //-------------------------------------------------
-
-            var inserted = await _common.ExecuteAsync(@"
-                INSERT INTO WorkflowExecutionSteps
-                (
-                    CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, StepOrder, Observation, IsActive
-                )
-                SELECT
-                    @CompanyId, @ExecutionId, Id, UserId, RoleId, StepOrder, '', FALSE
+            var stepDefs = await _common.QueryAsync<dynamic>(@"
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new
+                WHERE WorkflowPolicyVersionId = @VersionId
+                ORDER BY StepOrder;", new { VersionId = versionId }, tx);
+
+            int runningStepOrder = 1;
+            int inserted = 0;
+
+            foreach (var stepDef in stepDefs)
+            {
+                if (stepDef.userid != null)
                 {
-                    CompanyId,
-                    ExecutionId = executionId,
-                    VersionId = versionId
-                }, tx);
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, tx);
+                    runningStepOrder++;
+                    inserted++;
+                }
+                else if (stepDef.roleid != null || stepDef.designationid != null)
+                {
+                    var employees = await _common.QueryAsync<string>(@"
+                        SELECT TRIM(e.empcode)
+                        FROM public.tblempjobprofile ejp
+                        INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId 
+                          AND e.Active = 1 AND ejp.Active = TRUE
+                          AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
+                        ORDER BY e.empid ASC;",
+                        new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, tx);
+
+                    if (!employees.Any())
+                        throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
+
+                    foreach (var empCode in employees)
+                    {
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = empCode, StepOrder = runningStepOrder }, tx);
+                        runningStepOrder++;
+                        inserted++;
+                    }
+                }
+            }
 
             if (inserted < 1)
                 throw new Exception("Workflow misconfigured — no steps copied.");
@@ -940,28 +1005,31 @@ public class DocumentRequestComponent
                 }, tx);
 
             // Prepare notification data
-            string? firstStepUserId = null;
-            string? requestNumber = null;
-            var firstStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT wes.AssignedUserId, dr.RequestNumber
+            var activeStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.StepOrder, dr.RequestNumber
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 JOIN DocumentRequests dr ON dr.Id = we.EntityId
                 WHERE wes.WorkflowExecutionId = @ExecutionId
-                AND wes.IsActive = TRUE;", new { ExecutionId = executionId }, tx);
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId }, tx);
 
-            if (firstStep != null && firstStep!.assigneduserid != null)
+            List<string> approvers = new List<string>();
+            string requestNumber = input.RequestId.ToString();
+            if (activeStep != null)
             {
-                firstStepUserId = firstStep!.assigneduserid;
-                requestNumber = Convert.ToString(firstStep.requestnumber);
+                requestNumber = Convert.ToString(activeStep.requestnumber) ?? input.RequestId.ToString();
+                approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, tx);
             }
 
             await tx.CommitAsync();
 
-            if (!String.IsNullOrEmpty(firstStepUserId))
+            if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? input.RequestId.ToString() } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, firstStepUserId, placeholders);
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
+                foreach (var approver in approvers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders);
+                }
             }
 
             return true;
@@ -1804,7 +1872,7 @@ public class DocumentRequestComponent
             // APPROVE → If last approver in group
             //-------------------------------------------------
 
-            string? nextStepUserId = null;
+            List<string> nextStepApprovers = new List<string>();
             if (pending == 1) // YOU were the final approver
             {
                 //-------------------------------------------------
@@ -1842,11 +1910,7 @@ public class DocumentRequestComponent
                     if (rows == 0)
                         throw new Exception("Workflow activation failed. Next step not found.");
 
-                    var nextStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT AssignedUserId FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND StepOrder = @Next;", new { ExecutionId = executionId, Next = next.Value }, tx);
-                    if (nextStepInfo != null && nextStepInfo!.assigneduserid != null)
-                    {
-                        nextStepUserId = nextStepInfo!.assigneduserid;
-                    }
+                    nextStepApprovers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, next.Value, tx);
                 }
                 else
                 {
@@ -1892,20 +1956,18 @@ public class DocumentRequestComponent
                         userId,
                         tx);
 
-                    var nextStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT AssignedUserId FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND StepOrder = @Next;", new { ExecutionId = executionId, Next = next.Value }, tx);
-                    if (nextStepInfo != null && nextStepInfo!.assigneduserid != null)
-                    {
-                        nextStepUserId = nextStepInfo!.assigneduserid;
-                    }
                     //await CreateDocumentFromApprovedRequestAsync(input.CompanyId, executionId, input.UserId, tx);
                 }
             }
 
             await tx.CommitAsync();
 
-            if (nextStepUserId != string.Empty && requestInfo != null)
+            if (nextStepApprovers.Any() && requestInfo != null)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, nextStepUserId, notifyPlaceholders);
+                foreach(var approver in nextStepApprovers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, approver, notifyPlaceholders);
+                }
             }
 
             return true;

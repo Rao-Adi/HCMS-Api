@@ -1,4 +1,4 @@
-﻿using Dapper;
+﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -26,6 +26,7 @@ public class DocumentComponent
     private readonly DMSCommon _common;
     private readonly NotificationComponent _notificationComponent;
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
+    private readonly WorkflowStepComponent _workflowStepComponent;
     public DocumentComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -36,7 +37,8 @@ public class DocumentComponent
         , IHttpContextAccessor http,
         DMSCommon common,
         NotificationComponent notificationComponent,
-        PeoplePartnersComponent peoplePartnersComponent
+        PeoplePartnersComponent peoplePartnersComponent,
+        WorkflowStepComponent workflowStepComponent
         )
     {
         _http = http;
@@ -49,6 +51,7 @@ public class DocumentComponent
         _common = common;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
+        _workflowStepComponent = workflowStepComponent;
         //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         //_dataservice.BeginProcess(connectionString);
 
@@ -661,11 +664,10 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -889,23 +891,52 @@ public class DocumentComponent
             // 6️⃣ Snapshot Workflow Steps
             //-------------------------------------------------
 
-            var inserted = await _common.ExecuteAsync(@"
-                INSERT INTO WorkflowExecutionSteps
-                (
-                    CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId,
-                    StepOrder, Observation, IsActive
-                )
-                SELECT
-                    @CompanyId, @ExecutionId, Id, UserId, RoleId,
-                    StepOrder, '', FALSE
+            var stepDefs = await _common.QueryAsync<dynamic>(@"
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-            new
+                WHERE WorkflowPolicyVersionId = @VersionId
+                ORDER BY StepOrder;", new { VersionId = versionId }, transaction);
+
+            int runningStepOrder = 1;
+            int inserted = 0;
+
+            foreach (var stepDef in stepDefs)
             {
-                CompanyId,
-                ExecutionId = executionId,
-                VersionId = versionId
-            }, transaction);
+                if (stepDef.userid != null)
+                {
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+                    runningStepOrder++;
+                    inserted++;
+                }
+                else if (stepDef.roleid != null || stepDef.designationid != null)
+                {
+                    var employees = await _common.QueryAsync<string>(@"
+                        SELECT TRIM(e.empcode)
+                        FROM public.tblempjobprofile ejp
+                        INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId 
+                          AND e.Active = 1 AND ejp.Active = TRUE
+                          AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
+                        ORDER BY e.empid ASC;",
+                        new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
+
+                    if (!employees.Any())
+                        throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
+
+                    foreach (var empCode in employees)
+                    {
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = empCode, StepOrder = runningStepOrder }, transaction);
+                        runningStepOrder++;
+                        inserted++;
+                    }
+                }
+            }
 
             if (inserted < 1)
                 throw new Exception("Workflow misconfigured — no steps copied.");
@@ -948,11 +979,8 @@ public class DocumentComponent
             }, transaction);
 
             // Prepare notification data
-            string? firstStepUserId = null;
-            string? docTitle = null;
-            string? docVersion = null;
             var firstStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT wes.AssignedUserId, d.Title, dv.Version
+                SELECT wes.StepOrder, d.Title, dv.Version
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 JOIN Documents d ON d.Id = we.EntityId
@@ -960,19 +988,26 @@ public class DocumentComponent
                 WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.IsActive = TRUE
                 ORDER BY dv.CreatedAt DESC LIMIT 1;", new { ExecutionId = executionId }, transaction);
 
-            if (firstStepInfo != null && firstStepInfo!.assigneduserid != null)
+            List<string> approvers = new List<string>();
+            string docTitle = "Unknown";
+            string docVersion = "1.0";
+
+            if (firstStepInfo != null)
             {
-                firstStepUserId = firstStepInfo!.assigneduserid;
-                docTitle = Convert.ToString(firstStepInfo.title);
-                docVersion = Convert.ToString(firstStepInfo.version);
+                docTitle = Convert.ToString(firstStepInfo.title) ?? "Unknown";
+                docVersion = Convert.ToString(firstStepInfo.version) ?? "1.0";
+                approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)firstStepInfo.steporder, transaction);
             }
 
             await transaction.CommitAsync();
 
-            if (firstStepUserId != string.Empty)
+            if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle ?? "Unknown" }, { "V#", docVersion ?? "1.0" } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, firstStepUserId, placeholders);
+                var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle }, { "V#", docVersion } };
+                foreach(var approver in approvers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders);
+                }
             }
 
             return true;
@@ -989,11 +1024,10 @@ public class DocumentComponent
         //-------------------------------------------------
         // 1️⃣ Load Active Attributes
         //-------------------------------------------------
-        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
-        int CompanyId = int.Parse(_CompanyId);
 
         var attributes = await _common.QueryAsync<dynamic>(@"
                 SELECT *
@@ -1186,7 +1220,7 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
+            //var userId = await GetEmployeeID(input.EmployeeCode);
             //-------------------------------------------------
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
@@ -1209,19 +1243,7 @@ public class DocumentComponent
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
                 WHERE d.Id = @DocumentId
                 ORDER BY dv.CreatedAt DESC LIMIT 1;", new { DocumentId = input.DocumentId }, transaction);
-
-            //var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
-
-            string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
-
-            var notifyPlaceholders = new Dictionary<string, string>
-            {
-                { "ID", Convert.ToString(docInfo?.requestnumber) ?? "Unknown" },
-                { "Approver", approverName },
-                { "Observation", input.Observation ?? "" }
-            };
-
-            
+            var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
 
             //-------------------------------------------------
             // 2️⃣ Approve Current Step
@@ -1240,8 +1262,7 @@ public class DocumentComponent
             // 3️⃣ Find Next Step
             //-------------------------------------------------
 
-            string? nextStepUserId = null;
-
+            List<string> nextStepApprovers = new List<string>();
             var nextStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -1270,8 +1291,7 @@ public class DocumentComponent
                     WHERE Id = @NextStepId;",
                 new { NextStepId = nextStep.id, input.Observation }, transaction);
 
-                if (nextStep.assigneduserid != null)
-                    nextStepUserId = nextStep.assigneduserid;
+                nextStepApprovers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, input.ExecutionId, (int)nextStep.steporder, transaction);
             }
             else
             {
@@ -1295,22 +1315,25 @@ public class DocumentComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @ChangedBy
+                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @UserId
                     );",
                 new
                 {
                     CompanyId,
                     input.DocumentId,
                     input.ExecutionId,
-                    ChangedBy = userId
+                    userId
                 }, transaction);
             }
 
             await transaction.CommitAsync();
 
-            if (nextStepUserId != string.Empty && docInfo != null)
+            if (nextStepApprovers.Any() && docInfo != null)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, nextStepUserId, notifyPlaceholders);
+                foreach(var approver in nextStepApprovers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders);
+                }
             }
 
             return true;
@@ -1528,12 +1551,10 @@ public class DocumentComponent
 
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
-
             //-----------------------------------------
             // 1️⃣ Update Training Status
             //-----------------------------------------
@@ -1999,11 +2020,23 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
                 (
-                    CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, Comments, ChangedBy
+                    CompanyId,
+                    DocumentId,
+                    FromStateId,
+                    ToStateId,
+                    WorkflowExecutionId,
+                    Comments,
+                    ChangedBy
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 2, 1, @ExecutionId, @Comments, @UserId
+                    @CompanyId,
+                    @DocumentId,
+                    2,
+                    1,
+                    @ExecutionId,
+                    @Comments,
+                    @UserId
                 );",
             new
             {
@@ -2123,11 +2156,10 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
 
 
             var result = await _common.QueryAsync<dynamic>(@"
@@ -2162,7 +2194,7 @@ public class DocumentComponent
                   ORDER BY dsh.ChangedAt DESC
                   LIMIT 1
               ) = 1; -- Draft Status ID "
-            , new { CompanyId = CompanyId, RequestId = requestId });
+            , new { CompanyId = int.Parse(CompanyId), RequestId = requestId });
 
             if (result == null)
                 throw new Exception("Draft document not available for finalization.");
@@ -2183,18 +2215,12 @@ public class DocumentComponent
         try
         {
 
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
 
-            //get Employee details by Id
-            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
-            if(empDetail == null)
-            {
-                throw new Exception("Employe dosen't exist.");
-            }
+
             var whereClause = "WHERE 1=1";
 
             // Search
@@ -2249,7 +2275,7 @@ public class DocumentComponent
             var queryParams = new
             {
                 CompanyId,
-                UserId = empDetail.empcode,
+                UserId = userId,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
@@ -2368,11 +2394,10 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
 
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
@@ -2537,7 +2562,7 @@ public class DocumentComponent
             var dcaUsers = await _common.QueryAsync<string>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
-            var placeholders = new Dictionary<string, string> { { "Doc Name", docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+            var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
 
             foreach (var dcaUser in dcaUsers)
             {
@@ -2557,11 +2582,10 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
 
             // UC-31: Fetch historical documents where the *current user* was the one 
             // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'

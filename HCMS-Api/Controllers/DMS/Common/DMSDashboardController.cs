@@ -22,12 +22,12 @@ public class DMSDashboardController : Controller
         _dashboardComponent = dashboardComponent;
     }
 
-    [HttpGet("get-dashboard-data")]
-    public async Task<IActionResult> GetDashboardData()
+    [HttpGet("get-dashboard-data/{empId}")]
+    public async Task<IActionResult> GetDashboardData(int empId)
     {
         try
         {
-            var data = await _dashboardComponent.GetDashboardDataAsync();
+            var data = await _dashboardComponent.GetDashboardDataAsync(empId);
             return Ok(new HttpApiResponse<DashboardDataDto>()
             {
                 Success = true,

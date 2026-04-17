@@ -96,9 +96,12 @@ public class WorkflowStepUpdateDto
     public string DocumentTypeCode { get; set; }
 
     public int Sequence { get; set; }
-
-    public int? RoleId { get; set; }
+ 
     public int? UserId { get; set; }
+
+    public int? RoleId  { get; set; }
+
+    public int? DesignationId  { get; set; }
 
     public int? ApprovalLevel { get; set; }
 
@@ -195,6 +198,7 @@ public class WorkflowStepDefiniationReadDto : AuditableEntity
 
 
     public int? RoleId { get; set; }
+    public int? DesignationId { get; set; }
     public string? UserRole { get; set; }
 
     public bool CanEdit { get; set; }

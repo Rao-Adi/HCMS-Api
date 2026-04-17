@@ -374,6 +374,7 @@ public class WorkflowStepComponent
                     StepType = GetValue<string>(rowDict, "steptype"),
 
                     RoleId = GetValue<int>(rowDict, "roleid"),
+                    DesignationId = GetValue<int>(rowDict, "designationid"),
                     UserRole = GetValue<string>(rowDict, "role"),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
@@ -490,6 +491,36 @@ public class WorkflowStepComponent
         return default(T);
     }
 
+    public async Task<List<string>> GetNextStepApproversAsync(int companyId, long executionId, int stepOrder, IDbTransaction tx = null)
+    {
+        try
+        {
+            string query = @"
+                SELECT DISTINCT COALESCE(wes.AssignedUserId, TRIM(e.empcode)) AS ApproverId
+                FROM WorkflowExecutionSteps wes
+                LEFT JOIN public.tblempjobprofile ejp 
+                    ON ((wes.AssignedRoleId IS NOT NULL AND ejp.roleid = wes.AssignedRoleId)
+                        OR (wes.AssignedDesignationId IS NOT NULL AND ejp.dsgid = wes.AssignedDesignationId))
+                    AND ejp.Active = TRUE
+                LEFT JOIN public.tblEmployee e 
+                    ON e.empid = ejp.empid 
+                    AND e.CompanyId = @CompanyId 
+                    AND e.Active = 1
+                WHERE wes.WorkflowExecutionId = @ExecutionId 
+                  AND wes.StepOrder = @StepOrder
+                  AND wes.CompanyId = @CompanyId
+                ORDER BY ApproverId ASC;";
+
+            var approvers = await _common.QueryAsync<string>(query, new { CompanyId = companyId, ExecutionId = executionId, StepOrder = stepOrder }, tx);
+            return approvers.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
     public async Task<IEnumerable<PendingRequestDto>> GetPendingApprovalsAsync()
     {
 
@@ -529,11 +560,18 @@ public class WorkflowStepComponent
 
                 wes.AssignedRoleId IN
                 (
-                    SELECT RoleId
-                    FROM UserRoles
-                    WHERE CompanyId = @CompanyId
-                    AND UserId = @UserId
-                    AND IsActive = TRUE
+                    SELECT ejp.roleid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND ejp.Active = TRUE
+                )
+                OR
+                wes.AssignedDesignationId IN
+                (
+                    SELECT ejp.dsgid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND ejp.Active = TRUE
                 )
             )
 
@@ -636,6 +674,7 @@ public class WorkflowStepComponent
                 SET 
                     StepOrder = @StepOrder,
                     RoleId = @RoleId,
+                    DesignationId = @DesignationId,
                     UserId = @UserId,
                     ApprovalLevel = @ApprovalLevel,
                     RequiresAllApprovals = @RequiresAllApprovals,
@@ -648,6 +687,7 @@ public class WorkflowStepComponent
             {
                 StepOrder = input.Sequence,
                 RoleId = input.RoleId > 0 ? input.RoleId : (int?)null,
+                DesignationId = input.DesignationId > 0 ? input.DesignationId : (int?)null,
                 UserId = input.UserId > 0 ? input.UserId : (int?)null,
                 ApprovalLevel = input.ApprovalLevel > 0 ? input.ApprovalLevel : (int?)null,
                 RequiresAllApprovals = input.IsParallelApproval,
@@ -711,8 +751,6 @@ public class WorkflowStepComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-
-            var users = await GetEmployeesByAccessFiltersAsync(filters);
 
             filters.CompanyId = CompanyId; // Ensure CompanyId is set in filters for downstream queries
 
@@ -820,43 +858,100 @@ public class WorkflowStepComponent
             // 6️⃣ Insert Step
             //-----------------------------------------
 
-            foreach (var user in users)
-            {
-                // Check if employee already exists in this workflow version
-                var existingStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
-                    SELECT COUNT(1)
-                    FROM WorkflowStepDefinitions
-                    WHERE WorkflowPolicyVersionId = @VersionId
-                    AND UserId = @UserId
-                    AND IsDeleted = FALSE;",
-                    new { VersionId = versionId, UserId = user.EmployeeCode });
+            bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) || 
+                                        (filters.DesignationCodes != null && filters.DesignationCodes.Any());
 
-                if (existingStepCount > 0)
+            if (hasRoleOrDesignation)
+            {
+                if (filters.Roles != null && filters.Roles.Any(r => r > 0))
                 {
-                    throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
+                    foreach (var roleId in filters.Roles.Where(r => r > 0))
+                    {
+                        var existingRoleStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
+                            SELECT COUNT(1) FROM WorkflowStepDefinitions 
+                            WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND IsDeleted = FALSE;", 
+                            new { VersionId = versionId, RoleId = roleId });
+
+                        if (existingRoleStepCount > 0)
+                            throw new CustomException("A step for this Role already exists in this workflow.", 409);
+
+                        await _dapperService.ExecuteAsync(@"
+                            INSERT INTO WorkflowStepDefinitions
+                            (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                            VALUES
+                            (@CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, NULL, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
+                        new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, RoleId = roleId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = userId });
+                        nextOrder++;
+                    }
                 }
 
-                await _dapperService.ExecuteAsync(@"
-                    INSERT INTO WorkflowStepDefinitions
-                    (
-                        CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, UserId, 
-                        RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
-                    )
-                    VALUES
-                    (
-                        @CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, @UserId, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
-                    );",
-                new
+                if (filters.DesignationCodes != null && filters.DesignationCodes.Any())
                 {
-                    CompanyId,
-                    VersionId = versionId,
-                    StepOrder = nextOrder,
-                    filters.StepType,
-                    user.RoleId,
-                    UserId = user.EmployeeCode, // Fixed: Maps to the fetched User's ID, not the logged-in administrator
-                    RequiresAllApprovals = filters.IsParallelApproval,
-                    CreatedBy = userId
-                });
+                    foreach (var desigCodeStr in filters.DesignationCodes)
+                    {
+                        if (int.TryParse(desigCodeStr, out int designationId) && designationId > 0)
+                        {
+                            var existingDesigStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
+                                SELECT COUNT(1) FROM WorkflowStepDefinitions 
+                                WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND IsDeleted = FALSE;", 
+                                new { VersionId = versionId, DesignationId = designationId });
+
+                            if (existingDesigStepCount > 0)
+                                throw new CustomException("A step for this Designation already exists in this workflow.", 409);
+
+                            await _dapperService.ExecuteAsync(@"
+                                INSERT INTO WorkflowStepDefinitions
+                                (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                                VALUES
+                                (@CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, @DesignationId, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
+                            new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, DesignationId = designationId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = userId });
+                            nextOrder++;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Only fetch specific employees if no role/designation group assignment was selected
+                var users = await GetEmployeesByAccessFiltersAsync(filters);
+
+                foreach (var user in users)
+                {
+                    var existingStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
+                        SELECT COUNT(1)
+                        FROM WorkflowStepDefinitions
+                        WHERE WorkflowPolicyVersionId = @VersionId
+                        AND UserId = @UserId
+                        AND IsDeleted = FALSE;",
+                        new { VersionId = versionId, UserId = user.EmployeeCode });
+
+                    if (existingStepCount > 0)
+                    {
+                        throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
+                    }
+
+                    await _dapperService.ExecuteAsync(@"
+                        INSERT INTO WorkflowStepDefinitions
+                        (
+                            CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, 
+                            RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
+                        )
+                        VALUES
+                        (
+                            @CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, NULL, @UserId, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
+                        );",
+                    new
+                    {
+                        CompanyId,
+                        VersionId = versionId,
+                        StepOrder = nextOrder,
+                        filters.StepType,
+                        UserId = user.EmployeeCode,
+                        RequiresAllApprovals = filters.IsParallelApproval,
+                        CreatedBy = userId
+                    });
+                    nextOrder++;
+                }
             }
 
             //-----------------------------------------
