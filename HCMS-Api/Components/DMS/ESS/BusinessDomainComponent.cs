@@ -228,8 +228,7 @@ public class BusinessDomainComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(bd.Name) LIKE '%{search}%'
-                    OR UPPER(bd.Code) LIKE '%{search}%'
+                    UPPER(bd.SubDepartmentCode) LIKE '%{search}%' 
                 )";
             }
 

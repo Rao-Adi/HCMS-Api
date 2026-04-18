@@ -294,8 +294,8 @@ public class DocumentRequestComponent
                         d.BusinessDomainCode,
                         d.RoleId,
                         d.DistributionTypeId,
-                        CreatedBy = dto.CreatedByUserId,
-                        LastModifiedBy = dto.CreatedByUserId
+                        CreatedBy = userId,
+                        LastModifiedBy = userId
                     }, transaction);
                 }
             }
@@ -320,8 +320,8 @@ public class DocumentRequestComponent
                         CompanyId,
                         RequestId = requestId,
                         EmployeeCode = _userId,
-                        CreatedBy = dto.CreatedByUserId,
-                        LastModifiedBy = dto.CreatedByUserId
+                        CreatedBy = userId,
+                        LastModifiedBy = userId
                     }, transaction);
                 }
             }
@@ -340,7 +340,7 @@ public class DocumentRequestComponent
                 CompanyId,
                 RequestId = requestId,
                 Status = DocumentRequestStatus.Draft,
-                UserId = dto.CreatedByUserId
+                UserId = userId
             }, transaction);
 
             await transaction.CommitAsync();
@@ -1630,7 +1630,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
@@ -2060,7 +2060,7 @@ public class DocumentRequestComponent
                 dr.*,
                 wes.StepOrder        AS CurrentStepOrder,
                 wsd.StepType         AS CurrentStepType,
-                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS CurrentAssignedUser, 
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS CurrentAssignedUser, 
                 wes.AssignedUserId   AS CurrentAssignedUserId,
                 wes.AssignedRoleId   AS CurrentAssignedRoleId
             {fromJoins}
@@ -2151,7 +2151,7 @@ public class DocumentRequestComponent
                     wsd.StepType,
                     wes.AssignedUserId,
                     e.empCode AS employeecode,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
                     ejp.roleid AS RoleId,
                     r.name AS RoleName,
                     ejp.dsgid AS DesignationId,
@@ -2216,7 +2216,7 @@ public class DocumentRequestComponent
                     wsd.StepType,
                     wes.AssignedUserId,
                     e.empCode AS employeecode,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
                     ejp.roleid AS RoleId,
                     r.name AS RoleName,
                     ejp.dsgid AS DesignationId,

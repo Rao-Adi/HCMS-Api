@@ -857,7 +857,7 @@ public class DocumentComponent
             }, transaction);
 
             if (versionId == null)
-                throw new Exception("Workflow policy version not found.");
+                throw new Exception("Workflow policy not defined for Document.");
 
             //-------------------------------------------------
             // 4️⃣ Promote Version (Rework Case)
@@ -1024,10 +1024,11 @@ public class DocumentComponent
         //-------------------------------------------------
         // 1️⃣ Load Active Attributes
         //-------------------------------------------------
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
         var userId = _utilities.GetUserid(prefix);
+        int CompanyId = int.Parse(_CompanyId);
 
         var attributes = await _common.QueryAsync<dynamic>(@"
                 SELECT *
@@ -2221,6 +2222,8 @@ public class DocumentComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
+            //get Employee details by Id
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
 
             var whereClause = "WHERE 1=1";
 
@@ -2276,7 +2279,7 @@ public class DocumentComponent
             var queryParams = new
             {
                 CompanyId,
-                UserId = userId,
+                UserId = empDetail?.empcode,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,
@@ -2332,7 +2335,7 @@ public class DocumentComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
@@ -2340,7 +2343,7 @@ public class DocumentComponent
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
-                WHERE CompanyId = @CompanyId
+                WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
                 {
@@ -2461,7 +2464,7 @@ public class DocumentComponent
                     dt.Code AS DocumentTypeCode,
                     dv.Version,
                     tr.TrainingProofURL,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
                     doc.CreatedAt, div.Name AS DivisionName,
                     dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain
 

@@ -449,12 +449,11 @@ public class DraftDocumentRequestDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-
-    public long CreatedByUserId { get; set; }
+     
 
     // 🟩 UC-22
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserIds { get; set; }
+    public List<string>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
