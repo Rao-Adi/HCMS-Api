@@ -1096,8 +1096,8 @@ public class DocumentRequestComponent
                         CompanyId = companyId,
                         RequestId = requestId,
                         EmployeeCode = uid,
-                        CreatedBy = uid,
-                        LastModifiedBy = uid
+                        CreatedBy = userId,
+                        LastModifiedBy = userId
                     }, tx);
                 }
             }
@@ -1630,9 +1630,14 @@ public class DocumentRequestComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.*, e.firstname ,e.lastname
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
                 WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
@@ -1993,8 +1998,7 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
 
             filter.Initiator = userId.ToString();
-            filter.CompanyId = CompanyId;
-            filter.Initiator = userId;
+            filter.CompanyId = CompanyId; 
 
             var searchCondition = "";
             if (!string.IsNullOrWhiteSpace(filter.SearchText))
@@ -2037,7 +2041,8 @@ public class DocumentRequestComponent
             LEFT JOIN WorkflowExecutionSteps wes
                 ON wes.CompanyId = we.CompanyId
                 AND wes.WorkflowExecutionId = we.Id
-            LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empid::Text
+                AND wes.IsActive = TRUE
+            LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text
             --LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
             LEFT JOIN WorkflowStepDefinitions wsd 
                 ON wsd.CompanyId = wes.CompanyId
@@ -2047,16 +2052,15 @@ public class DocumentRequestComponent
             WHERE dr.CompanyId = @CompanyId
               AND dr.SubmittedBy = @Initiator
               AND dr.IsDeleted = FALSE
-              AND (@DivisionCode IS NULL OR dr.DivisionCode = @DivisionCode)
-              AND (@DepartmentCode IS NULL OR dr.DepartmentCode = @DepartmentCode)
-              AND (@Status IS NULL OR dr.Status = @Status)";
+              AND dr.Status IN (1, 2) -- 1 = Submitted, 2 = In Approval
+              --AND (@Status IS NULL OR dr.Status = @Status)";
 
             var dataSql = $@"
             SELECT 
                 dr.*,
                 wes.StepOrder        AS CurrentStepOrder,
                 wsd.StepType         AS CurrentStepType,
-                e.firstname AS CurrentAssignedUser, 
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS CurrentAssignedUser, 
                 wes.AssignedUserId   AS CurrentAssignedUserId,
                 wes.AssignedRoleId   AS CurrentAssignedRoleId
             {fromJoins}

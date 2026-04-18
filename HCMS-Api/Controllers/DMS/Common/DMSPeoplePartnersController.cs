@@ -157,7 +157,7 @@ public class DMSPeoplePartnersController : Controller
     }
 
     [HttpPost("get-employees-by-role/{roleId}")]
-    public async Task<IActionResult> GetEmployeesByRole(int roleId, [FromBody] TableFiltersDto input)
+    public async Task<IActionResult> GetEmployeesByRole(int roleId, [FromBody] EmployeeFilterDto input)
     {
         try
         {

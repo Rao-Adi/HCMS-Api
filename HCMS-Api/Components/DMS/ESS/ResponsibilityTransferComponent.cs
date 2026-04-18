@@ -563,7 +563,9 @@ public class ResponsibilityTransferComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
+                SELECT rt.*, c.Name AS Company, 
+                LTRIM(RTRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.lastname, ''))) AS EmployeeFromName,
+                LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.lastname, ''))) AS EmployeeToName
                 FROM ResponsibilityTransfers rt
                 LEFT JOIN Companies c ON rt.CompanyId = c.Id
                 LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode

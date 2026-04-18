@@ -113,8 +113,9 @@ public class DocumentRequestUserDistribution
 
     // UserId BIGINT NOT NULL
     public string EmployeeCode { get; set; }
-    public string FirstName { get; set; }
-    public string LastName { get; set; }
+    public string EmployeeName { get; set; } 
+    public string Designation { get; set; } 
+    public string Role { get; set; } 
 
     // IsActive BOOLEAN NOT NULL DEFAULT TRUE
     public bool IsActive { get; set; } = true;

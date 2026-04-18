@@ -53,121 +53,7 @@ public class WorkflowStepComponent
         _dataservice.BeginProcess(connectionString);
 
     }
-
-
-    //public async Task<WorkflowStepReadDto> CreateAsync(WorkflowStepCreateDto input)
-    //{
-    //    try
-    //    {
-    //        //var clientIp = _clientContextService.GetClientIP();
-    //        //var prefix = _utilities.GetPrefix(clientIp);
-    //        var userId = "manual"; //_utilities.GetUserid(prefix);
-    //        if (input.Id < 0)
-    //            throw new CustomException("WorkflowStepDefinitions ID is required.", 400);
-
-    //        // Check duplicate by Id OR Name
-    //        string checkQuery = $@"
-    //        SELECT COUNT(1)
-    //        FROM WorkflowStepDefinitions
-    //        WHERE (Id = '{input.Id}' 
-    //          AND IsDeleted = FALSE";
-
-    //        int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-    //        if (exists > 0)
-    //            throw new CustomException("WorkflowStepDefinitions already exists", 409);
-
-    //        // Insert (PostgreSQL syntax)
-    //        string insertQuery = $@"
-    //        INSERT INTO WorkflowStepDefinitions
-    //        (   CompanyId,
-    //            WorkflowPolicyId, 
-    //            Sequence,
-    //            RoleId,
-    //            UserId,
-    //            ApprovalLevel, 
-    //            IsActive,
-    //            IsDeleted,
-    //            CreatedAt,
-    //            CreatedBy,
-    //            LastModifiedAt,
-    //            LastModifiedBy
-    //        )
-    //        VALUES
-    //        (
-    //            '{input.CompanyId}', 
-    //            '{input.WorkflowPolicyId}', 
-    //            '{input.Sequence}', 
-    //            '{input.RoleId}', 
-    //            '{input.UserId}', 
-    //            '{input.ApprovalLevel}', 
-    //            TRUE,
-    //            FALSE,
-    //            NOW(),
-    //            '{userId.Replace("'", "''")}',
-    //            NOW(),
-    //            '{userId.Replace("'", "''")}'
-    //        )
-    //        RETURNING Id;";
-
-    //        int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
-
-    //        // Fetch inserted record
-    //        string selectQuery = $@"
-    //                  SELECT ws.*,wfp.Name AS WorkflowPolicyName, u.EmployeeCode, u.EmployeeName,
-    //                  des.Name as Designation, dt.Name AS DocumentType, r.Name AS UserRole
-    //                  FROM WorkflowStepDefinitions ws
-    //                       LEFT JOIN WorkflowPolicies wfp
-    //                       ON ws.WorkflowPolicyId = wfp.Id
-    //                 LEFT JOIN DocumentTypes dt
-    //                 ON ws.DocumentTypeCode = dt.Code
-    //                       LEFT JOIN Users u
-    //                       ON ws.UserId = u.Id  
-    //                         LEFT JOIN UserRoles ur
-    //                         ON u.Id = ur.UserId
-    //                             LEFT JOIN Roles r
-    //                             ON ur.RoleId = r.Id
-    //                             LEFT JOIN Designations des ON u.DesignationCode = des.Code 
-    //                        AND ws.IsActive = True
-    //                        AND ws.IsDeleted = False
-    //        WHERE ws.Id = {newId}";
-
-    //        DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
-
-    //        if (dt == null || dt.Rows.Count == 0)
-    //            throw new Exception("Failed to fetch created division");
-
-    //        DataRow row = dt.Rows[0];
-
-    //        return new WorkflowStepReadDto
-    //        {
-    //            Id = row.Field<int>("Id"),
-    //            CompanyId = row.Field<int>("CompanyId"),
-    //            Company = row.Field<string>("Company"),
-    //            WorkflowPolicyId = row.Field<int>("WorkflowPolicyId"),
-    //            Sequence = row.Field<int>("StepOrder"),
-    //            RoleId = row.Field<int>("RoleId"),
-    //            UserId = row.Field<int>("UserId"),
-    //            ApprovalLevel = row.Field<int>("ApprovalLevel"),
-
-    //            CanEdit = row.Table.Columns.Contains("CanEdit") && row.Field<bool?>("CanEdit") == true,
-    //            IsParallelApproval = row.Table.Columns.Contains("IsParallelApproval") && row.Field<bool?>("IsParallelApproval") == true,
-    //            RequireCrossFunctionalHead = row.Table.Columns.Contains("RequireCrossFunctionalHead") && row.Field<bool?>("RequireCrossFunctionalHead") == true,
-
-    //            IsDeleted = row.Field<bool>("IsDeleted"),
-    //            IsActive = row.Field<bool>("IsActive"),
-    //            CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-    //            CreatedBy = row.Field<string>("CreatedBy"),
-    //            LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-    //            LastModifiedBy = row.Field<string>("LastModifiedBy")
-    //        };
-    //    }
-    //    catch
-    //    {
-    //        throw;
-    //    }
-    //}
-
+     
 
     public async Task<bool> DeleteAsync(string code)
     {
@@ -409,53 +295,7 @@ public class WorkflowStepComponent
                 });
             }
 
-            return dtos;
-
-            //DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
-            //DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
-            //                                          // ✅ SAFETY CHECKS
-            //if (divisionsTable == null || divisionsTable.Rows.Count == 0)
-            //{
-
-            //}
-
-            //var divisions = divisionsTable.AsEnumerable()
-            //    .Select(row => new WorkflowStepReadDto
-            //    {
-            //        Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-
-            //        CompanyId = row.Field<int>("CompanyId"),
-            //        Company = row.Field<string>("Company"),
-
-            //        WorkflowPolicyVersionId = row.Table.Columns.Contains("WorkflowPolicyId") ? row.Field<int>("WorkflowPolicyId") : 0,
-            //        Sequence = row.Table.Columns.Contains("StepOrder") ? row.Field<int>("StepOrder") : 0,
-            //        RoleId = row.Field<int?>("RoleId") ?? 0,
-            //        UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
-            //        ApprovalLevel = row.Table.Columns.Contains("ApprovalLevel") ? row.Field<int>("ApprovalLevel") : 0,
-
-            //        EmployeeCode = row.Field<string>("EmployeeCode"),
-            //        EmployeeName = row.Field<string>("EmployeeName"),
-
-            //        Designation = row.Field<string>("Designation"),
-            //        UserRole = row.Field<string>("UserRole"),
-
-
-            //        CanEdit = row.Table.Columns.Contains("CanEdit") && row.Field<bool?>("CanEdit") == true,
-            //        IsParallelApproval = row.Table.Columns.Contains("IsParallelApproval") && row.Field<bool?>("IsParallelApproval") == true,
-            //        RequireCrossFunctionalHead = row.Table.Columns.Contains("RequireCrossFunctionalHead") && row.Field<bool?>("RequireCrossFunctionalHead") == true,
-
-            //        IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
-            //        IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
-            //        CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
-            //                    ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-            //        CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
-            //        LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
-            //                         ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
-            //        LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
-            //    })
-            //    .ToList();
-
-            //return divisions;
+            return dtos; 
         }
         catch (Exception ex)
         {
@@ -746,7 +586,7 @@ public class WorkflowStepComponent
         }
     } 
 
-    public async Task<List<WorkflowStepReadDto>> CreateWorkflowStepsByFilterAsync(WorkFlowStepsFilterDto filters)
+    public async Task<List<WorkflowStepDefiniationReadDto>> CreateWorkflowStepsByFilterAsync(WorkFlowStepsFilterDto filters)
     {
         try
         {
@@ -963,15 +803,97 @@ public class WorkflowStepComponent
             // 7️⃣ Return Updated Steps
             //-----------------------------------------
 
-            var steps = await _dapperService.QueryAsync<WorkflowStepReadDto>(@"
-                SELECT *
-                FROM Vw_WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId
-                AND IsDeleted = FALSE
-                ORDER BY StepOrder;",
-                new { VersionId = versionId });
 
-            return steps.ToList();
+            string query = $@"
+                SELECT ws.*
+                FROM Vw_WorkflowStepDefinitions ws
+                JOIN WorkflowPolicies wp
+                    ON wp.Id = ws.WorkflowPolicyId
+                    AND wp.CompanyId = ws.CompanyId
+                WHERE wp.CompanyId = @CompanyId
+                AND wp.EntityType = @EntityType
+                AND wp.DocumentTypeCode = @DocumentTypeCode
+                -- Allow filtering by specific policy name or ID
+                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
+                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
+                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
+                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND ws.IsActive = TRUE
+                AND ws.IsDeleted = FALSE
+                ORDER BY ws.StepOrder, ws.employeecode ASC;";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                filters.EntityType,
+                filters.DocumentTypeCode,
+                filters.DivisionCode,
+                filters.DepartmentCode,
+                filters.SubDepartmentCode,
+                filters.BusinessDomainCode
+            };
+
+            var results = await _common.QueryAsync<dynamic>(query, queryParams); 
+
+            var dtos = new List<WorkflowStepDefiniationReadDto>();
+            foreach (var row in results)
+            {
+                // Cast row to IDictionary<string, object> to access properties safely
+                var rowDict = row as IDictionary<string, object>;
+
+                string fName = GetValue<string>(rowDict, "firstname");
+                string mName = GetValue<string>(rowDict, "midname");
+                string lName = GetValue<string>(rowDict, "lastname");
+                string employeeName = string.Join(" ", new[] { fName, mName, lName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+                dtos.Add(new WorkflowStepDefiniationReadDto
+                {
+                    Id = GetValue<int>(rowDict, "id"),
+
+                    CompanyId = GetValue<int>(rowDict, "companyid"),
+                    Company = GetValue<string>(rowDict, "company"),
+
+                    WorkflowPolicyId = GetValue<int>(rowDict, "workflowpolicyid"),
+                    WorkflowPolicyName = GetValue<string>(rowDict, "workflowpolicyname"),
+
+                    WorkflowPolicyVersionId = GetValue<int>(rowDict, "workflowpolicyversionid"),
+
+                    StepOrder = GetValue<int>(rowDict, "steporder"),
+                    StepGroup = GetValue<int>(rowDict, "stepgroup"),
+                    StepType = GetValue<string>(rowDict, "steptype"),
+
+                    RoleId = GetValue<int>(rowDict, "roleid"),
+                    DesignationId = GetValue<int>(rowDict, "designationid"),
+                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserId = GetValue<int>(rowDict, "userid"),
+                    ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
+                    RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
+
+                    EmployeeCode = GetValue<string>(rowDict, "employeecode"),
+                    EmployeeName = employeeName,
+
+                    Designation = GetValue<string>(rowDict, "designation"),
+                    DesignationCode = GetValue<string>(rowDict, "designationcode"),
+
+                    DocumentType = GetValue<string>(rowDict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),
+
+
+                    CanEdit = GetValue<bool>(rowDict, "canedit"),
+                    IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
+
+                    IsActive = GetValue<bool>(rowDict, "isactive"),
+                    IsDeleted = GetValue<bool>(rowDict, "isdeleted"),
+                    CreatedAt = GetValue<string>(rowDict, "createdat"),
+                    CreatedBy = GetValue<string>(rowDict, "createdby"),
+                    LastModifiedAt = GetValue<string>(rowDict, "lastmodifiedat"),
+                    LastModifiedBy = GetValue<string>(rowDict, "lastmodifiedby"),
+
+                });
+            }
+
+            return dtos;
         }
         catch (Exception ex)
         {

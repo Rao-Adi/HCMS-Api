@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common.Misc;
+﻿﻿using HCMS_Api.Common.Misc;
 using System.Collections.Generic;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
@@ -33,6 +33,7 @@ public class EmployeeFilterDto : TableFiltersDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }
 
 

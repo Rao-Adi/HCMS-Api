@@ -2215,10 +2215,11 @@ public class DocumentComponent
         try
         {
 
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
 
             var whereClause = "WHERE 1=1";
@@ -2331,8 +2332,14 @@ public class DocumentComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT *
-                FROM DocumentRequestUserDistributions
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
+                FROM DocumentRequestUserDistributions drd 
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
                 WHERE CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
