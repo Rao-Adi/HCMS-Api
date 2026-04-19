@@ -1,4 +1,4 @@
-﻿﻿﻿using Dapper;
+﻿﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -918,7 +918,8 @@ public class DocumentComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId 
-                          AND e.Active = 1 AND ejp.Active = TRUE
+                          AND COALESCE(e.Active, 1) = 1 
+                          AND COALESCE(ejp.Active, TRUE) = TRUE
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
                         new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
@@ -1509,7 +1510,7 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 INSERT INTO Notifications
                 (
-                    CompanyId, UserId, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId
+                    CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId
                 )
                 VALUES
                 (
@@ -1518,9 +1519,9 @@ public class DocumentComponent
             new
             {
                 CompanyId = companyId,
-                UserId = user.UserId,
+                UserId = Convert.ToString(user.employeecode),
                 Title = "New SOP Training Assigned",
-                Message = $"Training is required for Document: {user.Title}",
+                Message = $"Training is required for Document: {user.title}",
                 Type = 2, // e.g. Training Notification
                 DocumentId = documentId
             });
@@ -1924,7 +1925,7 @@ public class DocumentComponent
             if (docInfo != null && docInfo!.createdby != null)
             {
                 //int.TryParse(Convert.ToString(docInfo!.createdby), out initiatorId);
-                initiatorId = docInfo!.createddby;
+                initiatorId = docInfo!.createdby;
             }
 
             if (initiatorId != string.Empty)

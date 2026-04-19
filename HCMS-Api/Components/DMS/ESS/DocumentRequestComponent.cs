@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -536,33 +536,33 @@ public class DocumentRequestComponent
             // 7. Prepare and Send Notification
 
             // Prepare notification data
-            string? firstStepUserId = null;
-            string? requestNumber = null;
-            var firstStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT wes.AssignedUserId, dr.RequestNumber
+            var activeStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.StepOrder, dr.RequestNumber
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 JOIN DocumentRequests dr ON dr.Id = we.EntityId
                 WHERE wes.WorkflowExecutionId = @ExecutionId
-                AND wes.IsActive = TRUE;", new { ExecutionId = executionId }, transaction);
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId }, transaction);
 
-            if (firstStep != null && firstStep!.assigneduserid != null)
+            List<string> approvers = new List<string>();
+            string requestNumberStr = requestId.ToString();
+            if (activeStep != null)
             {
-                firstStepUserId = firstStep!.assigneduserid;
-                requestNumber = Convert.ToString(firstStep.requestnumber);
+                requestNumberStr = Convert.ToString(activeStep.requestnumber) ?? requestId.ToString();
+                approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, transaction);
             }
-
-
-            if (!String.IsNullOrEmpty(firstStepUserId))
-            {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumber ?? requestId.ToString() } };
-                //await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, firstStepUserId, placeholders);
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, firstStepUserId, placeholders);
-            }
-
 
             // 8. Commit
             await transaction.CommitAsync();
+
+            if (approvers.Any())
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr } };
+                foreach (var approver in approvers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders);
+                }
+            }
 
             return requestId;
         }
@@ -1137,9 +1137,9 @@ public class DocumentRequestComponent
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
 
-            var whereClause = @"WHERE CompanyId = @CompanyId
-                AND Status = @DraftStatus
-                AND CreatedBy = @CreatedBy";
+            var whereClause = @"WHERE dr.CompanyId = @CompanyId
+                AND dr.Status = @DraftStatus
+                AND dr.CreatedBy = @CreatedBy";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -1147,18 +1147,18 @@ public class DocumentRequestComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(DocumentName) LIKE '%{search}%'
-                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                    UPPER(dr.DocumentName) LIKE '%{search}%'
+                    OR UPPER(dr.RequestNumber) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "DOCUMENTNAME" => "DocumentName",
-                "REQUESTNUMBER" => "RequestNumber",
-                "CREATEDAT" => "CreatedAt",
-                _ => "Id"
+                "DOCUMENTNAME" => "dr.DocumentName",
+                "REQUESTNUMBER" => "dr.RequestNumber",
+                "CREATEDAT" => "dr.CreatedAt",
+                _ => "dr.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
@@ -1169,14 +1169,14 @@ public class DocumentRequestComponent
             // 1️⃣ Get Draft Requests
             //-------------------------------------------------
 
-            var dataSql = $@"SELECT *,
-                CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = Id AND we.EntityType = 'Request') THEN TRUE ELSE FALSE END AS isreworked
-                FROM Vw_DocumentRequests
+            var dataSql = $@"SELECT dr.*,
+                CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN TRUE ELSE FALSE END AS isreworked
+                FROM Vw_DocumentRequests dr
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
-            var countSql = $@"SELECT COUNT(1) FROM Vw_DocumentRequests {whereClause};";
+            var countSql = $@"SELECT COUNT(1) FROM Vw_DocumentRequests dr {whereClause};";
 
             var queryParams = new
             {
@@ -1841,9 +1841,7 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetWorkflowDetailsAsync(
-    int documentId,  // This could be either RequestId or DocumentId
-    string entityType)  // "Request" or "Document"
+    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetWorkflowDetailsAsync(int documentId, string entityType) 
     {
         try
         {
@@ -1906,7 +1904,7 @@ public class DocumentRequestComponent
                     GROUP BY CompanyId, EmployeeCode
                 ) ualc ON ualc.CompanyId = wes.CompanyId AND ualc.EmployeeCode = wes.AssignedUserId
                 WHERE wes.CompanyId = @CompanyId
-                  AND we.EntityId = @EntityId
+                  AND we.EntityId = @DocumentId
                   AND we.EntityType = @EntityType
                 ORDER BY wes.StepOrder";
 
