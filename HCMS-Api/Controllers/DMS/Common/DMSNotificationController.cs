@@ -51,28 +51,28 @@ public class DMSNotificationController : Controller
         }
     }
 
-    [HttpPut("MarkAsRead/{id}")]
-    public async Task<IActionResult> MarkAsRead(int id)
+    [HttpPut("MarkAsRead/{notificationId}/{empId}")]
+    public async Task<IActionResult> MarkAsRead(int notificationId,int empId)
     {
         try
         {
-            bool isSuccess = await _notificationComponent.MarkAsReadAsync(id);
+            bool isSuccess = await _notificationComponent.MarkAsReadAsync(notificationId, empId);
             return Ok(new { success = isSuccess });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error marking notification {id} as read");
+            _logger.LogError(ex, $"Error marking notification {notificationId} as read");
             return StatusCode(500, new { message = "An error occurred marking notification as read." });
         }
     }
 
     [HttpPut("MarkAllAsRead")]
-    public async Task<IActionResult> MarkAllAsRead()
+    public async Task<IActionResult> MarkAllAsRead(int empId)
     {
         try
         {
 
-            bool isSuccess = await _notificationComponent.MarkAllAsReadAsync();
+            bool isSuccess = await _notificationComponent.MarkAllAsReadAsync(empId);
             return Ok(new { success = isSuccess });
         }
         catch (Exception ex)

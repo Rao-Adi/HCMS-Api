@@ -424,7 +424,7 @@ public class DocumentRequestComponent
             }, transaction);
 
             // 4. Insert Distribution Lists
-            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds.Select(u => u.ToString()), userId, transaction);
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, userId, transaction);
 
 
             // 5. Workflow Execution Logic
@@ -904,8 +904,8 @@ public class DocumentRequestComponent
     private async Task InsertDistributionsAsync(
             int companyId,
             long requestId,
-            IEnumerable<DistributionListCreateDto> roles,
-            IEnumerable<string> users,
+            IEnumerable<DistributionListCreateDto>? roles,
+            IEnumerable<string>? users,
             string userId,
             IDbTransaction tx)
     {
@@ -1463,7 +1463,7 @@ public class DocumentRequestComponent
             {
                 await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Cancelled'
+                SET Status = 'Rejected'
                 WHERE Id = @ExecutionId;",
                     new { ExecutionId = executionId }, tx);
 

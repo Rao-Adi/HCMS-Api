@@ -19,6 +19,13 @@ public class NotificationHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
+    // Allows the frontend to manually register their Employee Code to a Group.
+    // Useful if standard JWT claims are missing via IUserIdProvider on WebSocket connections.
+    public async Task RegisterUser(string empCode)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, empCode);
+    }
+
     // 1. Receives the payload from the Test Button in Angular
     public async Task SendTestNotification(string title, string message, string type)
     {

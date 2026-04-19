@@ -10,10 +10,10 @@ public class Notification
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -39,10 +39,10 @@ public class NotificationReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -69,9 +69,9 @@ public class NotificationCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;
@@ -98,9 +98,9 @@ public class NotificationUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = null!;

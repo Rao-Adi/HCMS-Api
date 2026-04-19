@@ -1,3 +1,4 @@
+﻿﻿using HCMS_Api.Common;
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -23,6 +24,7 @@ public class NotificationComponent
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly PeoplePartnersComponent _peoplePartnersComponent;
     public NotificationComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -32,7 +34,8 @@ public class NotificationComponent
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
         DMSCommon common,
-        IHubContext<NotificationHub> hubContext
+        IHubContext<NotificationHub> hubContext,
+        PeoplePartnersComponent peoplePartnersComponent
         )
     {
         _http = http;
@@ -44,8 +47,9 @@ public class NotificationComponent
         _dapperService = dapper;
         _common = common;
         _hubContext = hubContext;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
+        _peoplePartnersComponent = peoplePartnersComponent;
+        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
+        //_dataservice.BeginProcess(connectionString);
 
     }
 
@@ -84,21 +88,27 @@ public class NotificationComponent
             )
             RETURNING Id;";
 
-            _common.ExecuteScalarQuery(insertQuery);
             var newIdObj = _common.ExecuteScalarQuery(insertQuery);
-            int newId = newIdObj != null && newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
+            int newId = newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
 
-            // Dispatch real-time event
-            await _hubContext.Clients.User(recipientUserId.ToString()).SendAsync("ReceiveNotification", new
+            // Dispatch real-time event to specific User and Group (Secure Targeting)
+            var payload = new
             {
                 Id = newId,
+                RecipientUserId = recipientUserId,
                 Title = title,
                 Message = message,
                 RelatedEntityType = relatedEntityType,
                 RelatedEntityId = relatedEntityId,
                 RedirectionUrl = redirectionUrl,
                 CreatedAt = DateTime.UtcNow
-            });
+            };
+
+            await _hubContext.Clients.User(recipientUserId).SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group(recipientUserId).SendAsync("ReceiveNotification", payload);
+
+            // Dispatch Email
+            await DispatchEmailNotificationAsync(companyId, recipientUserId, title, message, redirectionUrl);
 
             return true;
         }
@@ -224,30 +234,13 @@ public class NotificationComponent
     public async Task<NotificationReadDto> CreateAsync(NotificationCreateDto input)
     {
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Notifications code is required.", 400);
-
-            // Check duplicate by Id OR UserId
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Notifications
-            WHERE (Id = '{input.Id}'
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("Notifications already exists", 409);
+        {  
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Notifications
             (   CompanyId,
-                UserId,
+                EmployeeCode,
                 Title,
                 Message,
                 NotificationType,
@@ -259,7 +252,7 @@ public class NotificationComponent
             VALUES
             (
                 '{input.CompanyId}',
-                '{input.UserId}',
+                '{input.EmployeeCode}',
                 '{input.Title}',
                 '{input.Message}',
                 '{input.NotificationType}',
@@ -274,10 +267,7 @@ public class NotificationComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+             SELECT * FROM Notifications n 
             WHERE n.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -290,9 +280,9 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
@@ -351,8 +341,7 @@ public class NotificationComponent
                 : input.SearchText;
 
             var whereClause = @"
-                WHERE n.IsDeleted = False 
-                  AND n.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE n.IsRead = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -360,37 +349,30 @@ public class NotificationComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(n.UserId) LIKE '%{search}%'
-                    OR UPPER(n.Id) LIKE '%{search}%'
+                    UPPER(Title) LIKE '%{search}%'
+                    OR UPPER(Title) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "n.UserId",
-                "CODE" => "n.Id",
-                "ISACTIVE" => "n.IsActive",
-                _ => "n.UserId"
+                "TITLE" => "Title",
+                _ => "n.EmployeeCode"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
             int offset = (input.PageNumber - 1) * input.PageSize;
 
-            string query = $@"
-                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                            FROM Notifications n
-                            LEFT JOIN Companies c
-                            ON d.CompanyId = c.Id
+            string query = $@"SELECT * FROM Notifications
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM Notifications
-                        {whereClause};
-                    ";
+                        {whereClause}; ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
@@ -409,9 +391,9 @@ public class NotificationComponent
                 .Select(row => new NotificationReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
+                    EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
                     Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
                     NotificationType = row.Table.Columns.Contains("NotificationType") ? row.Field<int>("NotificationType") : 0,
@@ -446,13 +428,10 @@ public class NotificationComponent
         try
         {
             string query = $@"
-                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
-                WHERE n.Id = {code}
-                  AND n.IsActive = True
-                  AND n.IsDeleted = False";
+                 SELECT *
+                    FROM Notifications
+                WHERE EmployeeCode = {code}
+                  AND IsRead = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -464,9 +443,9 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
@@ -486,10 +465,7 @@ public class NotificationComponent
     public async Task<NotificationReadDto> UpdateAsync(NotificationUpdateDto input)
     {
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+        { 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -509,9 +485,9 @@ public class NotificationComponent
             string updateQuery = $@"
             UPDATE Notifications
             SET 
-                UserId = '{input.UserId}', 
+                EmployeeCode = '{input.EmployeeCode}', 
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{input.EmployeeCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -521,10 +497,8 @@ public class NotificationComponent
 
             // Return updated record
             string selectQuery = $@" 
-                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+                SELECT *
+                    FROM Notifications n 
             WHERE n.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -537,9 +511,9 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
@@ -555,17 +529,17 @@ public class NotificationComponent
         }
     }
 
-    public async Task<bool> MarkAsReadAsync(int notificationId)
+    public async Task<bool> MarkAsReadAsync(int notificationId, int empId)
     {
         try
         {
 
-            JwtArray loginUser = await _common.GetJwtUser();
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(empId);
 
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND UserId = {loginUser.UserID}";
+                WHERE Id = {notificationId} AND EmployeeCode = {empDetail.empcode}";
 
             return _common.ExecuteNonQuery(updateQuery);
         }
@@ -575,12 +549,13 @@ public class NotificationComponent
         }
     }
 
-    public async Task<bool> MarkAllAsReadAsync()
+    public async Task<bool> MarkAllAsReadAsync(int empId)
     {
         try
         {
-            JwtArray loginUser = await _common.GetJwtUser();
-            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE UserId = {loginUser.UserID} AND IsRead = FALSE";
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(empId);
+             
+            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = {empDetail.empcode} AND IsRead = FALSE";
             return _common.ExecuteNonQuery(updateQuery);
         }
         catch (Exception)
@@ -610,4 +585,32 @@ public class NotificationComponent
         }
     }
 
+
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl)
+    {
+        try
+        {
+            string emailQuery = "SELECT Email FROM tblEmployee WHERE TRIM(empCode) = @EmpCode AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
+            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId.Trim(), CompanyId = companyId });
+
+            if (!string.IsNullOrWhiteSpace(recipientEmail))
+            {
+                string emailBody = $@"
+                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 8px;'>
+                        <h2 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;'>{title}</h2>
+                        <p style='font-size: 16px; color: #333; line-height: 1.5;'>{message}</p>
+                        <p style='font-size: 14px; color: #555; margin-top: 20px;'><strong>Action Required At:</strong> {redirectionUrl}</p>
+                        <hr style='border: none; border-top: 1px solid #eee; margin-top: 30px;' />
+                        <p style='font-size: 12px; color: #999; text-align: center;'>This is an automated notification from the Document Management System. Please do not reply.</p>
+                    </div>";
+
+                await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions
+            Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
+        }
+    }
 }
