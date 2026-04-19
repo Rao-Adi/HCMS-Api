@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.Models.Enums;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -19,6 +20,7 @@ public class ResponsibilityTransferComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
+    private readonly NotificationComponent _notificationComponent;
     public ResponsibilityTransferComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -27,7 +29,8 @@ public class ResponsibilityTransferComponent
         , IDMSDapperDataService dapper
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
-        DMSCommon common
+        DMSCommon common,
+        NotificationComponent notificationComponent
         )
     {
         _http = http;
@@ -38,6 +41,7 @@ public class ResponsibilityTransferComponent
         _clientContextService = clientContextService;
         _dapperService = dapper;
         _common = common;
+        _notificationComponent = notificationComponent;
         string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
         _dataservice.BeginProcess(connectionString);
 
@@ -48,10 +52,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
 
             // FSD UC-16 Validation: Remarks are mandatory.
@@ -67,33 +72,66 @@ public class ResponsibilityTransferComponent
             }
 
             // FSD UC-16 Post-condition: Route to Division Head for approval.
-            var empDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT * 
-                FROM tblEmployee 
-                WHERE empCode = @EmpCode AND IsDeleted = FALSE", new { EmpCode = input.EmployeeFrom });
+            var empFromDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT DivisionCode, DepartmentCode 
+                FROM UserAccessLevels 
+                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
+                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeFrom });
+
+            var empToDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT DivisionCode, DepartmentCode 
+                FROM UserAccessLevels 
+                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
+                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeTo });
             
-            if (empDetails == null || string.IsNullOrWhiteSpace(empDetails.divisioncode))
+            if (empFromDetails == null || string.IsNullOrWhiteSpace(empFromDetails.departmentcode))
             {
-                throw new CustomException("Cannot determine the division for the 'Employee From'.", 400);
+                throw new CustomException("Cannot determine the department for the 'Employee From'.", 400);
+            }
+
+            if (empToDetails == null || string.IsNullOrWhiteSpace(empToDetails.departmentcode))
+            {
+                throw new CustomException("Cannot determine the department for the 'Employee To'.", 400);
+            }
+
+            // UC-16 Business Rule: Initial transfers must be contained within the same Department.
+            if (!string.Equals((string)empFromDetails.departmentcode, (string)empToDetails.departmentcode, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new CustomException("Transfers must be contained within the same Department for operational control.", 400);
             }
 
             // Route to Division Head via TransferWorkflowPolicies
             var policy = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT ApprovalUserId 
+                SELECT ApprovalUserId, ApprovalRoleId 
                 FROM TransferWorkflowPolicies 
-                WHERE DivisionCode = @DivCode AND IsActive = TRUE AND IsDeleted = FALSE", new { DivCode = empDetails?.divisioncode });
+                WHERE DivisionCode = @DivCode AND IsActive = TRUE", new { DivCode = empFromDetails.divisioncode });
 
             int approverId = policy?.approvaluserid ?? 0;
+            int approvalRoleId = policy?.approvalroleid ?? 0;
+
+            if (approverId == 0 && approvalRoleId > 0)
+            {
+                // Resolve role to specific user using Job Profiles
+                approverId = await _common.ExecuteScalarAsync<int>(@"
+                    SELECT e.empid 
+                    FROM public.tblEmployee e
+                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 LIMIT 1",
+                    new { DivCode = empFromDetails.divisioncode, RoleId = approvalRoleId });
+            }
+
             if (approverId == 0)
             {
                 // UC-18 Default Routing: Automatically route to default generic Division Head role
                 var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
-                    SELECT u.Id 
-                    FROM tblEmployee u
-                    JOIN UserRoles ur ON u.empcode = ur.UserId
-                    JOIN Roles r ON ur.RoleId = r.Id
-                    WHERE u.DivisionCode = @DivCode AND r.Name = 'Division Head' AND u.IsDeleted = FALSE AND u.IsActive = TRUE LIMIT 1", 
-                    new { DivCode = empDetails?.divisioncode });
+                    SELECT e.empid 
+                    FROM public.tblEmployee e
+                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
+                    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
+                    new { DivCode = empFromDetails.divisioncode });
 
                 approverId = defaultDivHead ?? 0;
 
@@ -534,6 +572,8 @@ public class ResponsibilityTransferComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
 
+            // Get the numeric ApproverId (EmpId) from the tblEmployee table using the logged-in userId (EmployeeCode)
+            int approverIdInt = await _common.ExecuteScalarAsync<int>("SELECT empid FROM tblEmployee WHERE TRIM(empcode) = @UserId", new { UserId = userId.Trim() });
 
             var whereClause = @"
                 WHERE rt.IsDeleted = FALSE 
@@ -579,7 +619,7 @@ public class ResponsibilityTransferComponent
                 FROM ResponsibilityTransfers rt
                 {whereClause};";
 
-            var queryParams = new { ApproverId = userId, Status = input.Status };
+            var queryParams = new { ApproverId = approverIdInt, Status = input.Status };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -618,7 +658,7 @@ public class ResponsibilityTransferComponent
             };
 
             var transfer = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT EmployeeFrom, EmployeeTo, Status FROM ResponsibilityTransfers WHERE Id = @Id FOR UPDATE;", 
+                SELECT EmployeeFrom, EmployeeTo, Status, EffectiveDateFrom, EffectiveDateTo FROM ResponsibilityTransfers WHERE Id = @Id FOR UPDATE;", 
                 new { Id = input.TransferId }, tx);
 
             if (transfer == null) throw new CustomException("Transfer request not found.", 404);
@@ -637,16 +677,24 @@ public class ResponsibilityTransferComponent
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
             {
-                var empFromId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM tblEmployee WHERE empCode = @Code", new { Code = transfer.employeefrom }, tx);
-                var empToId = await _common.ExecuteScalarAsync<int>("SELECT Id FROM tblEmployee WHERE empCode = @Code", new { Code = transfer.employeeto }, tx);
-
                 await _common.ExecuteAsync(@"
                     UPDATE WorkflowExecutionSteps
-                    SET AssignedUserId = @EmpToId
-                    WHERE AssignedUserId = @EmpFromId
-                    AND Decision IS NULL
-                    AND IsActive = TRUE;",
-                    new { EmpToId = empToId, EmpFromId = empFromId }, tx);
+                    SET AssignedUserId = @EmpToCode
+                    WHERE AssignedUserId = @EmpFromCode
+                    AND Decision IS NULL;",
+                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom }, tx);
+
+                // Send notifications to both parties
+                var placeholders = new Dictionary<string, string> {
+                    { "Emp From", transfer.employeefrom },
+                    { "Emp To", transfer.employeeto },
+                    { "Date From", transfer.effectivedatefrom?.ToString("yyyy-MM-dd") ?? "Now" },
+                    { "Date To", transfer.effectivedateto != null ? transfer.effectivedateto.ToString("yyyy-MM-dd") : "Permanent" }
+                };
+
+                int compIdInt = int.Parse(CompanyId);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, compIdInt, input.TransferId, transfer.employeefrom, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, compIdInt, input.TransferId, transfer.employeeto, placeholders);
             }
 
             await tx.CommitAsync();

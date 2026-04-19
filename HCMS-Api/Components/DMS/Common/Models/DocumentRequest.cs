@@ -85,7 +85,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? BusinessDomainCode { get; set; }
     public string? DraftFileURL { get; set; }
 
-    
+    public bool IsReworked { get; set; }
 
     public int Status { get; set; }
     public string RowVersion { get; set; }
@@ -397,6 +397,7 @@ public class DocumentRequestDetailsDto
     public string Division { get; set; }
     public string Department { get; set; }
     public string SubDepartment { get; set; }
+    public string BusinessDomain { get; set; }
     public int? DesignationId { get; set; }
     public string Designation { get; set; }
 

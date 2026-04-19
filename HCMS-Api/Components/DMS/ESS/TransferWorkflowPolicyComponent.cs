@@ -48,10 +48,11 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             if (input.Id < 0)
                 throw new CustomException("TransferWorkflowPolicy is required.", 400);
@@ -86,8 +87,8 @@ public class TransferWorkflowPolicyComponent
             (
                 '{CompanyId}', 
                 '{input.DivisionCode!.Replace("'", "''")}',  
-                '{input.ApprovalRoleId}',
-                '{input.ApprovalUserId}',
+                {input.ApprovalRoleId},
+                {input.ApprovalUserId},
                 TRUE,
                 FALSE,
                 NOW(),
@@ -125,7 +126,7 @@ public class TransferWorkflowPolicyComponent
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
                  
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -145,10 +146,11 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
             // Check existence
             string checkQuery = $@"
@@ -181,6 +183,12 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE t.IsDeleted = False 
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
@@ -248,8 +256,8 @@ public class TransferWorkflowPolicyComponent
                     Division = row.Field<string>("Division"),
                     DivisionCode = row.Field<string>("DivisionCode"), 
 
-                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
-                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<int>("ApprovalUserId") : 0,
+                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? (row.Field<int?>("ApprovalRoleId") ?? 0) : 0,
+                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? (row.Field<int?>("ApprovalUserId") ?? 0) : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -283,6 +291,12 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT  t.*, div.Name AS Division, c.Name AS Company
                         FROM TransferWorkflowPolicies t
@@ -291,6 +305,7 @@ public class TransferWorkflowPolicyComponent
                         LEFT JOIN Companies c
                         ON t.CompanyId = c.Id
                 WHERE t.DivisionCode = '{code?.Replace("'", "''")}'
+                  AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -310,8 +325,8 @@ public class TransferWorkflowPolicyComponent
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"), 
 
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
+                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -330,37 +345,51 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
 
-            if (string.IsNullOrWhiteSpace(input.DivisionCode))
-                throw new CustomException("Invalid division code.", 200);
+            if (input.Id <= 0)
+                throw new CustomException("Invalid policy Id.", 400);
 
-            // Check existence (DivisionCode is VARCHAR → must be quoted)
+            // Check existence
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TransferWorkflowPolicies
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+            WHERE Id = {input.Id}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TransferWorkflowPolicy not found", 200);
+                throw new CustomException("TransferWorkflowPolicy not found", 404);
+
+            // Prevent assigning a DivisionCode that is already linked to another active policy
+            string dupQuery = $@"
+            SELECT COUNT(1)
+            FROM TransferWorkflowPolicies
+            WHERE DivisionCode = '{input.DivisionCode?.Replace("'", "''")}'
+              AND Id != {input.Id}
+              AND IsDeleted = FALSE";
+
+            int dupExists = Convert.ToInt32(_common.ExecuteScalarQuery(dupQuery));
+
+            if (dupExists > 0)
+                throw new CustomException("A transfer policy already exists for this division.", 409);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE TransferWorkflowPolicies
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}', 
-                ApprovalRoleId = '{input.ApprovalRoleId}',
-                ApprovalUserId = '{input.ApprovalUserId}',
+                DivisionCode = '{input.DivisionCode?.Replace("'", "''")}', 
+                ApprovalRoleId = {input.ApprovalRoleId},
+                ApprovalUserId = {input.ApprovalUserId},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -375,7 +404,7 @@ public class TransferWorkflowPolicyComponent
                         ON t.DivisionCode = div.Code 
                         LEFT JOIN Companies c
                         ON t.CompanyId = c.Id
-            WHERE t.Id = {updated}";
+            WHERE t.Id = {input.Id}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -393,8 +422,8 @@ public class TransferWorkflowPolicyComponent
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
+                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

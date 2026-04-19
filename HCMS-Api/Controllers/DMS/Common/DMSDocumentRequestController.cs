@@ -121,14 +121,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-document-observation-details")]
-    public async Task<IActionResult> GetRequestDetails(int requestId, string entityType)
+    public async Task<IActionResult> GetDocumentObservationDetails(int requestId, string entityType)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetRequestDetailsAsync(requestId, entityType),
+                Data = await _documentRequestComponent.GetDocumentObservationDetailsAsync(requestId, entityType),
                 Message = "Success",
                 Code = 200
             });
