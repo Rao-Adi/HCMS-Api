@@ -77,7 +77,7 @@ public class NotificationComponent
             VALUES
             (
                 {companyId},
-                {recipientUserId},
+                '{recipientUserId.ToString()}',
                 '{title.Replace("'", "''")}',
                 '{message.Replace("'", "''")}',
                 {(int)scenario},
@@ -299,15 +299,16 @@ public class NotificationComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int code)
     {
         try
         {
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(code);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Notifications
-                WHERE Id = {code}
+                WHERE EmployeeCode = '{empDetail.empcode}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -423,37 +424,51 @@ public class NotificationComponent
         }
     }
 
-    public async Task<NotificationReadDto> GetByIdAsync(string code)
+    public async Task<List<NotificationReadDto>> GetByIdAsync(int code,bool isRead)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            //var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(code);
+
             string query = $@"
                  SELECT *
                     FROM Notifications
-                WHERE EmployeeCode = {code}
-                  AND IsRead = False";
+                WHERE EmployeeCode = '{empCode}'
+                  AND CompanyId = {CompanyId}
+                  AND IsRead = {isRead}";
 
-            DataTable dt = await _common.ExecuteSqlQuery(query);
+            DataTable divisionsTable = await _common.ExecuteSqlQuery(query);
 
-            if (dt.Rows.Count == 0)
+            if (divisionsTable.Rows.Count == 0)
                 throw new CustomException("Notifications not found", 200);
+             
 
-            DataRow row = dt.Rows[0];
+            var divisions = divisionsTable.AsEnumerable()
+               .Select(row => new NotificationReadDto
+               {
+                   Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                   CompanyId = row.Field<int>("CompanyId"),
+                   //Company = row.Field<string>("Company"),
+                   EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
+                   Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
+                   Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
+                   NotificationType = row.Table.Columns.Contains("NotificationType") ? row.Field<int>("NotificationType") : 0,
+                   RelatedEntityType = row.Table.Columns.Contains("RelatedEntityType") ? row.Field<string>("RelatedEntityType") : string.Empty,
+                   RelatedEntityId = row.Table.Columns.Contains("RelatedEntityId") ? row.Field<int>("RelatedEntityId") : 0,
+                   IsRead = row.Table.Columns.Contains("IsRead") && row.Field<bool?>("IsRead") == true,
+                   CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                               ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+               })
+               .ToList();
 
-            return new NotificationReadDto
-            {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                EmployeeCode = row.Field<string>("EmployeeCode"),
-                Title = row.Field<string>("Title"),
-                Message = row.Field<string>("Message"),
-                NotificationType = row.Field<int>("NotificationType"),
-                RelatedEntityType = row.Field<string>("RelatedEntityType"),
-                RelatedEntityId = row.Field<int>("RelatedEntityId"),
-                IsRead = row.Field<bool>("IsRead"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            return divisions; 
         }
         catch (Exception)
         {
@@ -539,7 +554,7 @@ public class NotificationComponent
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND EmployeeCode = {empDetail.empcode}";
+                WHERE Id = {notificationId} AND EmployeeCode = '{empDetail.empcode}'";
 
             return _common.ExecuteNonQuery(updateQuery);
         }

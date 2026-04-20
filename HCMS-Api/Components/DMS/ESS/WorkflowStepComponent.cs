@@ -5,18 +5,8 @@ using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models;
-using HCMS_Api.Components.HCMS.ESS;
-using Microsoft.AspNetCore.Http.HttpResults;
-using StackExchange.Redis;
-using System.ComponentModel.Design;
-using System.Data;
-using System.Data.Entity.Infrastructure;
-using System.Transactions;
-using System.Web.Http.Filters;
-using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using HCMS_Api.Components.DMS.Common.Models; 
+using System.Data; 
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -202,10 +192,11 @@ public class WorkflowStepComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = Convert.ToInt32(_CompanyId);
+
             string query = $@"
                 SELECT ws.*
                 FROM Vw_WorkflowStepDefinitions ws
@@ -369,10 +360,13 @@ public class WorkflowStepComponent
     public async Task<IEnumerable<PendingRequestDto>> GetPendingApprovalsAsync()
     {
 
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        var userId = _utilities.GetUserid(prefix);
+        var prefix = _utilities.GetPrefix(clientIp); 
+        //var userId = _utilities.GetUserid(prefix);
+        int CompanyId = int.Parse(_CompanyId);
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
         var sql = @"
             SELECT
@@ -399,7 +393,7 @@ public class WorkflowStepComponent
             AND wes.Decision IS NULL
 
             AND (
-                wes.AssignedUserId = @UserId
+                wes.AssignedUserId = @empCode
 
                 OR
 
@@ -408,7 +402,7 @@ public class WorkflowStepComponent
                     SELECT ejp.roleid
                     FROM public.tblempjobprofile ejp
                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND COALESCE(ejp.Active, TRUE) = TRUE
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @empCode AND COALESCE(ejp.Active, TRUE) = TRUE
                 )
                 OR
                 wes.AssignedDesignationId IN
@@ -416,7 +410,7 @@ public class WorkflowStepComponent
                     SELECT ejp.dsgid
                     FROM public.tblempjobprofile ejp
                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @UserId AND COALESCE(ejp.Active, TRUE) = TRUE
+                    WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @empCode AND COALESCE(ejp.Active, TRUE) = TRUE
                 )
             )
 
@@ -425,7 +419,7 @@ public class WorkflowStepComponent
 
         return await _common.QueryAsync<PendingRequestDto>(
             sql,
-            new { CompanyId = CompanyId, UserId = userId }
+            new { CompanyId = CompanyId, UserId = empCode }
         );
 
 
@@ -502,7 +496,8 @@ public class WorkflowStepComponent
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id <= 0)
                 throw new CustomException("Invalid step ID.", 400);
@@ -537,7 +532,7 @@ public class WorkflowStepComponent
                 ApprovalLevel = input.ApprovalLevel > 0 ? input.ApprovalLevel : (int?)null,
                 RequiresAllApprovals = input.IsParallelApproval,
                 IsActive = input.IsActive,
-                ModifiedBy = userId,
+                ModifiedBy = empCode,
                 Id = input.Id
             };
 
@@ -593,8 +588,10 @@ public class WorkflowStepComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
+            //var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId); 
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
 
             filters.CompanyId = CompanyId; // Ensure CompanyId is set in filters for downstream queries
@@ -653,7 +650,7 @@ public class WorkflowStepComponent
                     SubDepartmentCode = filters.SubDepartmentCode,
                     BusinessDomainCode = filters.BusinessDomainCode,
                     DocumentTypeCode = filters.DocumentTypeCode,
-                    CreatedBy = userId
+                    CreatedBy = empCode
                 });
             }
 
@@ -686,7 +683,7 @@ public class WorkflowStepComponent
                         @CompanyId, @PolicyId, 1, TRUE, NOW(), @CreatedBy
                     )
                     RETURNING Id;",
-                new { CompanyId, PolicyId = policyId, CreatedBy = userId });
+                new { CompanyId, PolicyId = policyId, CreatedBy = empCode });
             }
 
             //-----------------------------------------
@@ -725,7 +722,7 @@ public class WorkflowStepComponent
                             (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                             VALUES
                             (@CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, NULL, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
-                        new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, RoleId = roleId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = userId });
+                        new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, RoleId = roleId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = empCode });
                         nextOrder++;
                     }
                 }
@@ -749,7 +746,7 @@ public class WorkflowStepComponent
                                 (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                                 VALUES
                                 (@CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, @DesignationId, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
-                            new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, DesignationId = designationId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = userId });
+                            new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, DesignationId = designationId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = empCode });
                             nextOrder++;
                         }
                     }
@@ -793,7 +790,7 @@ public class WorkflowStepComponent
                         filters.StepType,
                         UserId = user.EmployeeCode,
                         RequiresAllApprovals = filters.IsParallelApproval,
-                        CreatedBy = userId
+                        CreatedBy = empCode
                     });
                     nextOrder++;
                 }
@@ -914,7 +911,7 @@ public class WorkflowStepComponent
 
         var clientIp = _clientContextService.GetClientIP();
         var prefix = _utilities.GetPrefix(clientIp);
-        var userId = _utilities.GetUserid(prefix);
+        //var userId = _utilities.GetUserid(prefix);
 
 
         //-----------------------------------------
@@ -1287,161 +1284,5 @@ public class WorkflowStepComponent
             throw;
         }
     }
-
-    public async Task<UserReadDto> GetEmployeesByAccessFiltersAsync2(WorkFlowStepsFilterDto filters)
-    {
-        try
-        {
-            var parameters = new DynamicParameters();
-            var whereConditions = new List<string>();
-
-            // Base query using tblEmployee and UserAccessLevels
-            string baseQuery = @"
-                SELECT DISTINCT 
-                   e.EmpId AS Id, 
-                   e.CompanyId, 
-                   e.EmpCode AS EmployeeCode, 
-                   LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
-                   e.Email,
-                   ual.DivisionCode,
-                   ual.DepartmentCode,
-                   ual.SubDepartmentCode,
-                   ual.BusinessDomainCode,
-                   des.name AS Designation,
-                   des.code AS DesignationCode
-            FROM tblEmployee e
-            INNER JOIN UserAccessLevels ual ON e.EmpCode = ual.EmployeeCode 
-                AND ual.IsActive = TRUE 
-                AND ual.IsDeleted = FALSE
-            LEFT JOIN public.tblsetupsdetail des ON e.dsgId = des.sdlid 
-                -- AND des.smsid = 11 -- Recommended: Add the specific smsid for Designations
-            WHERE 1=1";
-
-            if (!string.IsNullOrEmpty(filters.DocumentTypeCode))
-            {
-                whereConditions.Add("ual.DocumentTypeCode = @DocumentTypeCode");
-                parameters.Add("@DocumentTypeCode", filters.DocumentTypeCode);
-            }
-
-            if (!string.IsNullOrEmpty(filters.DivisionCode))
-            {
-                whereConditions.Add("ual.DivisionCode = @DivisionCode");
-                parameters.Add("@DivisionCode", filters.DivisionCode);
-            }
-
-            if (!string.IsNullOrEmpty(filters.DepartmentCode))
-            {
-                whereConditions.Add("ual.DepartmentCode = @DepartmentCode");
-                parameters.Add("@DepartmentCode", filters.DepartmentCode);
-            }
-
-            if (!string.IsNullOrEmpty(filters.SubDepartmentCode))
-            {
-                whereConditions.Add("ual.SubDepartmentCode = @SubDepartmentCode");
-                parameters.Add("@SubDepartmentCode", filters.SubDepartmentCode);
-            }
-
-            if (!string.IsNullOrEmpty(filters.BusinessDomainCode))
-            {
-                whereConditions.Add("ual.BusinessDomainCode = @BusinessDomainCode");
-                parameters.Add("@BusinessDomainCode", filters.BusinessDomainCode);
-            }
-
-            // Multiple Designations (Joined via des.Code)
-            if (filters.DesignationCodes != null && filters.DesignationCodes.Any())
-            {
-                var designationList = filters.DesignationCodes.ToList();
-                var designationParams = new List<string>();
-
-                for (int i = 0; i < designationList.Count; i++)
-                {
-                    var paramName = $"@DesignationCode{i}";
-                    designationParams.Add(paramName);
-                    parameters.Add(paramName, designationList[i]);
-                }
-
-                whereConditions.Add($"des.Code IN ({string.Join(",", designationParams)})");
-            }
-
-            // Multiple Roles (Joined via TblEmpJobProfile mapping for tblEmployee)
-            if (filters.Roles != null && filters.Roles.Any())
-            {
-                var roleList = filters.Roles.ToList();
-                var roleParams = new List<string>();
-
-                for (int i = 0; i < roleList.Count; i++)
-                {
-                    var paramName = $"@Role{i}";
-                    roleParams.Add(paramName);
-                    parameters.Add(paramName, roleList[i]);
-                }
-
-                whereConditions.Add($"EXISTS (SELECT 1 FROM TblEmpJobProfile ejp WHERE ejp.EmpId = e.EmpId AND ejp.RoleId IN ({string.Join(",", roleParams)}))");
-            }
-
-            // Multiple Employee Codes
-            if (filters.EmployeeCodes != null && filters.EmployeeCodes.Any())
-            {
-                var employeeCodeList = filters.EmployeeCodes.ToList();
-                var employeeCodeParams = new List<string>();
-
-                for (int i = 0; i < employeeCodeList.Count; i++)
-                {
-                    var paramName = $"@EmployeeCode{i}";
-                    employeeCodeParams.Add(paramName);
-                    parameters.Add(paramName, employeeCodeList[i]);
-                }
-
-                whereConditions.Add($"e.EmpCode IN ({string.Join(",", employeeCodeParams)})");
-            }
-
-            if (whereConditions.Count > 0)
-            {
-                baseQuery += " AND " + string.Join(" AND ", whereConditions);
-            }
-
-            baseQuery += " ORDER BY EmployeeName";
-
-            var resultList = (await _dapperService.QuerySingleAsync<UserReadDto>(baseQuery, parameters));
-
-            if (resultList == null)
-                throw new CustomException("No users found matching the criteria", 404);
-
-            var divisions = new UserReadDto
-            {
-                Id = resultList.Id,
-                CompanyId = resultList.CompanyId,
-                Company = resultList.Company,
-                EmployeeCode = resultList.EmployeeCode,
-                EmployeeName = resultList.EmployeeName,
-                Email = resultList.Email,
-
-                Division = resultList.Division,
-                DivisionCode = resultList.DivisionCode,
-
-                Department = resultList.Department,
-                DepartmentCode = resultList.DepartmentCode,
-
-                SubDepartment = resultList.SubDepartment,
-                SubDepartmentCode = resultList.SubDepartmentCode,
-
-                BusinessDomain = resultList.BusinessDomain,
-                BusinessDomainCode = resultList.BusinessDomainCode,
-
-                Designation = resultList.Designation,
-                DesignationCode = resultList.DesignationCode,
-
-                ReportingTo = resultList.ReportingTo,
-                Grade = resultList.Grade,
-
-            };
-
-            return divisions;
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
+     
 }

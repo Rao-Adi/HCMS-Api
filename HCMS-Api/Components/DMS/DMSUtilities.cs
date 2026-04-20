@@ -1676,6 +1676,15 @@ namespace HCMS_Api.Components.DMS.Common
             return obj;
         }
 
+        public object GetScalarDataForHCMS(string strQuery)
+        {
+            object obj = null;
+            string result = _dataservice.ExecuteStatementForHCMS(strQuery, ref obj, 1);
+            if (obj == null)
+                return "";
+            return obj;
+        }
+
 
         public async Task SendEmailAsync(string recipient, string subject, string body)
         {
@@ -2256,6 +2265,29 @@ namespace HCMS_Api.Components.DMS.Common
 
             return EmpCode;
         }
+
+        public string GetEmpCodeForHCMS(string EmpId)
+        {
+            string empcode = "";
+            try
+            {  
+                Object obj = new object();
+                obj = GetScalarDataForHCMS("Select empcode from tblEmployee where EmpId = '" + EmpId + "'");
+                if (obj != null)
+                {
+                    empcode = obj.ToString();
+                }
+                return empcode;
+            }
+            catch (Exception ex)
+            {
+                empcode = "";
+            }
+
+            return empcode;
+        }
+
+        
 
         public DataSet GetSubordinates(string EmpId, string CompanyId, string Culture)
         {

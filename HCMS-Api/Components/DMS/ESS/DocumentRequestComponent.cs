@@ -68,6 +68,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
 
             string? draftFileUrl = null;
@@ -118,8 +120,8 @@ public class DocumentRequestComponent
                 dto.SubDepartmentCode,
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Draft,
-                CreatedBy = userId,
-                LastModifiedBy = userId
+                CreatedBy = empCode,
+                LastModifiedBy = empCode
             }, transaction);
 
             //-----------------------------------------
@@ -151,8 +153,8 @@ public class DocumentRequestComponent
                         d.BusinessDomainCode,
                         d.RoleId,
                         d.DistributionTypeId,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, transaction);
                 }
             }
@@ -177,8 +179,8 @@ public class DocumentRequestComponent
                         CompanyId,
                         RequestId = requestId,
                         EmployeeCode = _userId,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, transaction);
                 }
             }
@@ -197,7 +199,7 @@ public class DocumentRequestComponent
                 CompanyId,
                 RequestId = requestId,
                 Status = DocumentRequestStatus.Draft,
-                UserId = userId
+                UserId = empCode
             }, transaction);
 
             await transaction.CommitAsync();
@@ -221,6 +223,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
@@ -265,7 +269,7 @@ public class DocumentRequestComponent
                 dto.Justification,
                 dto.ProposedContent,
                 DraftFileUrl = draftFileUrl,
-                LastModifiedBy = userId,
+                LastModifiedBy = empCode,
                 DraftStatus = DocumentRequestStatus.Draft
             },
             transaction);
@@ -310,7 +314,7 @@ public class DocumentRequestComponent
                     CompanyId,
                     dto.RequestId,
                     Status = DocumentRequestStatus.Draft,
-                    UserId = userId
+                    UserId = empCode
                 },
                 transaction);
 
@@ -333,7 +337,8 @@ public class DocumentRequestComponent
         //var prefix = _utilities.GetPrefix(clientIp);
         //var userId = _utilities.GetUserid(prefix);
         //int CompanyId = int.Parse(_CompanyId);
-
+        //var empId = _utilities.GetEmpid(clientIp);
+        //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
         //// Optional: ensure draft exists before calling original submit
         //var draftExists = await _common.ExecuteScalarAsync<int>(@"
@@ -368,6 +373,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Validation: Justification is mandatory for submission
             if (string.IsNullOrWhiteSpace(dto.Justification))
@@ -420,11 +427,11 @@ public class DocumentRequestComponent
                 dto.SubDepartmentCode,
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Submitted,
-                UserId = userId
+                UserId = empCode
             }, transaction);
 
             // 4. Insert Distribution Lists
-            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, userId, transaction);
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction);
 
 
             // 5. Workflow Execution Logic
@@ -468,7 +475,7 @@ public class DocumentRequestComponent
                     EntityType = "Request",
                     EntityId = requestId,
                     Status = "Running",
-                    StartedBy = userId
+                    StartedBy = empCode
                 }, transaction);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
@@ -488,6 +495,7 @@ public class DocumentRequestComponent
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
                         new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+
                     runningStepOrder++;
                     insertedSteps++;
                 }
@@ -507,12 +515,12 @@ public class DocumentRequestComponent
                     if (!employees.Any())
                         throw new CustomException("Workflow misconfigured — no active employees found for a configured Role/Designation step.", 409);
 
-                    foreach (var empCode in employees)
+                    foreach (var emp in employees)
                     {
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = empCode, StepOrder = runningStepOrder }, transaction);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, transaction);
                         runningStepOrder++;
                         insertedSteps++;
                     }
@@ -530,7 +538,7 @@ public class DocumentRequestComponent
                 new { ExecutionId = executionId }, transaction);
 
             // 6. History
-            await InsertHistoryAsync(CompanyId, requestId, DocumentRequestStatus.Submitted, userId, "Request Created and Submitted", transaction);
+            await InsertHistoryAsync(CompanyId, requestId, DocumentRequestStatus.Submitted, empCode, "Request Created and Submitted", transaction);
 
 
             // 7. Prepare and Send Notification
@@ -585,6 +593,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             //-------------------------------------------------
             // Validate Request
@@ -671,8 +681,8 @@ public class DocumentRequestComponent
                         d.BusinessDomainCode,
                         d.RoleId,
                         d.DistributionTypeId,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, tx);
                 }
             }
@@ -697,8 +707,8 @@ public class DocumentRequestComponent
                         CompanyId,
                         input.RequestId,
                         EmployeeCode = _userId,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, tx);
                 }
             }
@@ -775,7 +785,7 @@ public class DocumentRequestComponent
                     EntityType = "Request",
                     EntityId = input.RequestId,
                     Status = "Running",
-                    StartedBy = userId
+                    StartedBy = empCode
                 }, tx);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
@@ -814,12 +824,12 @@ public class DocumentRequestComponent
                     if (!employees.Any())
                         throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
 
-                    foreach (var empCode in employees)
+                    foreach (var emp in employees)
                     {
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = empCode, StepOrder = runningStepOrder }, tx);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, tx);
                         runningStepOrder++;
                         inserted++;
                     }
@@ -859,7 +869,7 @@ public class DocumentRequestComponent
                 new
                 {
                     Status = DocumentRequestStatus.Submitted,
-                    UserId = userId,
+                    UserId = empCode,
                     input.RequestId
                 }, tx);
 
@@ -906,7 +916,7 @@ public class DocumentRequestComponent
             long requestId,
             IEnumerable<DistributionListCreateDto>? roles,
             IEnumerable<string>? users,
-            string userId,
+            string empCode,
             IDbTransaction tx)
     {
         try
@@ -933,8 +943,8 @@ public class DocumentRequestComponent
                         d.BusinessDomainCode,
                         d.RoleId,
                         d.DistributionTypeId,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, tx);
                 }
             }
@@ -953,8 +963,8 @@ public class DocumentRequestComponent
                         CompanyId = companyId,
                         RequestId = requestId,
                         EmployeeCode = uid,
-                        CreatedBy = userId,
-                        LastModifiedBy = userId
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
                     }, tx);
                 }
             }
@@ -969,7 +979,7 @@ public class DocumentRequestComponent
         int companyId,
         long requestId,
         DocumentRequestStatus status,
-        string userId,
+        string empCode,
         string comments,
         IDbTransaction tx)
     {
@@ -983,7 +993,7 @@ public class DocumentRequestComponent
             CompanyId = companyId,
             RequestId = requestId,
             Status = status,
-            ChangedBy = userId,
+            ChangedBy = empCode,
             Comments = comments
         }, tx);
     }
@@ -997,6 +1007,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
 
             //get Employee details by Id
@@ -1136,6 +1148,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"WHERE dr.CompanyId = @CompanyId
                 AND dr.Status = @DraftStatus
@@ -1182,7 +1196,7 @@ public class DocumentRequestComponent
             {
                 CompanyId,
                 DraftStatus = DocumentRequestStatus.Draft,
-                CreatedBy = userId.ToString()
+                CreatedBy = empCode
             };
 
             var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
@@ -1349,6 +1363,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
             //-------------------------------------------------
@@ -1606,7 +1622,7 @@ public class DocumentRequestComponent
                     await CreateDocumentFromApprovedRequestAsync(
                         CompanyId,
                         requestId,
-                        userId,
+                        empCode,
                         tx);
 
                     //await CreateDocumentFromApprovedRequestAsync(input.CompanyId, executionId, input.UserId, tx);
@@ -1640,10 +1656,12 @@ public class DocumentRequestComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
             var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            filter.Initiator = userId.ToString();
+            filter.Initiator = empCode;
             filter.CompanyId = CompanyId; 
 
             var searchCondition = "";
@@ -1720,8 +1738,7 @@ public class DocumentRequestComponent
                 SELECT COUNT(1)
                 {fromJoins}
                 {baseWhere}
-                {searchCondition};
-            ";
+                {searchCondition};";
 
             var results = await _common.QueryAsync<dynamic>(dataSql, filter);
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, filter);
@@ -1784,10 +1801,12 @@ public class DocumentRequestComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            //var empId = _utilities.GetEmpid(clientIp);
+            //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var sql = $@"
                 SELECT 
@@ -1847,10 +1866,12 @@ public class DocumentRequestComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
+            //var empId = _utilities.GetEmpid(clientIp);
+            //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var sql = $@"
                 SELECT 
@@ -1969,7 +1990,7 @@ public class DocumentRequestComponent
          PROMOTE Audience ✅
              ↓
          Document Draft 0.1 Ready */
-    public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string userId, NpgsqlTransaction transaction)
+    public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string empCode, NpgsqlTransaction transaction)
     {
         //await using var transaction = await _common.BeginTransactionAsync();
 
@@ -2022,8 +2043,8 @@ public class DocumentRequestComponent
                 request.subdepartmentcode,
                 request.businessdomaincode,
                 DocumentUrl = request.draftfileurl,
-                CreatedBy = userId,
-                LastModifiedBy = userId
+                CreatedBy = empCode,
+                LastModifiedBy = empCode
             }, transaction);
 
             //-----------------------------------------
@@ -2043,8 +2064,8 @@ public class DocumentRequestComponent
                 companyId,
                 documentId,
                 Content = request.proposedcontent,
-                CreatedBy = userId,
-                LastModifiedBy = userId
+                CreatedBy = empCode,
+                LastModifiedBy = empCode
             }, transaction);
 
             //-----------------------------------------
@@ -2059,7 +2080,7 @@ public class DocumentRequestComponent
             (
                 @CompanyId, @DocumentId, 1, @UserId
             )
-            ", new { companyId, documentId, userId }, transaction);
+            ", new { companyId, documentId, empCode }, transaction);
 
             //-----------------------------------------
             // 5️⃣ Link Back To Request
@@ -2088,7 +2109,7 @@ public class DocumentRequestComponent
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                UserId = userId
+                UserId = empCode
             }, transaction);
 
             //-----------------------------------------
@@ -2107,8 +2128,8 @@ public class DocumentRequestComponent
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                EmployeeCode = userId,
-                CreatedBy = userId
+                EmployeeCode = empCode,
+                CreatedBy = empCode
             }, transaction);
 
             //await transaction.CommitAsync();
@@ -2121,39 +2142,6 @@ public class DocumentRequestComponent
         }
     }
 
-
-    public async Task<bool> DeleteAsync(string code)
-    {
-        try
-        {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-            // Check existence
-            string checkQuery = $@"
-                SELECT COUNT(1)
-                FROM DocumentRequests
-                WHERE Id = {code}
-                  AND IsDeleted = False";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists == 0)
-                throw new CustomException("DocumentRequests not found", 200);
-
-            // Soft delete
-            string deleteQuery = $@"
-                UPDATE DocumentRequests
-                SET IsDeleted = False
-                WHERE Id = {code}";
-
-            return _common.ExecuteNonQuery(deleteQuery);
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
 
 
     public async Task<PaginationResult<DocumentRequestReadDto>> GetAllAsync(TableFiltersDto input)
@@ -2459,6 +2447,8 @@ public class DocumentRequestComponent
             var prefix = _utilities.GetPrefix(clientIp);
             var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -2491,7 +2481,7 @@ public class DocumentRequestComponent
                 CurrentStep = '{input.CurrentStep}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
