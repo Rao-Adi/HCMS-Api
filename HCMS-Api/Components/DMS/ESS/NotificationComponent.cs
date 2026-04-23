@@ -548,13 +548,15 @@ public class NotificationComponent
     {
         try
         {
-
-            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(empId);
+             
+            var clientIp = _clientContextService.GetClientIP(); 
+            var _empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(_empId.ToString());
 
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND EmployeeCode = '{empDetail.empcode}'";
+                WHERE Id = {notificationId} AND EmployeeCode = '{empCode}'";
 
             return _common.ExecuteNonQuery(updateQuery);
         }

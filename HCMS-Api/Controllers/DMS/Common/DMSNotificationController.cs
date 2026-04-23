@@ -53,7 +53,7 @@ public class DMSNotificationController : Controller
 
     [HttpPut("mark-as-read/{notificationId}/{empId}")]
     public async Task<IActionResult> MarkAsRead(int notificationId, int empId)
-    {
+{
         try
         {
             bool isSuccess = await _notificationComponent.MarkAsReadAsync(notificationId, empId);
