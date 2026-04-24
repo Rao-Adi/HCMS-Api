@@ -1394,8 +1394,8 @@ public class DocumentRequestComponent
 
             string decision = input.Action switch
             {
-                "APPROVE" => "Approved",
-                "REJECT" => "Rejected",
+                "APPROVED" => "Approved",
+                "REJECTED" => "Rejected",
                 "REWORKED" => "Reworked",
                 "COMMENT" => null,
                 _ => throw new Exception("Invalid action.")
@@ -1475,7 +1475,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // REJECT → Cancel Workflow and mark Request as Rejected (Terminal)
             //-------------------------------------------------
-            if (decision == "Rejected")
+            if (decision == "Rejected" || decision == "REJECTED")
             {
                 await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
@@ -1507,7 +1507,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // REWORK → Cancel Workflow and Revert to Draft (Non-Terminal)
             //-------------------------------------------------
-            if (decision == "Rework")
+            if (decision == "Reworked" || decision == "REWORKED")
             {
                 await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
@@ -1945,7 +1945,7 @@ public class DocumentRequestComponent
     // Helper method to safely get values from the dynamic row
     private static T GetValue<T>(IDictionary<string, object> row, string columnName)
     {
-        if (row.ContainsKey(columnName) && row[columnName] != DBNull.Value)
+        if (row.ContainsKey(columnName) && row[columnName] != null && row[columnName] != DBNull.Value)
         {
             try
             {
@@ -1996,8 +1996,8 @@ public class DocumentRequestComponent
 
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
 
 
@@ -2078,7 +2078,7 @@ public class DocumentRequestComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, 1, @UserId
+                @CompanyId, @DocumentId, 1, @empCode
             )
             ", new { companyId, documentId, empCode }, transaction);
 

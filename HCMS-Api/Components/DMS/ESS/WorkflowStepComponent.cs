@@ -297,7 +297,7 @@ public class WorkflowStepComponent
     // Helper method to safely get values from the dynamic row
     private static T GetValue<T>(IDictionary<string, object> row, string columnName)
     {
-        if (row.ContainsKey(columnName) && row[columnName] != DBNull.Value)
+        if (row.ContainsKey(columnName) && row[columnName] != null && row[columnName] != DBNull.Value)
         {
             try
             {

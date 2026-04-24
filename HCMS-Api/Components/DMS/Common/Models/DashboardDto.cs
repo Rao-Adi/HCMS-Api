@@ -28,6 +28,7 @@ public class DashboardPendingTaskDto
 {
     public string TaskType { get; set; } // "Approval", "Training", "Authorization"
     public int EntityId { get; set; }
+    public string EntityType { get; set; }
     public string ReferenceNumber { get; set; } // DocumentNumber or RequestNumber
     public string Title { get; set; }
     public string AssignedDate { get; set; }

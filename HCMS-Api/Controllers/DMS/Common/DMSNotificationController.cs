@@ -51,12 +51,12 @@ public class DMSNotificationController : Controller
         }
     }
 
-    [HttpPut("mark-as-read/{notificationId}/{empId}")]
-    public async Task<IActionResult> MarkAsRead(int notificationId, int empId)
+    [HttpPut("mark-as-read/{notificationId}")]
+    public async Task<IActionResult> MarkAsRead(int notificationId)
 {
         try
         {
-            bool isSuccess = await _notificationComponent.MarkAsReadAsync(notificationId, empId);
+            bool isSuccess = await _notificationComponent.MarkAsReadAsync(notificationId);
             return Ok(new { success = isSuccess });
         }
         catch (Exception ex)
@@ -66,13 +66,13 @@ public class DMSNotificationController : Controller
         }
     }
 
-    [HttpPut("mark-all-as-read/{empId}")]
-    public async Task<IActionResult> MarkAllAsRead(int empId)
+    [HttpPut("mark-all-as-read")]
+    public async Task<IActionResult> MarkAllAsRead()
     {
         try
         {
 
-            bool isSuccess = await _notificationComponent.MarkAllAsReadAsync(empId);
+            bool isSuccess = await _notificationComponent.MarkAllAsReadAsync();
             return Ok(new { success = isSuccess });
         }
         catch (Exception ex)
@@ -119,15 +119,15 @@ public class DMSNotificationController : Controller
     }
 
 
-    [HttpGet("get-notification-by-code/{code}/{isRead}")]
-    public async Task<IActionResult> GetNotificationById(int code, bool isRead)
+    [HttpGet("get-notification-by-code/{isRead}")]
+    public async Task<IActionResult> GetNotificationById(bool isRead)
     {
         try
         {
             return Ok(new HttpApiResponse<List<NotificationReadDto>>()
             {
                 Success = true,
-                Data = await _notificationComponent.GetByIdAsync(code, isRead),
+                Data = await _notificationComponent.GetByIdAsync(isRead),
                 Message = "Success",
                 Code = 200
             });

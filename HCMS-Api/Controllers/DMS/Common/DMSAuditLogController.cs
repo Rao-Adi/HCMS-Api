@@ -69,7 +69,7 @@ public class DMSAuditLogController : Controller
             return Ok(new HttpApiResponse<AuditLogReadDto>()
             {
                 Success = true,
-                Data = await _auditLogComponent.GetByUserIdAsync(code),
+                Data = await _auditLogComponent.GetByEmployeeCodeAsync(code),
                 Message = "Success",
                 Code = 200
             });
@@ -121,50 +121,13 @@ public class DMSAuditLogController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
-    [HttpPut("update-audit-log")]
-    public async Task<IActionResult> Update([FromBody] AuditLogUpdateDto input)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<AuditLogReadDto>()
-            {
-                Success = true,
-                Data = await _auditLogComponent.UpdateAsync(input),
-                Message = "Audit Log updated successfully.",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
+     
 
     [HttpDelete("delete-audit-log/{code}")]
     public async Task<IActionResult> DeleteAsync(string code)
     {
         try
-        {
-            var existingRecord = await _auditLogComponent.GetByUserIdAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Audit Log not found",
-                    Code = 404
-                });
-            }
+        { 
 
             return Ok(new HttpApiResponse<bool>()
             {

@@ -25,6 +25,7 @@ public class Notification
 
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
+    public string? RedirectionUrl { get; set; }
 
     public int? RelatedEntityId { get; set; }
 
@@ -54,6 +55,7 @@ public class NotificationReadDto
 
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
+    public string? RedirectionUrl { get; set; }
 
     public int? RelatedEntityId { get; set; }
 
@@ -84,6 +86,8 @@ public class NotificationCreateDto
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
 
+    public string? RedirectionUrl { get; set; }
+
     public int? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; }
@@ -112,6 +116,8 @@ public class NotificationUpdateDto
 
     [MaxLength(50)]
     public string? RelatedEntityType { get; set; }
+
+    public string? RedirectionUrl { get; set; }
 
     public int? RelatedEntityId { get; set; }
 

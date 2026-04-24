@@ -10,10 +10,10 @@ public class AuditLog : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
 
     [MaxLength(100)]
     public string Action { get; set; } = null!;
@@ -37,10 +37,10 @@ public class AuditLogReadDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
      
     public string Action { get; set; } = null!;
      
@@ -58,10 +58,8 @@ public class AuditLogReadDto
 
 public class AuditLogCreateDto
 {   
-    public int UserId { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public string EmployeeCode { get; set; }
+     
 
     public string Action { get; set; } = null!;
      
@@ -82,9 +80,9 @@ public class AuditLogUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
-    public int UserId { get; set; }
+    public string EmployeeCode { get; set; }
      
     public string Action { get; set; } = null!;
      
