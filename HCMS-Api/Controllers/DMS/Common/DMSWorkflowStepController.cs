@@ -90,6 +90,32 @@ public class DMSWorkflowStepController : Controller
         }
     }
 
+    [HttpPost("get-workflow-policy-by-document-code")]
+    public async Task<IActionResult> GetWorkflowPolicyByDocumentCode(GetStepDefinitionFilterDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<WorkflowStepDefiniationReadDto>>()
+            {
+                Success = true,
+                Data = await _workflowStepComponent.GetWorkflowPolicyDocumentTypeCodeAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpGet("get-pending-approvals")]
     public async Task<IActionResult> GetPendingApprovals()

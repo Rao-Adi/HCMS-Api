@@ -197,12 +197,68 @@ public class WorkflowStepComponent
             //var userId = _utilities.GetUserid(prefix);
             int CompanyId = Convert.ToInt32(_CompanyId);
 
+            //string query = $@"
+            //    SELECT ws.*
+            //    FROM Vw_WorkflowStepDefinitions ws
+            //    JOIN WorkflowPolicies wp
+            //        ON wp.Id = ws.WorkflowPolicyId
+            //        AND wp.CompanyId = ws.CompanyId
+            //    WHERE wp.CompanyId = @CompanyId
+            //    AND wp.EntityType = @EntityType
+            //    AND wp.DocumentTypeCode = @DocumentTypeCode
+            //    -- Allow filtering by specific policy name or ID
+            //    AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
+            //    AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
+            //    AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
+            //    AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+            //    AND ws.IsActive = TRUE
+            //    AND ws.IsDeleted = FALSE
+            //    ORDER BY ws.StepOrder, ws.employeecode ASC;";
             string query = $@"
-                SELECT ws.*
-                FROM Vw_WorkflowStepDefinitions ws
-                JOIN WorkflowPolicies wp
-                    ON wp.Id = ws.WorkflowPolicyId
-                    AND wp.CompanyId = ws.CompanyId
+                SELECT 
+                    wsd.Id AS id, 
+                    wsd.CompanyId AS companyid, 
+                    c.Name AS company,
+                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                    wp.Id AS workflowpolicyid, 
+                    wp.Name AS workflowpolicyname,
+                    wsd.StepOrder AS steporder, 
+                    wsd.StepGroup AS stepgroup, 
+                    wsd.StepType AS steptype,
+                    wsd.RoleId AS roleid, 
+                    wsd.DesignationId AS designationid, 
+                    wsd.UserId AS userid, 
+                    --wsd.ApprovalLevel AS approvallevel, 
+                    wsd.RequiresAllApprovals AS requiresallapprovals,
+                    wsd.RequiresAllApprovals AS isparallelapproval,
+                    FALSE AS canedit,
+                    FALSE AS requirecrossfunctionalhead,
+                    e.empcode AS employeecode, 
+                    e.firstname, e.midname, e.lastname,
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
+                    COALESCE(r_step.name, r_emp.name) AS role, 
+                    COALESCE(r_step.name, r_emp.name) AS userrole, 
+                    COALESCE(des_step.name, des_fallback.name) AS designation,
+                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                    wp.DocumentTypeCode AS documenttypecode, 
+                    dt.Name AS documenttype,
+                    wsd.IsActive AS isactive, 
+                    wsd.IsDeleted AS isdeleted, 
+                    wsd.CreatedAt AS createdat, 
+                    wsd.CreatedBy AS createdby, 
+                    wsd.LastModifiedAt AS lastmodifiedat, 
+                    wsd.LastModifiedBy AS lastmodifiedby
+                FROM WorkflowStepDefinitions wsd
+                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
+                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
+                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
+                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
+                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
                 WHERE wp.CompanyId = @CompanyId
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
@@ -211,9 +267,10 @@ public class WorkflowStepComponent
                 AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
                 AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
                 AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-                AND ws.IsActive = TRUE
-                AND ws.IsDeleted = FALSE
-                ORDER BY ws.StepOrder, ws.employeecode ASC;";
+                AND wsd.IsActive = TRUE
+                AND wsd.IsDeleted = FALSE
+                ORDER BY wsd.StepOrder, e.empcode ASC;
+                ";
 
             var queryParams = new
             {
@@ -287,6 +344,113 @@ public class WorkflowStepComponent
             }
 
             return dtos; 
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
+    public async Task<List<WorkflowStepDefiniationReadDto>> GetWorkflowPolicyDocumentTypeCodeAsync(GetStepDefinitionFilterDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            //var clientIp = _clientContextService.GetClientIP();
+            //var prefix = _utilities.GetPrefix(clientIp);
+            //var userId = _utilities.GetUserid(prefix);
+            int CompanyId = Convert.ToInt32(_CompanyId);
+
+            string query = $@"
+                SELECT ws.*
+                FROM Vw_WorkflowStepDefinitions ws
+                JOIN WorkflowPolicies wp
+                    ON wp.Id = ws.WorkflowPolicyId
+                    AND wp.CompanyId = ws.CompanyId
+                WHERE wp.CompanyId = @CompanyId
+                AND wp.EntityType = @EntityType
+                AND wp.DocumentTypeCode = @DocumentTypeCode
+                -- Allow filtering by specific policy name or ID
+                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
+                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
+                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
+                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND ws.IsActive = TRUE
+                AND ws.IsDeleted = FALSE
+                ORDER BY ws.StepOrder, ws.employeecode ASC;";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                input.EntityType,
+                input.DocumentTypeCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode
+            };
+
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
+
+            var dtos = new List<WorkflowStepDefiniationReadDto>();
+            foreach (var row in results)
+            {
+                // Cast row to IDictionary<string, object> to access properties safely
+                var rowDict = row as IDictionary<string, object>;
+
+                string fName = GetValue<string>(rowDict, "firstname");
+                string mName = GetValue<string>(rowDict, "midname");
+                string lName = GetValue<string>(rowDict, "lastname");
+                string employeeName = string.Join(" ", new[] { fName, mName, lName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+                dtos.Add(new WorkflowStepDefiniationReadDto
+                {
+                    Id = GetValue<int>(rowDict, "id"),
+
+                    CompanyId = GetValue<int>(rowDict, "companyid"),
+                    Company = GetValue<string>(rowDict, "company"),
+
+                    WorkflowPolicyId = GetValue<int>(rowDict, "workflowpolicyid"),
+                    WorkflowPolicyName = GetValue<string>(rowDict, "workflowpolicyname"),
+
+                    WorkflowPolicyVersionId = GetValue<int>(rowDict, "workflowpolicyversionid"),
+
+                    StepOrder = GetValue<int>(rowDict, "steporder"),
+                    StepGroup = GetValue<int>(rowDict, "stepgroup"),
+                    StepType = GetValue<string>(rowDict, "steptype"),
+
+                    RoleId = GetValue<int>(rowDict, "roleid"),
+                    DesignationId = GetValue<int>(rowDict, "designationid"),
+                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserId = GetValue<int>(rowDict, "userid"),
+                    ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
+                    RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
+
+                    EmployeeCode = GetValue<string>(rowDict, "employeecode"),
+                    EmployeeName = employeeName,
+
+                    Designation = GetValue<string>(rowDict, "designation"),
+                    DesignationCode = GetValue<string>(rowDict, "designationcode"),
+
+                    DocumentType = GetValue<string>(rowDict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),
+
+
+                    CanEdit = GetValue<bool>(rowDict, "canedit"),
+                    IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
+
+                    IsActive = GetValue<bool>(rowDict, "isactive"),
+                    IsDeleted = GetValue<bool>(rowDict, "isdeleted"),
+                    CreatedAt = GetValue<string>(rowDict, "createdat"),
+                    CreatedBy = GetValue<string>(rowDict, "createdby"),
+                    LastModifiedAt = GetValue<string>(rowDict, "lastmodifiedat"),
+                    LastModifiedBy = GetValue<string>(rowDict, "lastmodifiedby"),
+
+                });
+            }
+
+            return dtos;
         }
         catch (Exception ex)
         {
@@ -802,11 +966,50 @@ public class WorkflowStepComponent
 
 
             string query = $@"
-                SELECT ws.*
-                FROM Vw_WorkflowStepDefinitions ws
-                JOIN WorkflowPolicies wp
-                    ON wp.Id = ws.WorkflowPolicyId
-                    AND wp.CompanyId = ws.CompanyId
+                SELECT 
+                    wsd.Id AS id, 
+                    wsd.CompanyId AS companyid, 
+                    c.Name AS company,
+                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                    wp.Id AS workflowpolicyid, 
+                    wp.Name AS workflowpolicyname,
+                    wsd.StepOrder AS steporder, 
+                    wsd.StepGroup AS stepgroup, 
+                    wsd.StepType AS steptype,
+                    wsd.RoleId AS roleid, 
+                    wsd.DesignationId AS designationid, 
+                    wsd.UserId AS userid, 
+                    --wsd.ApprovalLevel AS approvallevel, 
+                    wsd.RequiresAllApprovals AS requiresallapprovals,
+                    wsd.RequiresAllApprovals AS isparallelapproval,
+                    FALSE AS canedit,
+                    FALSE AS requirecrossfunctionalhead,
+                    e.empcode AS employeecode, 
+                    e.firstname, e.midname, e.lastname,
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
+                    COALESCE(r_step.name, r_emp.name) AS role, 
+                    COALESCE(r_step.name, r_emp.name) AS userrole, 
+                    COALESCE(des_step.name, des_fallback.name) AS designation,
+                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                    wp.DocumentTypeCode AS documenttypecode, 
+                    dt.Name AS documenttype,
+                    wsd.IsActive AS isactive, 
+                    wsd.IsDeleted AS isdeleted, 
+                    wsd.CreatedAt AS createdat, 
+                    wsd.CreatedBy AS createdby, 
+                    wsd.LastModifiedAt AS lastmodifiedat, 
+                    wsd.LastModifiedBy AS lastmodifiedby
+                FROM WorkflowStepDefinitions wsd
+                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
+                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
+                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
+                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
+                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
                 WHERE wp.CompanyId = @CompanyId
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
@@ -815,9 +1018,9 @@ public class WorkflowStepComponent
                 AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
                 AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
                 AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-                AND ws.IsActive = TRUE
-                AND ws.IsDeleted = FALSE
-                ORDER BY ws.StepOrder, ws.employeecode ASC;";
+                AND wsd.IsActive = TRUE
+                AND wsd.IsDeleted = FALSE
+                ORDER BY wsd.StepOrder, e.empcode ASC";
 
             var queryParams = new
             {
