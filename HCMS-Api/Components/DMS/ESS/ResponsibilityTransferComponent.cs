@@ -41,10 +41,7 @@ public class ResponsibilityTransferComponent
         _clientContextService = clientContextService;
         _dapperService = dapper;
         _common = common;
-        _notificationComponent = notificationComponent;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _notificationComponent = notificationComponent; 
     }
 
 
@@ -54,11 +51,10 @@ public class ResponsibilityTransferComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
-
-
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+             
             // FSD UC-16 Validation: Remarks are mandatory.
             if (string.IsNullOrWhiteSpace(input.Remarks))
             {
@@ -193,7 +189,7 @@ public class ResponsibilityTransferComponent
                 Attachment = documentUrl,
                 input.Remarks,
                 ApproverId = approverId,
-                UserId = userId
+                UserId = empCode
             };
 
             int newId = await _common.ExecuteScalarAsync<int>(insertQuery, insertParams);
@@ -252,10 +248,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -272,7 +269,10 @@ public class ResponsibilityTransferComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE ResponsibilityTransfers
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -464,10 +464,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -498,7 +499,7 @@ public class ResponsibilityTransferComponent
                 Remarks = @Remarks, 
                 IsActive = @IsActive,
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = @Id";
 
             var updateParams = new
@@ -567,13 +568,14 @@ public class ResponsibilityTransferComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
 
-            // Get the numeric ApproverId (EmpId) from the tblEmployee table using the logged-in userId (EmployeeCode)
-            int approverIdInt = await _common.ExecuteScalarAsync<int>("SELECT empid FROM tblEmployee WHERE TRIM(empcode) = @UserId", new { UserId = userId.Trim() });
+            // Get the numeric ApproverId (EmpId) from the tblEmployee table using the logged-in empCode (EmployeeCode)
+            //int approverIdInt = await _common.ExecuteScalarAsync<int>("SELECT empid FROM tblEmployee WHERE TRIM(empcode) = @UserId", new { UserId = empCode.Trim() });
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"
                 WHERE rt.IsDeleted = FALSE 
@@ -619,7 +621,7 @@ public class ResponsibilityTransferComponent
                 FROM ResponsibilityTransfers rt
                 {whereClause};";
 
-            var queryParams = new { ApproverId = approverIdInt, Status = input.Status };
+            var queryParams = new { ApproverId = empCode, Status = input.Status };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -638,10 +640,11 @@ public class ResponsibilityTransferComponent
 
     public async Task<bool> TakeActionAsync(ResponsibilityTransferActionDto input)
     {
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        var userId = _utilities.GetUserid(prefix);
+        int CompanyId = int.Parse(_CompanyId);
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
         await using var tx = await _common.BeginTransactionAsync();
         try
@@ -672,7 +675,7 @@ public class ResponsibilityTransferComponent
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
                 WHERE Id = @Id;", 
-                new { Status = newStatus, input.Observation, userId, Id = input.TransferId }, tx);
+                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId }, tx);
 
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
@@ -691,10 +694,9 @@ public class ResponsibilityTransferComponent
                     { "Date From", transfer.effectivedatefrom?.ToString("yyyy-MM-dd") ?? "Now" },
                     { "Date To", transfer.effectivedateto != null ? transfer.effectivedateto.ToString("yyyy-MM-dd") : "Permanent" }
                 };
-
-                int compIdInt = int.Parse(CompanyId);
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, compIdInt, input.TransferId, transfer.employeefrom, placeholders);
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, compIdInt, input.TransferId, transfer.employeeto, placeholders);
+                 
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeefrom, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeeto, placeholders);
             }
 
             await tx.CommitAsync();

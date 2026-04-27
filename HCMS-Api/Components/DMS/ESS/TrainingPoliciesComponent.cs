@@ -37,10 +37,7 @@ public class TrainingPolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -50,10 +47,11 @@ public class TrainingPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
@@ -90,9 +88,9 @@ public class TrainingPolicyComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -140,10 +138,11 @@ public class TrainingPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -160,7 +159,10 @@ public class TrainingPolicyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE TrainingPolicies
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -316,10 +318,11 @@ public class TrainingPolicyComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id < 0)
                 throw new CustomException("Invalid Id.", 200);
@@ -343,7 +346,7 @@ public class TrainingPolicyComponent
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

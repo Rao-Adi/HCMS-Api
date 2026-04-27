@@ -48,9 +48,6 @@ public class NotificationComponent
         _common = common;
         _hubContext = hubContext;
         _peoplePartnersComponent = peoplePartnersComponent;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
     }
 
     /// <summary>

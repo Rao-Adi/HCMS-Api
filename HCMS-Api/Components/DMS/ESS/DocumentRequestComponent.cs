@@ -51,10 +51,7 @@ public class DocumentRequestComponent
         _documentComponent = documentComponent;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
-        _workflowStepComponent = workflowStepComponent;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _workflowStepComponent = workflowStepComponent; 
     }
      
     public async Task<long> CreateDraftDocumentRequestAsync(DraftDocumentRequestDto dto)
@@ -64,9 +61,7 @@ public class DocumentRequestComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -219,9 +214,7 @@ public class DocumentRequestComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -293,7 +286,7 @@ public class DocumentRequestComponent
             // Insert new distributions
             await InsertDistributionsAsync(CompanyId, dto.RequestId,
                 dto!.DistributionList, dto!.UserIds,
-                userId, transaction);
+                empCode, transaction);
 
 
             //-------------------------------------------------
@@ -369,9 +362,7 @@ public class DocumentRequestComponent
         {
             // 1. Get User/Company Info
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -589,9 +580,7 @@ public class DocumentRequestComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1003,9 +992,7 @@ public class DocumentRequestComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1808,43 +1795,105 @@ public class DocumentRequestComponent
             //var empId = _utilities.GetEmpid(clientIp);
             //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            var sql = $@"
-                SELECT 
-                    we.EntityId,
-                    we.EntityType,
-                    wes.StepOrder,
-                    wsd.StepType,
-                    wes.AssignedUserId,
-                    e.empCode AS employeecode,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
-                    ejp.roleid AS RoleId,
-                    r.name AS RoleName,
-                    ejp.dsgid AS DesignationId,
-                    desig.name AS Designation,
-                    wes.Decision,
-                    wes.Observation,
-                    wes.ActionAt,
-                    wes.IsActive
-                FROM WorkflowExecutionSteps wes
-                INNER JOIN WorkflowExecutions we
-                    ON we.CompanyId = wes.CompanyId
-                    AND we.Id = wes.WorkflowExecutionId
-                    AND we.EntityType = @EntityType  -- Critical filter: Only get steps from Document workflow
-                INNER JOIN WorkflowStepDefinitions wsd
-                    ON wsd.CompanyId = wes.CompanyId
-                    AND wsd.Id = wes.StepDefinitionId
-                LEFT JOIN tblEmployee e
-                   ON e.empCode = wes.AssignedUserId
-                LEFT JOIN public.tblempjobprofile ejp 
-                   ON ejp.empid = e.empid AND ejp.Active = TRUE
-                LEFT JOIN public.tblsetupsdetail r 
-                   ON r.sdlid = ejp.roleid
-                LEFT JOIN public.tblsetupsdetail desig 
-                   ON desig.sdlid = ejp.dsgid
-                WHERE wes.CompanyId = @CompanyId
-                  AND we.EntityId = @DocumentId  -- The Document ID
-                  AND we.EntityType = @EntityType  -- Should be 'Document'
-                ORDER BY wes.StepOrder";
+            //var sql = $@"
+            //    SELECT 
+            //        we.EntityId,
+            //        we.EntityType,
+            //        wes.StepOrder,
+            //        wsd.StepType,
+            //        wes.AssignedUserId,
+            //        e.empCode AS employeecode,
+            //        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
+            //        ejp.roleid AS RoleId,
+            //        r.name AS RoleName,
+            //        ejp.dsgid AS DesignationId,
+            //        desig.name AS Designation,
+            //        wes.Decision,
+            //        wes.Observation,
+            //        wes.ActionAt,
+            //        wes.IsActive
+            //    FROM WorkflowExecutionSteps wes
+            //    INNER JOIN WorkflowExecutions we
+            //        ON we.CompanyId = wes.CompanyId
+            //        AND we.Id = wes.WorkflowExecutionId
+            //        AND we.EntityType = @EntityType  -- Critical filter: Only get steps from Document workflow
+            //    INNER JOIN WorkflowStepDefinitions wsd
+            //        ON wsd.CompanyId = wes.CompanyId
+            //        AND wsd.Id = wes.StepDefinitionId
+            //    LEFT JOIN tblEmployee e
+            //       ON e.empCode = wes.AssignedUserId
+            //    LEFT JOIN public.tblempjobprofile ejp 
+            //       ON ejp.empid = e.empid AND ejp.Active = TRUE
+            //    LEFT JOIN public.tblsetupsdetail r 
+            //       ON r.sdlid = ejp.roleid
+            //    LEFT JOIN public.tblsetupsdetail desig 
+            //       ON desig.sdlid = ejp.dsgid
+            //    WHERE wes.CompanyId = @CompanyId
+            //      AND we.EntityId = @DocumentId  -- The Document ID
+            //      AND we.EntityType = @EntityType  -- Should be 'Document'
+            //    ORDER BY wes.StepOrder";
+
+            string sql = $@"
+                    SELECT 
+                        we.EntityId,
+                        we.EntityType,
+                        wes.StepOrder,
+                        wsd.StepType,
+                        wes.AssignedUserId,
+                        e.empCode AS employeecode,
+                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
+                        ejp.roleid AS RoleId,
+                        r.name AS RoleName,
+                        ejp.dsgid AS DesignationId,
+                        desig.name AS Designation,
+                        wes.Decision,
+                        wes.Observation,
+                        wes.ActionAt,
+                        wes.IsActive,
+	                    -- 🔹 Audit Fields
+                        COALESCE(c.EmployeeName, we.StartedBy::text) AS CreatedByName,
+ 
+                        COALESCE(m.EmployeeName, we.StartedBy::text) AS LastModifiedByName
+                    FROM WorkflowExecutionSteps wes
+
+                    INNER JOIN WorkflowExecutions we
+                        ON we.CompanyId = wes.CompanyId
+                        AND we.Id = wes.WorkflowExecutionId
+                        AND we.EntityType = @EntityType
+
+                    INNER JOIN WorkflowStepDefinitions wsd
+                        ON wsd.CompanyId = wes.CompanyId
+                        AND wsd.Id = wes.StepDefinitionId
+
+                    -- Assigned Employee
+                    LEFT JOIN tblEmployee e
+                        ON e.empCode = wes.AssignedUserId
+
+                    LEFT JOIN public.tblempjobprofile ejp 
+                        ON ejp.empid = e.empid 
+                        AND ejp.Active = TRUE
+
+                    LEFT JOIN public.tblsetupsdetail r 
+                        ON r.sdlid = ejp.roleid
+
+                    LEFT JOIN public.tblsetupsdetail desig 
+                        ON desig.sdlid = ejp.dsgid
+
+                    -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames c 
+                        ON c.CleanEmpCode = LTRIM(we.StartedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(we.StartedBy::text, '0')
+
+                    WHERE wes.CompanyId = @CompanyId
+                      AND we.EntityId = @DocumentId
+                      AND we.EntityType = @EntityType
+                      AND wes.Observation IS NOT NULL
+                      AND TRIM(wes.Observation) <> ''
+
+                    ORDER BY wes.StepOrder;";
 
             return await _common.QueryAsync<DocumentRequestDetailsDto>(sql, new
             {

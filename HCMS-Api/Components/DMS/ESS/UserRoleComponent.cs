@@ -37,10 +37,7 @@ public class UserRoleComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,9 +45,12 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
 
             if (input.UserId < 0)
                 throw new CustomException("UserRole is required.", 400);
@@ -92,9 +92,9 @@ public class UserRoleComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -143,9 +143,11 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -162,8 +164,11 @@ public class UserRoleComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE UserRoles
-                SET IsDeleted = False
-                WHERE UserId = {code}";
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
+                WHERE UserId = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -364,9 +369,11 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.UserId < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -391,7 +398,7 @@ public class UserRoleComponent
                 RoleId = '{input.RoleId}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE UserId = '{input.UserId}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

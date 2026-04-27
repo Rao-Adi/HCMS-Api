@@ -37,10 +37,7 @@ public class SubDepartmentComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,10 +45,11 @@ public class SubDepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Sub-Department name is required.", 200);
@@ -136,9 +134,9 @@ public class SubDepartmentComponent
                             TRUE,
                             FALSE,
                             NOW(),
-                            '{userId.Replace("'", "''")}',
+                            '{empCode.Replace("'", "''")}',
                             NOW(),
-                            '{userId.Replace("'", "''")}'
+                            '{empCode.Replace("'", "''")}'
                         )
                         RETURNING Id;";
 
@@ -192,10 +190,11 @@ public class SubDepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -212,7 +211,9 @@ public class SubDepartmentComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE SubDepartments
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -459,10 +460,11 @@ public class SubDepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Sub-Department code is required.", 200);
@@ -523,7 +525,7 @@ public class SubDepartmentComponent
                         DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
                         IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                         LastModifiedAt = NOW(),
-                        LastModifiedBy = '{userId.Replace("'", "''")}'
+                        LastModifiedBy = '{empCode.Replace("'", "''")}'
                     WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

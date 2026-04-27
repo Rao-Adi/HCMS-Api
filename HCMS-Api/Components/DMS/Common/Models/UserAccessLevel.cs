@@ -57,9 +57,7 @@ public class UserAccessLevelReadDto : AuditableEntity
 
 
 public class UserAccessLevelCreateDto
-{
-    public int Id { get; set; }
-     
+{ 
 
     [MaxLength(20)]
     public string EmployeeCode { get; set; } = null!;

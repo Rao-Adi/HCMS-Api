@@ -37,10 +37,7 @@ public class DocumentAttributeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,12 +45,13 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-             
+
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
@@ -92,9 +90,9 @@ public class DocumentAttributeComponent
                 {input.IsMandatory}, 
                 TRUE,
                 FALSE,
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW()
             )
             RETURNING Id;";
@@ -154,10 +152,11 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -174,7 +173,9 @@ public class DocumentAttributeComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentAttributes
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -297,10 +298,8 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId); 
 
 
             var query = $@"SELECT 
@@ -563,10 +562,11 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -590,7 +590,7 @@ public class DocumentAttributeComponent
                 IsMandatory = '{input.IsMandatory}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

@@ -3,8 +3,7 @@ using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
-using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.DataAccess; 
 using HCMS_Api.Components.DMS.Common.Models.Departments;
 using System.Data;
 
@@ -38,10 +37,7 @@ public class DepartmentComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -49,10 +45,11 @@ public class DepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // 🔒 Validation
             if (string.IsNullOrWhiteSpace(input.Name))
@@ -137,9 +134,9 @@ public class DepartmentComponent
                         TRUE,
                         FALSE,
                         NOW(),
-                        '{userId.Replace("'", "''")}',
+                        '{empCode.Replace("'", "''")}',
                         NOW(),
-                        '{userId.Replace("'", "''")}'
+                        '{empCode.Replace("'", "''")}'
                     )
                     RETURNING Id;";
 
@@ -190,10 +187,11 @@ public class DepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -210,7 +208,9 @@ public class DepartmentComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Departments
-                SET IsDeleted = TRUE
+                SET IsDeleted = TRUE,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -454,10 +454,11 @@ public class DepartmentComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
@@ -518,7 +519,7 @@ public class DepartmentComponent
                     Name = '{input.Name.Replace("'", "''")}',
                     DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
                     LastModifiedAt = NOW(),
-                    LastModifiedBy = '{userId.Replace("'", "''")}'
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

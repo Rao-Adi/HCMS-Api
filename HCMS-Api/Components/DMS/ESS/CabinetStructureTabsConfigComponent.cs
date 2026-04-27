@@ -48,10 +48,11 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check duplicate by ID OR Name
             string checkQuery = $@"
@@ -85,9 +86,9 @@ public class CabinetStructureTabsConfigComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -133,10 +134,11 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -154,6 +156,8 @@ public class CabinetStructureTabsConfigComponent
             string deleteQuery = $@"
                 UPDATE CabinetStructureTabsConfig
                 SET IsDeleted = False
+                    , LastModifiedAt = NOW()
+                    , LastModifiedBy = '{empCode.Replace("'", "''")}'    
                 WHERE ID = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -335,10 +339,11 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             int finalId;
             // 1️ Check existence ONLY if Id > 0
@@ -375,9 +380,9 @@ public class CabinetStructureTabsConfigComponent
                             TRUE,
                             FALSE,
                             NOW(),
-                            '{userId.Replace("'", "''")}',
+                            '{empCode.Replace("'", "''")}',
                             NOW(),
-                            '{userId.Replace("'", "''")}'
+                            '{empCode.Replace("'", "''")}'
                         )
                         RETURNING Id;";
 
@@ -392,7 +397,7 @@ public class CabinetStructureTabsConfigComponent
                             Name = '{input.Name.Replace("'", "''")}', 
                             IsActive = {(input.IsActive ? "TRUE" : "FALSE")}, 
                             LastModifiedAt = NOW(),
-                            LastModifiedBy = '{userId.Replace("'", "''")}' 
+                            LastModifiedBy = '{empCode.Replace("'", "''")}' 
                         WHERE ID = '{input.Id}'";
 
                 bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -432,104 +437,8 @@ public class CabinetStructureTabsConfigComponent
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
+            }; 
 
-
-            //if (input.Id < 0)
-            //    throw new CustomException("Invalid Id.", 200);
-
-            //// Check existence (ID is VARCHAR → must be quoted)
-            //string checkQuery = $@"
-            //SELECT COUNT(1)
-            //FROM CabinetStructureTabsConfig
-            //WHERE ID = '{input.Id}'
-            //  AND IsDeleted = FALSE";
-
-            //int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            //if (exists == 0)
-            //{
-            //    string insertQuery = $@"
-            //        INSERT INTO CabinetStructureTabsConfig
-            //        (   
-            //            CompanyId,
-            //            Name,
-            //            IsActive,
-            //            IsDeleted,
-            //            CreatedAt,
-            //            CreatedBy,
-            //            LastModifiedAt,
-            //            LastModifiedBy
-            //        )
-            //        VALUES
-            //        ( 
-            //            '{input.CompanyId}',
-            //            '{input.Name.Replace("'", "''")}',
-            //            TRUE,
-            //            FALSE,
-            //            NOW(),
-            //            '{userId.Replace("'", "''")}',
-            //            NOW(),
-            //            '{userId.Replace("'", "''")}'
-            //        )
-            //        RETURNING Id;";
-
-            //    int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
-
-            //    // Fetch inserted record
-            //    selectQuery = $@"
-            //            SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
-            //                   FROM CabinetStructureTabsConfig cst
-            //                   LEFT JOIN Companies c
-            //                   ON cst.CompanyId = c.Id
-            //            WHERE cst.Id = {newId}";
-
-            //    DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
-            //}
-
-            //// Update (PostgreSQL boolean + timestamp)
-            //string updateQuery = $@"
-            //UPDATE CabinetStructureTabsConfig
-            //SET 
-            //    Name = '{input.Name.Replace("'", "''")}',
-            //    IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
-            //    LastModifiedAt = NOW(),
-            //    LastModifiedBy = '{userId.Replace("'", "''")}'
-            //WHERE ID = '{input.Id}'";
-
-            //bool updated = _common.ExecuteNonQuery(updateQuery);
-
-            //if (!updated)
-            //    throw new Exception("Update failed");
-
-            //// Return updated record
-            //string selectQuery = $@"
-            //SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
-            //            FROM CabinetStructureTabsConfig cst
-            //            LEFT JOIN Companies c
-            //                   ON cst.CompanyId = c.Id
-            //WHERE cst.ID = '{input.Id}'";
-
-            //DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
-
-            //if (dt == null || dt.Rows.Count == 0)
-            //    throw new Exception("Failed to fetch updated Id");
-
-            //DataRow row = dt.Rows[0];
-
-            //return new CabinetStructureTabsConfigReadDto
-            //{
-            //    Id = row.Field<int>("ID"),
-            //    CompanyId = row.Field<Int64>("CompanyId"),
-            //    Company = row.Field<string>("Company"),
-            //    Name = row.Field<string>("Name"),
-            //    IsDeleted = row.Field<bool>("IsDeleted"),
-            //    IsActive = row.Field<bool>("IsActive"),
-            //    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-            //    CreatedBy = row.Field<string>("CreatedBy"),
-            //    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-            //    LastModifiedBy = row.Field<string>("LastModifiedBy")
-            //};
         }
         catch
         {

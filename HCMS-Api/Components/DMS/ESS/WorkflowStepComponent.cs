@@ -38,10 +38,7 @@ public class WorkflowStepComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
      
 
@@ -49,6 +46,12 @@ public class WorkflowStepComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -64,7 +67,9 @@ public class WorkflowStepComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE WorkflowStepDefinitions
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -657,9 +662,9 @@ public class WorkflowStepComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
+            int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
@@ -751,9 +756,7 @@ public class WorkflowStepComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId); 
+            int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
@@ -1112,11 +1115,7 @@ public class WorkflowStepComponent
             string businessDomainCode)
     {
 
-        var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
-
-
+        
         //-----------------------------------------
         // 1️⃣ Find Policy
         //-----------------------------------------

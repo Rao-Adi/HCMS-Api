@@ -44,9 +44,7 @@ public class RoleReadDto : AuditableEntity
 
 
 public class RoleCreateDto
-{ 
-    public int Id { get; set; }
-
+{  
     // 🔑 Tenant
     public Int64 CompanyId { get; set; } 
 

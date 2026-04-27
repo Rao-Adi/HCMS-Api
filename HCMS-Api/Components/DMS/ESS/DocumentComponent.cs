@@ -48,10 +48,7 @@ public class DocumentComponent
         _common = common;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
-        _workflowStepComponent = workflowStepComponent;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _workflowStepComponent = workflowStepComponent; 
     }
 
 
@@ -71,9 +68,7 @@ public class DocumentComponent
 
         // 1️⃣ Extract userId
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
+        var clientIp = _clientContextService.GetClientIP(); 
         int CompanyId = int.Parse(_CompanyId);
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -631,9 +626,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());

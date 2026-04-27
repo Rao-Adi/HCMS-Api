@@ -37,10 +37,7 @@ public class DesignationComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -50,9 +47,12 @@ public class DesignationComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Designation code is required.", 400);
 
@@ -91,9 +91,9 @@ public class DesignationComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -139,9 +139,11 @@ public class DesignationComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -158,7 +160,9 @@ public class DesignationComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Designations
-                SET IsDeleted = False
+                SET IsDeleted = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Code = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -344,9 +348,12 @@ public class DesignationComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid division code.", 200);
 
@@ -369,7 +376,7 @@ public class DesignationComponent
                 Name = '{input.Name.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

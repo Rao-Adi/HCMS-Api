@@ -37,9 +37,7 @@ public class DashboardComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -63,7 +61,7 @@ public class DashboardComponent
                     (SELECT COUNT(1) FROM DocumentTraining tr JOIN Documents doc ON tr.DocumentId = doc.Id 
                         WHERE doc.CompanyId = @CompanyId AND tr.ReadyForAuthorization = TRUE AND tr.IsActive = TRUE) AS PendingAuthorizations;";
             
-            var summary = await _common.QueryFirstOrDefaultAsync<DashboardSummaryDto>(summaryQuery, new { CompanyId = CompanyId, UserId = userId, EmployeeCode = empCode });
+            var summary = await _common.QueryFirstOrDefaultAsync<DashboardSummaryDto>(summaryQuery, new { CompanyId = CompanyId, UserId = empCode, EmployeeCode = empCode });
             if (summary != null)
             {
                 dashboardData.Summary = summary;

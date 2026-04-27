@@ -37,10 +37,7 @@ public class DocumentVersionComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,9 +45,11 @@ public class DocumentVersionComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.DocumentId < 0)
                 throw new CustomException("Document Version Id is required.", 400);
@@ -91,7 +90,7 @@ public class DocumentVersionComponent
                 '{input.ChangeDescription}',
                 TRUE,
                 FALSE,
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW()
             )
             RETURNING Id;";
@@ -139,9 +138,11 @@ public class DocumentVersionComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -158,7 +159,9 @@ public class DocumentVersionComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentVersions
-                SET IsDeleted = False
+                SET IsDeleted = True, 
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE DocumentId = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -338,10 +341,11 @@ public class DocumentVersionComponent
     {
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.DocumentId < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -365,7 +369,7 @@ public class DocumentVersionComponent
                 Version = '{input.Version.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE DocumentId = '{input.DocumentId}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

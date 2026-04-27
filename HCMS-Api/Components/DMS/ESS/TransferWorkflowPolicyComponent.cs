@@ -37,10 +37,7 @@ public class TransferWorkflowPolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -50,9 +47,9 @@ public class TransferWorkflowPolicyComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id < 0)
                 throw new CustomException("TransferWorkflowPolicy is required.", 400);
@@ -92,9 +89,9 @@ public class TransferWorkflowPolicyComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -148,9 +145,9 @@ public class TransferWorkflowPolicyComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -167,7 +164,9 @@ public class TransferWorkflowPolicyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE TransferWorkflowPolicies
-                SET IsDeleted = TRUE
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE DivisionCode = '{code?.Replace("'", "''")}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -182,13 +181,7 @@ public class TransferWorkflowPolicyComponent
     public async Task<PaginationResult<TransferWorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
-        {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-            int CompanyId = int.Parse(_CompanyId);
-
+        { 
             var whereClause = @"
                 WHERE t.IsDeleted = False 
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
@@ -291,10 +284,7 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
             int CompanyId = int.Parse(_CompanyId);
 
             string query = $@"
@@ -347,9 +337,9 @@ public class TransferWorkflowPolicyComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
             int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id <= 0)
                 throw new CustomException("Invalid policy Id.", 400);
@@ -388,7 +378,7 @@ public class TransferWorkflowPolicyComponent
                 ApprovalUserId = {input.ApprovalUserId},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

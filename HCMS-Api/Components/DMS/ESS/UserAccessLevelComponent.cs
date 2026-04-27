@@ -37,10 +37,7 @@ public class UserAccessLevelComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,27 +45,12 @@ public class UserAccessLevelComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-
-            if (input.Id < 0)
-                throw new CustomException("UserAccessLevel Id is required.", 400);
-
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM UserAccessLevels
-            WHERE (Id = '{input.Id}' 
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("UserAccessLevel already exists", 409);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()); 
              
-
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -99,9 +81,9 @@ public class UserAccessLevelComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -174,10 +156,11 @@ public class UserAccessLevelComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence
             string checkQuery = $@"
@@ -194,7 +177,10 @@ public class UserAccessLevelComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE UserAccessLevels
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -482,10 +468,11 @@ public class UserAccessLevelComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
@@ -494,7 +481,7 @@ public class UserAccessLevelComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -515,7 +502,7 @@ public class UserAccessLevelComponent
                 DocumentTypeCode = '{input.DocumentTypeCode}',  
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

@@ -416,6 +416,8 @@ public class DocumentRequestDetailsDto
     public string StatusUpdatedOn { get; set; }
     // wes.IsActive
     public bool IsActive { get; set; }
+    public string CreatedByName { get; set; }
+    public string LastModifiedByName { get; set; }
 
 }
 
