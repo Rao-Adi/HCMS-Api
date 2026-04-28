@@ -1841,7 +1841,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutionSteps
-                SET Decision = 'Rework',
+                SET Decision = 'Reworked',
                     Observation = @Comments,
                     ActionAt = NOW(),
                     IsActive = FALSE

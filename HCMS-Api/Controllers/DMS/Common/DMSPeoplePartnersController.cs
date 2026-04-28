@@ -262,7 +262,68 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    [HttpGet("get-all-divisions")]
+    public async Task<IActionResult> GetAllDivisionList()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IQueryable<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetDivisionListAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
+    [HttpGet("get-all-departments")]
+    public async Task<IActionResult> GetAllDepartmentList()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IQueryable<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetDepartmentListAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-all-subdepartments")]
+    public async Task<IActionResult> GetAllSubDepartmentList()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IQueryable<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetSubDepartmentListAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpGet("get-all-employee-list")]
     public async Task<IActionResult> GetAllSelectList()

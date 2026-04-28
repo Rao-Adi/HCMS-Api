@@ -996,11 +996,7 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-
-
-            //get Employee details by Id
-            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
-
+             
             var whereClause = "WHERE 1=1";
 
             // Search
@@ -1056,7 +1052,7 @@ public class DocumentRequestComponent
             var queryParams = new
             {
                 CompanyId,
-                UserId = empDetail?.empcode,
+                UserId = empCode,
                 input.RequestStatus,
                 input.DivisionCode,
                 input.DepartmentCode,

@@ -477,4 +477,91 @@ public class PeoplePartnersComponent
             throw;
         }
     }
+
+
+    public async Task<IQueryable<SelectList2Dto>> GetDivisionListAsync()
+    {
+        try
+        {
+
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
+            string query = $@"SELECT sdlid, Name from tblsetupsdetail where smsid= 70 AND CompanyId = '{CompanyId}' AND Active =TRUE";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("sdlid"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<IQueryable<SelectList2Dto>> GetDepartmentListAsync()
+    {
+        try
+        {
+
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
+            string query = $@"SELECT sdlid, Name from tblsetupsdetail where smsid = 84 and CompanyId = '{CompanyId}' AND Active =TRUE";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("sdlid"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<IQueryable<SelectList2Dto>> GetSubDepartmentListAsync()
+    {
+        try
+        {
+
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+
+            string query = $@"select DISTINCT a.dsgid, b.name from public.tblempjobprofile a
+                    left join public.tblsetupsdetail b
+                    on a.dsgid= b.sdlid
+                    where b.smsid = 3 AND a.CompanyId = '{CompanyId}' AND a.Active =TRUE";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("dsgid"),
+                    Value = row.Field<string>("name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
 }

@@ -1174,6 +1174,53 @@ namespace HCMS_Api.Controllers.HCMS.Common
         }
 
 
+        [HttpPost("SaveApplicationAccessLog")]
+        public async Task<IActionResult> SaveAccessLog([FromBody] LogUserActivityRequest dto)
+        {
+            try
+            {
+                var clientIP = _clientContextService.GetClientIP();
+
+                if (!string.IsNullOrEmpty(clientIP))
+                {
+                    UserInfo? objuser = _utilities.GetCurrentUserMap(clientIP);
+
+                    // Check if user exists and has a valid ID before doing ANYTHING else
+                    if (objuser != null && !string.IsNullOrWhiteSpace(objuser.UserID))
+                    {
+                        // 1. Extract context using your utility logic
+                        string companyIdStr = _utilities.GetCompanyId(clientIP);
+                        string entTerminalIP = _utilities.GetTerminalIP();
+                        string terminalId = _utilities.GetTerminalId();
+
+                        // 2. Populate the DTO with the extracted values
+                        dto.UserId = objuser.UserID;
+                        dto.UserEmpId = objuser.UserEmpId;
+                        dto.LoginCompanyId = int.TryParse(companyIdStr, out int cId) ? cId : 0;
+                        dto.EntTerminalIP = entTerminalIP;
+                        dto.EntTerminal = terminalId;
+                        dto.AppCode = dto.AppCode;
+
+                        // 3. 🔥 MOVE THIS INSIDE: Only call the Service if validation passed
+                        await _loginComponent.SaveApplicationAccessLogAsync(dto);
+
+                        return Ok(new { success = true, message = "Log inserted" });
+                    }
+                }
+
+                // If we reach here, it means either IP was missing, User was null, or UserId was empty.
+                // We return Ok so the Angular app doesn't show an error, but we skip the DB insert.
+                return Ok(new { success = false, message = "Log skipped: User context missing" });
+            }
+            catch (Exception ex)
+            {
+                //_logger.LogError($"Internal server error during access logging: {ex}");
+                // Log the actual exception (ex) to your server log here
+                return StatusCode(500, "Internal server error during access logging");
+            }
+        }
+
+
         public class RefreshTokenRequest
         {
             public string UpdatedFcmToken { get; set; }
