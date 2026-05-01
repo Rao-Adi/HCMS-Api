@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿using Dapper;
+﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -6,8 +6,8 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
-using HCMS_Api.Components.DMS.Common.Models.Enums; 
-using System.Data; 
+using HCMS_Api.Components.DMS.Common.Models.Enums;
+using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -48,7 +48,7 @@ public class DocumentComponent
         _common = common;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
-        _workflowStepComponent = workflowStepComponent; 
+        _workflowStepComponent = workflowStepComponent;
     }
 
 
@@ -68,7 +68,7 @@ public class DocumentComponent
 
         // 1️⃣ Extract userId
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        var clientIp = _clientContextService.GetClientIP(); 
+        var clientIp = _clientContextService.GetClientIP();
         int CompanyId = int.Parse(_CompanyId);
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -230,7 +230,7 @@ public class DocumentComponent
         }
     }
 
-     
+
     public async Task<PaginationResult<DocumentReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
@@ -618,7 +618,7 @@ public class DocumentComponent
         }
     }
 
-     
+
     public async Task<bool> SubmitDocumentAsync(SubmitDocument input)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -626,7 +626,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -706,7 +706,7 @@ public class DocumentComponent
             // 4️⃣ Promote Version (Rework Case)
             //-------------------------------------------------
 
-            await PromoteVersionAfterReworkAsync(CompanyId, input.DocumentId, empCode);
+            await PromoteVersionAfterReworkAsync(CompanyId, input.DocumentId, empCode, transaction);
 
             //-------------------------------------------------
             // 5️⃣ Create Workflow Execution
@@ -848,7 +848,7 @@ public class DocumentComponent
             if (approvers.Any())
             {
                 var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle }, { "V#", docVersion } };
-                foreach(var approver in approvers)
+                foreach (var approver in approvers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders);
                 }
@@ -979,28 +979,29 @@ public class DocumentComponent
         }
     }
 
-    public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string empCode)
+    public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
-
+            int CompanyId = int.Parse(_CompanyId);
             //-----------------------------------------
             // 1️⃣ Check Last State Was Rework Draft
-            //-----------------------------------------
-            var wasReworked = await _common.QuerySingleAsync<int>(@"
+            //----------------------------------------- 
+            var wasReworked = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT COUNT(*)
-                FROM DocumentStateHistory
-                WHERE CompanyId = @CompanyId
-                  AND DocumentId = @DocumentId
-                  AND ToStateId = 1
-                  AND WorkflowExecutionId IS NOT NULL
-                ", new { companyId, documentId });
+                        FROM DocumentStateHistory
+                        WHERE CompanyId = @CompanyId
+                          AND DocumentId = @DocumentId
+                          AND ToStateId = 1
+                          AND WorkflowExecutionId IS NOT NULL;",
+            new { companyId, documentId }, transaction);
 
-            if (wasReworked == 0)
+
+            if (wasReworked.Count() == 0)
                 return;
 
             //-----------------------------------------
@@ -1010,12 +1011,11 @@ public class DocumentComponent
                 SELECT *
                 FROM DocumentVersions
                 WHERE CompanyId = @CompanyId
-                  AND DocumentId = @DocumentId
-                  AND Content IS NOT NULL
+                  AND DocumentId = @DocumentId 
                   AND IsActive = TRUE
                 ORDER BY CreatedAt DESC
                 LIMIT 1",
-            new { companyId, documentId });
+            new { companyId, documentId }, transaction);
 
             if (current == null)
                 throw new Exception("No valid document content found to promote.");
@@ -1029,24 +1029,23 @@ public class DocumentComponent
             // 4️⃣ Insert New Version Row
             //-----------------------------------------
             await _common.ExecuteAsync(@"
-                INSERT INTO DocumentVersions
-                (
-                    CompanyId, DocumentId, Version, VersionType, Content,
-                    ChangeDescription, CreatedBy
-                )
-                VALUES
-                (
-                    @CompanyId, @DocumentId, @Version, 1, @Content,
-                    'Version promoted after rework', @empCode
-                )
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, Content, CreatedBy, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, '0.1', 1, @Content, @CreatedBy, @LastModifiedBy
+            )
             ", new
             {
                 companyId,
                 documentId,
-                Version = newVersion,
                 Content = current.Content,
-                empCode
-            });
+                CreatedBy = empCode,
+                LastModifiedBy = empCode
+            }, transaction);
+
         }
         catch (Exception)
         {
@@ -1175,11 +1174,16 @@ public class DocumentComponent
                 }, transaction);
             }
 
+            if (!nextStepApprovers.Any())
+            {
+                await HandlePostApprovalAsync(CompanyId, input.DocumentId, empCode, transaction);
+            }
+
             await transaction.CommitAsync();
 
             if (nextStepApprovers.Any() && docInfo != null)
             {
-                foreach(var approver in nextStepApprovers)
+                foreach (var approver in nextStepApprovers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders);
                 }
@@ -1229,13 +1233,11 @@ public class DocumentComponent
             ↓
         AUTO CREATE TRAINING MATRIX ✅
      */
-    public async Task<bool> MakeDocumentEffectiveAsync(int companyId, int documentId, string empCode)
+    public async Task<bool> MakeDocumentEffectiveAsync(int companyId, int documentId, string empCode, IDbTransaction transaction = null)
     {
-        await using var transaction = await _common.BeginTransactionAsync();
-
         try
         {
-            var clientIp = _clientContextService.GetClientIP();
+            //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
 
@@ -1247,8 +1249,6 @@ public class DocumentComponent
                 SET VersionType = 2
                 WHERE CompanyId = @CompanyId
                   AND DocumentId = @DocumentId
-                ORDER BY CreatedAt DESC
-                LIMIT 1
             ", new { companyId, documentId }, transaction);
 
             //-----------------------------------------
@@ -1263,47 +1263,25 @@ public class DocumentComponent
                 (
                     @CompanyId, @DocumentId, 3, 4, @UserId
                 )",
-                new { companyId, documentId, empCode }, transaction);
+            new { CompanyId = companyId, DocumentId = documentId, UserId = empCode }, transaction);
 
 
-            //-----------------------------------------
-            // 3️⃣ CREATE TRAINING MATRIX (UC-22)
-            //-----------------------------------------
-
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentUserTraining
-                (
-                    CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, CreatedBy, LastModifiedBy
-                )
-                SELECT
-                    CompanyId,
-                    DocumentId,
-                    EmployeeCode,
-                    1,   -- e.g. Read & Acknowledge
-                    0,   -- Pending
-                    @UserId,
-                    @UserId
-                FROM DocumentUserDistributions
-                WHERE CompanyId = @CompanyId
-                  AND DocumentId = @DocumentId
-                  AND IsActive = TRUE
-                  AND IsDeleted = FALSE;
-            ", new { companyId, documentId, empCode }, transaction);
-
-
-            await transaction.CommitAsync();
+            //if (isLocalTransaction)
+            //{
+            //    await ((System.Data.Common.DbTransaction)transaction).CommitAsync();
+            //}
 
             //-----------------------------------------
-            // 4️⃣ Notify Users AFTER COMMIT
+            // 4️⃣ Notify Users
             //-----------------------------------------
-            await NotifyPendingUsersAsync(companyId, documentId);
+            await NotifyPendingUsersAsync(companyId, documentId, transaction);
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.VersionType = 2
                 WHERE d.Id = @DocumentId
-                ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = documentId });
+                ORDER BY dv.CreatedAt DESC LIMIT 1", new { DocumentId = documentId }, transaction);
 
             string initiatorId = "";
             if (docInfo != null && docInfo!.createdby != null)
@@ -1322,13 +1300,23 @@ public class DocumentComponent
         }
         catch
         {
-            await transaction.RollbackAsync();
+            //if (isLocalTransaction)
+            {
+                await ((System.Data.Common.DbTransaction)transaction).RollbackAsync();
+            }
             throw;
         }
+        //finally
+        //{
+        //    //if (isLocalTransaction && transaction != null)
+        //    {
+        //        transaction.Dispose();
+        //    }
+        //}
     }
 
-    public async Task NotifyPendingUsersAsync(int companyId, int documentId)
-    { 
+    public async Task NotifyPendingUsersAsync(int companyId, int documentId, IDbTransaction tx = null)
+    {
 
         var users = await _common.QueryAsync<dynamic>(@"
             SELECT 
@@ -1343,7 +1331,7 @@ public class DocumentComponent
               AND dut.TrainingStatus = 0
               AND dut.IsActive = TRUE
               AND dut.IsDeleted = FALSE;
-            ", new { companyId, documentId });
+            ", new { companyId, documentId }, tx);
 
         foreach (var user in users)
         {
@@ -1368,7 +1356,7 @@ public class DocumentComponent
                 Message = $"Training is required for Document: {user.title}",
                 Type = 2, // e.g. Training Notification
                 DocumentId = documentId
-            });
+            }, tx);
 
             //-----------------------------------------
             // 2️⃣ SEND EMAIL
@@ -1461,218 +1449,63 @@ public class DocumentComponent
         }
     }
 
-    private async Task HandlePostApprovalAsync(int companyId, int documentId, string userId)
+    private async Task HandlePostApprovalAsync(int companyId, int documentId, string userId, IDbTransaction tx)
     {
 
-        /*
-         Excellent — this is the last critical orchestration point in your Document Lifecycle.
-
-            Because:
-
-            “Approved” ≠ “Effective”
-            in Enterprise DMS
-
-            🧠 FIRST — WHAT DOES "Effective" MEAN?
-
-            A document becomes Effective when:
-
-            It is legally enforceable inside the organization
-            and employees must follow it
-
-            Auditor language:
-
-            “From what date was SOP-001 mandatory for staff?”
-
-            That date = Effective Date
-
-            So:
-
-            Approved = Management accepted content
-            Effective = Organization must comply
-            🟩 WHEN SHOULD MakeDocumentEffectiveAsync() BE CALLED?
-
-            That depends on your:
-
-            DocumentStateTransitions
-            RequiresTraining
-            RequiresAuthorization
-
-            You already have this table 👇
-            (Ref: 
-
-            currenttables_for_gpt
-
-            )
-
-            🎯 USE THIS RULE ENGINE
-
-            After:
-
-            ApproveDocumentAsync()
-
-            DO NOT immediately call:
-
-            MakeDocumentEffectiveAsync()
-
-            Instead:
-
-            STEP 1 — CHECK TRANSITION RULE
-
-            After inserting:
-
-            PendingApproval → Approved
-
-            Run:
-
-            SELECT 
-                RequiresTraining,
-                RequiresAuthorization
-            FROM DocumentStateTransitions
-            WHERE FromStateId = 3 -- Approved
-            🟦 SCENARIO A — NO TRAINING, NO AUTHORIZATION
-            RequiresTraining = FALSE
-            RequiresAuthorization = FALSE
-
-            👉 Call internally:
-
-            await MakeDocumentEffectiveAsync(companyId, documentId, userId);
-
-            Because document is ready for enforcement.
-
-            🟨 SCENARIO B — TRAINING REQUIRED
-            RequiresTraining = TRUE
-
-            DO NOT call Effective yet ❌
-
-            Instead:
-
-            Insert:
-
-            Approved → TrainingPending
-
-            Create:
-
-            DocumentTraining
-            TrainingStatus = Pending
-
-            Now wait for:
-
-            Training Completion Event
-
-            🔁 AFTER TRAINING COMPLETED
-
-            Call internally:
-
-            MakeDocumentEffectiveAsync()
-            🟧 SCENARIO C — AUTHORIZATION REQUIRED
-            RequiresAuthorization = TRUE
-
-            DO NOT call Effective ❌
-
-            Instead:
-
-            Insert:
-
-            Approved → AuthorizationPending
-
-            Start Authorization Workflow
-
-            Wait for:
-
-            Authorization Workflow Approval
-
-            🔁 AFTER AUTHORIZATION APPROVED
-
-            Call internally:
-
-            MakeDocumentEffectiveAsync()
-            🟥 SCENARIO D — BOTH REQUIRED
-            RequiresTraining = TRUE
-            RequiresAuthorization = TRUE
-
-            Sequence becomes:
-
-            Approved
-               ↓
-            TrainingPending
-               ↓
-            TrainingCompleted
-               ↓
-            AuthorizationPending
-               ↓
-            AuthorizationApproved
-               ↓
-            Effective  ← NOW call MakeDocumentEffectiveAsync()
-            🚀 WHERE EXACTLY TO CALL IT?
-
-            Never from Controller ❌
-            Always from:
-
-            Event	Call MakeEffective?
-            ApproveDocumentAsync	Maybe
-            TrainingCompletedAsync	Maybe
-            AuthorizationApprovedAsync	Yes
-            🧩 CLEAN ORCHESTRATION
-
-            Inside:
-
-            ApproveDocumentAsync()
-
-            Add:
-
-            await HandlePostApprovalAsync(companyId, documentId, userId);
-
-
-
-            🏁 FINAL ANSWER
-
-            Use:
-
-            MakeDocumentEffectiveAsync()
-
-            ONLY when:
-
-            ✔ Document Approved
-            ✔ Training Completed (if required)
-            ✔ Authorization Completed (if required)
-
-            Then:
-
-            Approved / AuthorizationApproved → Effective
-
-            That is when document becomes legally active.
-
-         */
-
-        //var clientIp = _clientContextService.GetClientIP();
-        //var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
-
-        var rule = await _common.QuerySingleAsync<dynamic>(@"
-            SELECT RequiresTraining, RequiresAuthorization
-            FROM DocumentStateTransitions
-            WHERE FromStateId = 3
-            LIMIT 1
-            ");
-
-        if (!rule.RequiresTraining && !rule.RequiresAuthorization)
+        try
         {
-            await MakeDocumentEffectiveAsync(companyId, documentId, userId);
-            return;
+
+            // 1. Fetch document type and training policy rules
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT doc.DocumentTypeCode, tp.TrainingRequired, tp.MinimumScore
+                FROM Documents doc
+                LEFT JOIN TrainingPolicies tp 
+                    ON tp.DocumentTypeCode = doc.DocumentTypeCode 
+                   AND tp.CompanyId = doc.CompanyId 
+                   AND tp.IsActive = TRUE
+                WHERE doc.Id = @DocumentId;", new { DocumentId = documentId }, tx);
+
+            bool requiresTraining = docInfo != null && docInfo!.trainingrequired == true;
+
+            if (!requiresTraining)
+            {
+                await MakeDocumentEffectiveAsync(companyId, documentId, userId, tx);
+            }
+            else
+            {
+
+                // 2. If Training is required, Transition to TRAINING_PENDING
+                var stateId = await _common.QueryFirstOrDefaultAsync<int?>(@"SELECT Id FROM DocumentStates WHERE Code = 'TRAINING_PENDING'", tx);
+                int trainingPendingStateId = stateId ?? 6;
+
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, 3, @ToStateId, @UserId, NOW());",
+                    new { CompanyId = companyId, DocumentId = documentId, ToStateId = trainingPendingStateId, UserId = userId }, tx);
+
+                // 3. Create the Parent Training Record
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentTraining
+                    (CompanyId, DocumentId, TrainingMode,TrainingStatus,TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                    VALUES
+                    (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+
+                // 4. Matrix the Training Requirements for Users
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentUserTraining
+                    (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL,  AssessmentScore,ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                    SELECT
+                        CompanyId, DocumentId, EmployeeCode, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                    FROM DocumentUserDistributions
+                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+            }
+             
         }
-
-        if (rule.RequiresTraining)
+        catch (Exception ex)
         {
-            // Move → TrainingPending
-            // Insert DocumentTraining
-            return;
-        }
-
-        if (rule.RequiresAuthorization)
-        {
-            // Move → AuthorizationPending
-            // Start Workflow
-            return;
+            throw ex;
         }
     }
 
@@ -1683,9 +1516,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            var clientIp = _clientContextService.GetClientIP(); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1708,7 +1539,7 @@ public class DocumentComponent
                 throw new Exception("No active approval step found.");
 
             // Fetch document info for notifications
-           string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
+            string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
@@ -2247,16 +2078,14 @@ public class DocumentComponent
     }
 
 
-     
+
 
     public async Task<PaginationResult<dynamic>> GetPendingAuthorizationsAsync(GetPendingAuthorization input)
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId);
 
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
@@ -2269,7 +2098,7 @@ public class DocumentComponent
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
                       ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) IN ('APPROVED', 'TRAINING_PENDING')
+                  ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
                   AND (
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
                   )";
@@ -2305,33 +2134,24 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT
-                    doc.Id AS DocumentId,
-                    doc.DocumentNumber,
-                    doc.Title,
-                    dt.Name AS DocumentType,
-                    dt.Code AS DocumentTypeCode,
+                SELECT Distinct
+                    doc.*, 
+                    dv.Version,
+                    tr.TrainingMode,
+                    tr.TrainingProofURL,
+                    doc.CreatedAt,
                     dv.Version,
                     tr.TrainingProofURL,
                     LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
-                    doc.CreatedAt, div.Name AS DivisionName,
-                    dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain
+                    doc.CreatedAt,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
 
-                FROM Documents doc 
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
-                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                FROM VW_Documents doc   
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy
+                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy 
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -2525,6 +2345,103 @@ public class DocumentComponent
         }
     }
 
+    public async Task<PaginationResult<dynamic>> GetDocumentsPendingTrainingAcknowledgmentAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  --AND doc.CreatedBy = @UserId
+                  AND tr.ReadyForAuthorization = FALSE
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      SELECT ds.Code 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                  ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
+                  AND tr.ReadyForAuthorization = FALSE";
+
+            if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
+            {
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP")
+                {
+                    whereClause += " AND UPPER(dt.Code) = 'SOP'";
+                }
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
+                {
+                    whereClause += " AND UPPER(dt.Code) != 'SOP'";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT
+                    doc.*,
+                    dt.Name AS DocumentType,
+                    dt.Code AS DocumentTypeCode,
+                    dv.Version,
+                    tr.TrainingMode,
+                    tr.TrainingProofURL,
+                    doc.CreatedAt,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
+                FROM Vw_Documents doc 
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM Documents doc 
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                {whereClause};";
+
+            var queryParams = new { CompanyId = CompanyId, UserId = empCode };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 }
 
 public class AuthorizeDocumentDto
@@ -2541,4 +2458,9 @@ public class GetPendingAuthorization : TableFiltersDto
 public class GetAuthorizedDocumentsDto : TableFiltersDto
 {
     public string UserId { get; set; }
+}
+
+public class GetDocumentsPendingTrainingDto : TableFiltersDto
+{
+    public string? DocumentCategoryFilter { get; set; }
 }

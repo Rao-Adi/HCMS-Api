@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -73,15 +73,10 @@ public class DocumentTrainingComponent
             (   CompanyId,
                 DocumentId,
                 TrainingMode,
-                DocumentId,
                 TrainingProofURL,
                 AssessmentScore,
                 ValidationStatus,
                 ReadyForAuthorization,
-                DocumentName, 
-                Justification, 
-                Status,  
-                CurrentStep,  
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -94,11 +89,10 @@ public class DocumentTrainingComponent
                 '{input.CompanyId}',
                 '{input.DocumentId}',
                 '{input.TrainingMode}',
-                '{input.DocumentId}',
                 '{input.TrainingProofURL}',
                 '{input.AssessmentScore}', 
                 '{input.ValidationStatus}', 
-                '{input.ReadyForAuthorization}', 
+                {(input.ReadyForAuthorization ? "TRUE" : "FALSE")}, 
                 TRUE,
                 FALSE,
                 NOW(),
@@ -115,7 +109,7 @@ public class DocumentTrainingComponent
             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
             FROM DocumentTraining dt
             LEFT JOIN Companies c
-            ON d.CompanyId = c.Id
+            ON dt.CompanyId = c.Id
             WHERE dt.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -327,7 +321,7 @@ public class DocumentTrainingComponent
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
+                        ON dt.CompanyId = c.Id
                 WHERE dt.Id = {id}
                   AND dt.IsActive = True
                   AND dt.IsDeleted = False";
@@ -416,7 +410,7 @@ public class DocumentTrainingComponent
                     SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM DocumentTraining dt
                     LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+                    ON dt.CompanyId = c.Id
             WHERE dt.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -517,16 +511,17 @@ public class DocumentTrainingComponent
                   AND CompanyId = @CompanyId
                   AND IsDeleted = FALSE";
             
-            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId), UserId = empCode }, tx);
 
             // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
             string stateQuery = @"
                 INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
                 SELECT @CompanyId, @DocumentId, 
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       @UserId, NOW(), 'Sent for Authorization'";
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
             
-            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId), UserId = empCode }, tx);
 
             await tx.CommitAsync();
             return true;

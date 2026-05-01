@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -18,19 +18,22 @@ public class DMSDocumentController : Controller
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
     private readonly DocumentComponent _documentComponent;
+    private readonly DocumentTrainingComponent _documentTrainingComponent;
 
     public DMSDocumentController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DocumentComponent documentComponent)
+     DocumentComponent documentComponent,
+     DocumentTrainingComponent documentTrainingComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
         _documentComponent = documentComponent;
+        _documentTrainingComponent = documentTrainingComponent;
     }
 
     [HttpPost("get-all-document")]
@@ -468,6 +471,33 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpPost("get-documents-pending-training")]
+    public async Task<IActionResult> GetDocumentsPendingTrainingAcknowledgmentAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsPendingTrainingAcknowledgmentAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("authorize-document-post-training")]
     public async Task<IActionResult> AuthorizeDocumentPostTraining([FromBody] AuthorizeDocumentDto input)
     {
@@ -486,6 +516,54 @@ public class DMSDocumentController : Controller
             _logger.LogError(ex, ex.Message);
             var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
             return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-training-assessment-details/{documentId}")]
+    public async Task<IActionResult> GetTrainingAssessmentDetailsAsync(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<TrainingAssessmentResultDto>()
+            {
+                Success = true,
+                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("acknowledge-training/{documentId}")]
+    public async Task<IActionResult> AcknowledgeAndSendForAuthorizationAsync(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentTrainingComponent.AcknowledgeAndSendForAuthorizationAsync(documentId),
+                Message = "SOP Training acknowledged and sent for Authorization.",
+                Code = 200
+            });
         }
         catch (Exception ex)
         {

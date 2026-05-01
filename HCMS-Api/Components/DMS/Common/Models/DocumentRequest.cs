@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common.Misc;
+﻿﻿﻿﻿using HCMS_Api.Common.Misc;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -477,6 +477,40 @@ public class UpdateDraftRequestDto
     public IFormFile? DraftFile { get; set; }
 }
 
+public class EffectiveDocumentDetailsDto : AuditableEntity
+{
+    public int Id { get; set; }
+    public int CompanyId { get; set; }
+    public string Company { get; set; }
+    public int DocumentId { get; set; }
+    public string DocumentNumber { get; set; }
+    public int RequestId { get; set; } 
+    public int ParentDocumentId { get; set; } 
+    public string DocumentName { get; set; }
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string DocumentType { get; set; }
+    public string DocumentTypeCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? NextReviewDate { get; set; } 
+    public string? DocumentURL { get; set; } 
+    public string? VersionContent { get; set; }
+    public string? Version { get; set; }
+    public string? VersionType { get; set; }
+    public string? ChangeDescription { get; set; } 
+    public string? CreatedByName { get; set; } 
+    public string? LastModifiedByName { get; set; } 
+     
+
+    // Lists to populate on the FrontEnd
+    public List<DistributionListReadDto> DistributionList { get; set; } = new List<DistributionListReadDto>();
+    public List<DocumentRequestUserDistribution> UserList { get; set; } = new List<DocumentRequestUserDistribution>();
+}
 
 public class SubmitDocumentRequestDto
 { 

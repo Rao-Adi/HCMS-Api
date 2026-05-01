@@ -568,7 +568,60 @@ public class DMSDocumentRequestController : Controller
     }
 
 
+    [HttpGet("get-effective-documents-details-by-id")]
+    public async Task<IActionResult> GetEffectiveDocumentDetailsForRevision(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<EffectiveDocumentDetailsDto>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetEffectiveDocumentDetailsForRevisionAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
+
+    [HttpPost("get-effective-documents-for-revision")]
+    public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     //[HttpPost("create-document-request")]
     //public async Task<IActionResult> Create([FromBody] CreateDocumentRequest2Dto input)
