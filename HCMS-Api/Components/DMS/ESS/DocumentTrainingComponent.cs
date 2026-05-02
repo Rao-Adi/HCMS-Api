@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -457,17 +457,44 @@ public class DocumentTrainingComponent
             string query = @"
                 SELECT 
                     LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
-                    u.empcode AS EmployeeCode,
+                    dut.EmployeeCode AS EmployeeCode,
                     dut.TrainingStatus,
                     dut.AssessmentScore,
-                    dut.TrainingProofUrl
+                    dut.TrainingProofUrl,
+                    r.name AS RoleName,
+                    desig.name AS Designation,
+                    div.name AS Division,
+                    dep.name AS Department,
+                    subd.name AS SubDepartment
                 FROM DocumentUserTraining dut
-                JOIN tblEmployee e ON e.empId = dut.EmployeeCode
+                
+                LEFT JOIN tblEmployee e 
+                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')
+                    
+                LEFT JOIN public.tblempjobprofile ejp 
+                    ON ejp.empid = e.empid 
+                    AND COALESCE(ejp.Active, TRUE) = TRUE
+                    
+                LEFT JOIN public.tblsetupsdetail r 
+                    ON r.sdlid = ejp.roleid
+                    
+                LEFT JOIN public.tblsetupsdetail desig 
+                    ON desig.sdlid = ejp.dsgid
+                    
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON div.sdlid = e.divid
+                    
+                LEFT JOIN public.tblsetupsdetail dep 
+                    ON dep.sdlid = e.mdptid
+                    
+                LEFT JOIN public.tblsetupsdetail subd 
+                    ON subd.sdlid = e.dptid
+                    
                 WHERE dut.DocumentId = @DocumentId 
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
 
-            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId })).ToList();
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId) })).ToList();
 
             var totalAssigned = userScores.Count;
             var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed
@@ -550,4 +577,9 @@ public class TrainingUserScoreDto
     public int TrainingStatus { get; set; }
     public decimal AssessmentScore { get; set; }
     public string TrainingProofUrl { get; set; } = string.Empty;
+    public string RoleName { get; set; } = string.Empty;
+    public string Designation { get; set; } = string.Empty;
+    public string Division { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+    public string SubDepartment { get; set; } = string.Empty;
 }

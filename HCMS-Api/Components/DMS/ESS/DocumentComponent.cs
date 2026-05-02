@@ -2087,9 +2087,11 @@ public class DocumentComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
             int CompanyId = int.Parse(_CompanyId);
 
+            string stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
+
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
-            var whereClause = @"
+            var whereClause = $@"
                 WHERE doc.CompanyId = @CompanyId 
                   AND doc.IsDeleted = FALSE
                   AND (
@@ -2098,7 +2100,7 @@ public class DocumentComponent
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
                       ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
+                  ) {stateFilter}
                   AND (
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
                   )";
@@ -2199,14 +2201,14 @@ public class DocumentComponent
             // 1. Update Document Effective Date
             // Depending on policy, you might set a future effective date here, 
             // but for immediate enforcement, NOW() is used.
-            await _common.ExecuteAsync(@"
-                UPDATE Documents 
-                SET 
-                    EffectiveDate = NOW(), 
-                    LastModifiedAt = NOW(), 
-                    LastModifiedBy = @empCode 
-                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-                new { input.DocumentId, CompanyId, empCode }, transaction);
+            //await _common.ExecuteAsync(@"
+            //    UPDATE Documents 
+            //    SET 
+            //        EffectiveDate = NOW(), 
+            //        LastModifiedAt = NOW(), 
+            //        LastModifiedBy = @empCode 
+            //    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            //    new { input.DocumentId, CompanyId, empCode }, transaction);
 
             // 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
             await _common.ExecuteAsync(@"
@@ -2239,8 +2241,16 @@ public class DocumentComponent
             await transaction.CommitAsync();
 
             // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
-            // Assuming RoleId for DCA is known or we look it up. Using a placeholder role fetch mechanism.
-            var dcaUsers = await _common.QueryAsync<string>(@"SELECT UserId FROM UserRoles r JOIN Roles rl ON r.RoleId = rl.Id WHERE rl.Name = 'DCA' AND r.CompanyId = @CompanyId", new { CompanyId });
+            var dcaUsers = await _common.QueryAsync<string>(@"
+                SELECT TRIM(e.empcode) 
+                FROM public.tblempjobprofile ejp 
+                INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
+                INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
+                WHERE sd.Name = 'DCA' 
+                  AND sd.smsid = 189 
+                  AND e.CompanyId = @CompanyId 
+                  AND COALESCE(e.Active, 1) = 1 
+                  AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId });
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
             var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
@@ -2453,6 +2463,7 @@ public class AuthorizeDocumentDto
 public class GetPendingAuthorization : TableFiltersDto
 {
     public string? DocumentCategoryFilter { get; set; }
+    public bool IsAuthorized { get; set; }
 }
 
 public class GetAuthorizedDocumentsDto : TableFiltersDto

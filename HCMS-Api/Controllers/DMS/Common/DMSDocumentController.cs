@@ -17,23 +17,20 @@ public class DMSDocumentController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DocumentComponent _documentComponent;
-    private readonly DocumentTrainingComponent _documentTrainingComponent;
+    private readonly DocumentComponent _documentComponent; 
 
     public DMSDocumentController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DocumentComponent documentComponent,
-     DocumentTrainingComponent documentTrainingComponent)
+     DocumentComponent documentComponent )
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _documentComponent = documentComponent;
-        _documentTrainingComponent = documentTrainingComponent;
+        _documentComponent = documentComponent; 
     }
 
     [HttpPost("get-all-document")]
@@ -524,54 +521,7 @@ public class DMSDocumentController : Controller
             return StatusCode(response.Code, response);
         }
     }
-
-    [HttpGet("get-training-assessment-details/{documentId}")]
-    public async Task<IActionResult> GetTrainingAssessmentDetailsAsync(int documentId)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<TrainingAssessmentResultDto>()
-            {
-                Success = true,
-                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
-
-    [HttpPost("acknowledge-training/{documentId}")]
-    public async Task<IActionResult> AcknowledgeAndSendForAuthorizationAsync(int documentId)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<bool>()
-            {
-                Success = true,
-                Data = await _documentTrainingComponent.AcknowledgeAndSendForAuthorizationAsync(documentId),
-                Message = "SOP Training acknowledged and sent for Authorization.",
-                Code = 200
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
+     
 
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
