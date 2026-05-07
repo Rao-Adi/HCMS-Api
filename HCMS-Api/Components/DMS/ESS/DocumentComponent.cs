@@ -1244,11 +1244,23 @@ public class DocumentComponent
             //-----------------------------------------
             // Activate Final Version
             //-----------------------------------------
+            
+            // 1. Archive previous effective versions (Critical for UC-22 Revisions)
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions 
+                SET VersionType = 3, 
+                    IsActive = FALSE 
+                WHERE DocumentId = @DocumentId 
+                  AND VersionType = 2 
+                  AND CompanyId = @CompanyId;", new { companyId, documentId }, transaction);
+                  
+            // 2. Promote the current Draft version to Effective
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions
                 SET VersionType = 2
                 WHERE CompanyId = @CompanyId
                   AND DocumentId = @DocumentId
+                  AND VersionType = 1
             ", new { companyId, documentId }, transaction);
 
             //-----------------------------------------
@@ -1271,10 +1283,6 @@ public class DocumentComponent
             //    await ((System.Data.Common.DbTransaction)transaction).CommitAsync();
             //}
 
-            //-----------------------------------------
-            // 4️⃣ Notify Users
-            //-----------------------------------------
-            await NotifyPendingUsersAsync(companyId, documentId, transaction);
 
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title, dv.Version, d.CreatedBy
@@ -1500,6 +1508,9 @@ public class DocumentComponent
                     FROM DocumentUserDistributions
                     WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
                     new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+                    
+                // 5. Notify Users about assigned training
+                await NotifyPendingUsersAsync(companyId, documentId, tx);
             }
              
         }

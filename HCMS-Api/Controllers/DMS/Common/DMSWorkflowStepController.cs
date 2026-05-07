@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -214,6 +214,38 @@ public class DMSWorkflowStepController : Controller
                 Success = true,
                 Data = await _workflowStepComponent.DeleteAsync(code),
                 Message = "Workflow Step deleted successfully.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("update-approval-sequence")]
+    public async Task<IActionResult> UpdateApprovalSequence([FromBody] UpdateApprovalSequenceDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<List<WorkflowStepDefiniationReadDto>>()
+            {
+                Success = true,
+                Data = await _workflowStepComponent.UpdateApprovalSequenceAsync(input),
+                Message = "Approval sequence updated successfully.",
                 Code = 200
             });
         }
