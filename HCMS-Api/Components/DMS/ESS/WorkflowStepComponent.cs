@@ -1560,6 +1560,14 @@ public class WorkflowStepComponent
                     });
                 }
             }
+            else
+            {
+                // Clean up the Workflow Policy Version if all steps are removed
+                await _dapperService.ExecuteAsync(@"
+                    DELETE FROM WorkflowPolicyVersions
+                    WHERE Id = @VersionId;",
+                    new { VersionId = versionId });
+            }
 
             //-----------------------------------------
             // 4. Return Updated Steps

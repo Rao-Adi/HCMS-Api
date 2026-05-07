@@ -57,6 +57,8 @@ public class NotificationComponent
     {
         try
         {
+            string targetUserId = recipientUserId?.Trim() ?? string.Empty;
+
             var (title, message, relatedEntityType, redirectionUrl) = GetNotificationDetails(scenario, placeholders);
 
             string insertQuery = $@"
@@ -75,7 +77,7 @@ public class NotificationComponent
             VALUES
             (
                 {companyId},
-                '{recipientUserId.ToString()}',
+                '{targetUserId}',
                 '{title.Replace("'", "''")}',
                 '{message.Replace("'", "''")}',
                 {(int)scenario},
@@ -93,21 +95,22 @@ public class NotificationComponent
             // Dispatch real-time event to specific User and Group (Secure Targeting)
             var payload = new
             {
-                Id = newId,
-                RecipientUserId = recipientUserId,
-                Title = title,
-                Message = message,
-                RelatedEntityType = relatedEntityType,
-                RelatedEntityId = relatedEntityId,
-                RedirectionUrl = redirectionUrl,
-                CreatedAt = DateTime.UtcNow
+                id = newId,
+                recipientUserId = targetUserId,
+                title = title,
+                message = message,
+                type = (int)scenario,
+                relatedEntityType = relatedEntityType,
+                relatedEntityId = relatedEntityId,
+                redirectionUrl = redirectionUrl,
+                createdAt = DateTime.UtcNow
             };
 
-            await _hubContext.Clients.User(recipientUserId).SendAsync("ReceiveNotification", payload);
-            await _hubContext.Clients.Group(recipientUserId).SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.User(targetUserId).SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group(targetUserId).SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, recipientUserId, title, message, redirectionUrl);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl);
 
             return true;
         }

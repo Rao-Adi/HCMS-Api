@@ -23,7 +23,10 @@ public class NotificationHub : Hub
     // Useful if standard JWT claims are missing via IUserIdProvider on WebSocket connections.
     public async Task RegisterUser(string empCode)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, empCode);
+        if (!string.IsNullOrWhiteSpace(empCode))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, empCode.Trim());
+        }
     }
 
     // 1. Receives the payload from the Test Button in Angular

@@ -17,6 +17,6 @@ public class CustomUserIdProvider : IUserIdProvider
                     ?? connection.User?.FindFirst("id");
 
         // Returns the User ID to SignalR's internal mapping dictionary
-        return claim?.Value;
+        return claim?.Value?.Trim();
     }
 }
