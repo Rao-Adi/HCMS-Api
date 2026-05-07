@@ -127,7 +127,7 @@ public class DepartmentComponent
                     )
                     VALUES
                     (
-                        '{CompanyId}',
+                        {CompanyId},
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.DivisionCode.Replace("'", "''")}',
@@ -143,13 +143,26 @@ public class DepartmentComponent
             int newId = Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // 📥 Fetch inserted record
-            string selectQuery = $@"
-                    SELECT dep.*,c.Id as CompanyId, c.Name As Company
-                        FROM Departments dep
-                        LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Companies c
-                        ON dep.CompanyId = c.Id
+            string selectQuery = $@" 
+                SELECT dep.*,c.Name As Company,  div.Name AS Division,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
+ 
+                 COALESCE(m.EmployeeName, dep.LastModifiedBy::text) AS LastModifiedByName
+ 
+                    FROM Departments dep
+                    LEFT JOIN Divisions div
+				                ON dep.DivisionCode = div.Code
+                    LEFT JOIN Companies c
+                    ON dep.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(dep.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
                     WHERE dep.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -166,14 +179,16 @@ public class DepartmentComponent
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch
@@ -255,12 +270,25 @@ public class DepartmentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT dep.*,c.Id as CompanyId, c.Name As Company, div.Code AS DivisionCode, div.Name AS Division
-                        FROM Departments dep
-                        LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Code
-                        LEFT JOIN Companies c
-                        ON dep.CompanyId = c.Id
+                        SELECT dep.*,c.Name As Company, div.Name AS Division,
+                        -- 🔹 Audit Fields
+                         COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
+ 
+                         COALESCE(m.EmployeeName, dep.LastModifiedBy::text) AS LastModifiedByName
+                        -- 🔹 Audit Fields
+                          FROM Departments dep
+                            LEFT JOIN Divisions div
+				                        ON dep.DivisionCode = div.Code
+                            LEFT JOIN Companies c
+                            ON dep.CompanyId = c.Id
+ 
+                          -- 🔹 Created By Employee
+                        LEFT JOIN Vw_EmployeeNames e
+                            ON e.CleanEmpCode = LTRIM(dep.CreatedBy::text, '0')
+
+                        -- 🔹 Last Modified By Employee
+                        LEFT JOIN Vw_EmployeeNames m 
+                            ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -292,7 +320,7 @@ public class DepartmentComponent
                     Code = row.Table.Columns.Contains("Code") ? row.Field<string>("Code") : string.Empty,
                     Name = row.Table.Columns.Contains("Name") ? row.Field<string>("Name") : string.Empty,
                     Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("DivisionCode1") ? row.Field<string>("DivisionCode1") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -301,6 +329,8 @@ public class DepartmentComponent
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    CreatedByName = row.Field<string>("CreatedByName"),
+                    LastModifiedByName = row.Field<string>("LastModifiedByName")
                 })
                 .ToList();
 
@@ -357,13 +387,26 @@ public class DepartmentComponent
     {
         try
         {
-            string query = $@"
-                 SELECT dep.*,c.Id as CompanyId, c.Name As Company
+            string query = $@" SELECT dep.*,c.Name As Company,
+                    -- 🔹 Audit Fields
+                     COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
+ 
+                     COALESCE(m.EmployeeName, dep.LastModifiedBy::text) AS LastModifiedByName
+ 
                         FROM Departments dep
                         LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Code
+				                    ON dep.DivisionCode = div.Code
                         LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
+ 
+                      -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames e
+                        ON e.CleanEmpCode = LTRIM(dep.CreatedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
+ 
                 WHERE dep.Code = '{code}'
                   AND dep.IsActive = True
                   AND dep.IsDeleted = False";
@@ -382,14 +425,16 @@ public class DepartmentComponent
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"),
                 Name = row.Field<string>("Name"),
-                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch (Exception)
@@ -404,12 +449,26 @@ public class DepartmentComponent
         try
         {
             string query = $@"
-                 SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                 SELECT dep.*,c.Name As Company,  div.Name AS Division,
+                    -- 🔹 Audit Fields
+                     COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
+ 
+                     COALESCE(m.EmployeeName, dep.LastModifiedBy::text) AS LastModifiedByName
+ 
                         FROM Departments dep
                         LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Code
+				                    ON dep.DivisionCode = div.Code
                         LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
+ 
+                      -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames e
+                        ON e.CleanEmpCode = LTRIM(dep.CreatedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
+ 
                 WHERE dep.DivisionCode = '{dCode}'
                   AND dep.IsActive = True
                   AND dep.IsDeleted = False";
@@ -431,14 +490,16 @@ public class DepartmentComponent
                     Company = row.Field<string>("Company"),
                     Code = row.Field<string>("Code"),
                     Name = row.Field<string>("Name"),
-                    Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                    DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                    Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
+                    DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                     IsDeleted = row.Field<bool>("IsDeleted"),
                     IsActive = row.Field<bool>("IsActive"),
                     CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                     CreatedBy = row.Field<string>("CreatedBy"),
                     LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                    LastModifiedBy = row.Field<string>("LastModifiedBy")
+                    LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                    CreatedByName = row.Field<string>("CreatedByName"),
+                    LastModifiedByName = row.Field<string>("LastModifiedByName")
                 }).ToList();
 
             return departments;
@@ -529,12 +590,25 @@ public class DepartmentComponent
 
             // 📥 Fetch updated record
             string selectQuery = $@"
-                   SELECT dep.*,c.Id as CompanyId, c.Name As Company
+                   SELECT dep.*,c.Name As Company,  div.Name AS Division,
+                    -- 🔹 Audit Fields
+                     COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
+ 
+                     COALESCE(m.EmployeeName, dep.LastModifiedBy::text) AS LastModifiedByName
+ 
                         FROM Departments dep
                         LEFT JOIN Divisions div
-						ON dep.DivisionCode = div.Code
+                                    ON dep.DivisionCode = div.Code
                         LEFT JOIN Companies c
                         ON dep.CompanyId = c.Id
+ 
+                      -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames e
+                        ON e.CleanEmpCode = LTRIM(dep.CreatedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
                     WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -551,8 +625,8 @@ public class DepartmentComponent
                 Company = row.Field<string>("Company"),
                 Code = row.Field<string>("Code"), // 🔒 Immutable
                 Name = row.Field<string>("Name"),
-                Division = row.Table.Columns.Contains("Name1") ? row.Field<string>("Name1") : string.Empty,
-                DivisionCode = row.Table.Columns.Contains("Code1") ? row.Field<string>("Code1") : string.Empty,
+                Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
+                DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt")
@@ -560,7 +634,9 @@ public class DepartmentComponent
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
                                 .ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch

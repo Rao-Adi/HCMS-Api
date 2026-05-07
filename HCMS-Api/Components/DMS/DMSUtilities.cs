@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+﻿﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.DMS.Common.DataAccess; 
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
@@ -2287,6 +2287,25 @@ namespace HCMS_Api.Components.DMS.Common
             return empcode;
         }
 
+        public string GetEmpNameForHCMS(string EmpId)
+        {
+            string empName = "";
+            try
+            {  
+                Object obj = GetScalarDataForHCMS("SELECT LTRIM(RTRIM(COALESCE(FirstName, '') || ' ' || COALESCE(MidName, '') || ' ' || COALESCE(LastName, ''))) FROM tblEmployee WHERE EmpId = '" + EmpId + "'");
+                if (obj != null)
+                {
+                    empName = obj.ToString();
+                }
+                return empName;
+            }
+            catch (Exception ex)
+            {
+                empName = "";
+            }
+
+            return empName;
+        }
         
 
         public DataSet GetSubordinates(string EmpId, string CompanyId, string Culture)

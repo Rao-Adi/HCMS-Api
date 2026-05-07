@@ -518,10 +518,11 @@ public class DocumentTrainingComponent
 
     public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId)
     {
-        string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp);
-        var empCode = _utilities.GetUserid(prefix);
+        int CompanyId = int.Parse(_CompanyId);
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
         await using var tx = await _common.BeginTransactionAsync();
         try
@@ -538,7 +539,7 @@ public class DocumentTrainingComponent
                   AND CompanyId = @CompanyId
                   AND IsDeleted = FALSE";
             
-            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId), UserId = empCode }, tx);
+            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
 
             // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
             string stateQuery = @"
@@ -548,7 +549,7 @@ public class DocumentTrainingComponent
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
                        @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
             
-            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId), UserId = empCode }, tx);
+            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
 
             await tx.CommitAsync();
             return true;

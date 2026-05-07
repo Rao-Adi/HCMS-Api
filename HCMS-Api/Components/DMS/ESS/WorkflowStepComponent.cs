@@ -1,4 +1,4 @@
-﻿using Dapper;
+﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -1007,7 +1007,7 @@ public class WorkflowStepComponent
                 JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
                 LEFT JOIN Companies c ON c.Id = wsd.CompanyId
                 LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
+                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) = 1
                 LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
                 LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
                 LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
@@ -1360,52 +1360,52 @@ public class WorkflowStepComponent
                        TRIM(e.empcode) AS EmployeeCode, 
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                        e.email AS Email,
-                       ual.DivisionCode,
-                       ual.DepartmentCode,
-                       ual.SubDepartmentCode,
-                       ual.BusinessDomainCode,
+                       -- ual.DivisionCode,
+                       -- ual.DepartmentCode,
+                       -- ual.SubDepartmentCode,
+                       -- ual.BusinessDomainCode,
                        COALESCE(des.name, des_fallback.name) AS Designation,
                        COALESCE(des.code, des_fallback.code) AS DesignationCode,
                        ejp.roleid AS RoleId
                 FROM tblEmployee e
-                INNER JOIN UserAccessLevels ual 
-                    ON TRIM(LEADING '0' FROM TRIM(e.empcode::text)) = TRIM(LEADING '0' FROM TRIM(ual.EmployeeCode::text))
-                    AND ual.IsActive = TRUE 
-                    AND ual.IsDeleted = FALSE
+                -- INNER JOIN UserAccessLevels ual 
+                --     ON TRIM(LEADING '0' FROM TRIM(e.empcode::text)) = TRIM(LEADING '0' FROM TRIM(ual.EmployeeCode::text))
+                --     AND ual.IsActive = TRUE 
+                --     AND ual.IsDeleted = FALSE
                 LEFT JOIN public.tblempjobprofile ejp 
                     ON e.empid = ejp.empid
                 LEFT JOIN public.tblsetupsdetail des 
                     ON ejp.dsgid = des.sdlid
                 LEFT JOIN public.tblsetupsdetail des_fallback 
                     ON e.dsgid = des_fallback.sdlid
-                WHERE COALESCE(e.Active, 1) = 1";
+                WHERE ";
 
             // 1. Access Level Filters
-            if (!string.IsNullOrEmpty(filters.DocumentTypeCode))
-            {
-                whereConditions.Add("ual.DocumentTypeCode = @DocCode");
-                parameters.Add("@DocCode", filters.DocumentTypeCode);
-            }
-            if (!string.IsNullOrEmpty(filters.DivisionCode))
-            {
-                whereConditions.Add("ual.DivisionCode = @DivCode");
-                parameters.Add("@DivCode", filters.DivisionCode);
-            }
-            if (!string.IsNullOrEmpty(filters.DepartmentCode))
-            {
-                whereConditions.Add("ual.DepartmentCode = @DeptCode");
-                parameters.Add("@DeptCode", filters.DepartmentCode);
-            }
-            if (!string.IsNullOrEmpty(filters.SubDepartmentCode))
-            {
-                whereConditions.Add("ual.SubDepartmentCode = @SubDeptCode");
-                parameters.Add("@SubDeptCode", filters.SubDepartmentCode);
-            }
-            if (!string.IsNullOrEmpty(filters.BusinessDomainCode))
-            {
-                whereConditions.Add("ual.BusinessDomainCode = @BusDomainCode");
-                parameters.Add("@BusDomainCode", filters.BusinessDomainCode);
-            }
+            //if (!string.IsNullOrEmpty(filters.DocumentTypeCode))
+            //{
+            //    whereConditions.Add("ual.DocumentTypeCode = @DocCode");
+            //    parameters.Add("@DocCode", filters.DocumentTypeCode);
+            //}
+            //if (!string.IsNullOrEmpty(filters.DivisionCode))
+            //{
+            //    whereConditions.Add("ual.DivisionCode = @DivCode");
+            //    parameters.Add("@DivCode", filters.DivisionCode);
+            //}
+            //if (!string.IsNullOrEmpty(filters.DepartmentCode))
+            //{
+            //    whereConditions.Add("ual.DepartmentCode = @DeptCode");
+            //    parameters.Add("@DeptCode", filters.DepartmentCode);
+            //}
+            //if (!string.IsNullOrEmpty(filters.SubDepartmentCode))
+            //{
+            //    whereConditions.Add("ual.SubDepartmentCode = @SubDeptCode");
+            //    parameters.Add("@SubDeptCode", filters.SubDepartmentCode);
+            //}
+            //if (!string.IsNullOrEmpty(filters.BusinessDomainCode))
+            //{
+            //    whereConditions.Add("ual.BusinessDomainCode = @BusDomainCode");
+            //    parameters.Add("@BusDomainCode", filters.BusinessDomainCode);
+            //}
 
             // 2. Designation Filter (Match against integer dsgid)
             if (filters.DesignationCodes != null && filters.DesignationCodes.Any())
@@ -1470,7 +1470,7 @@ public class WorkflowStepComponent
             }
 
             if (whereConditions.Any())
-                baseQuery += " AND " + string.Join(" AND ", whereConditions);
+                baseQuery += string.Join(" AND ", whereConditions);
 
             baseQuery += " ORDER BY EmployeeName";
 

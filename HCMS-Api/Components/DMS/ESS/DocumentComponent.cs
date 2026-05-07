@@ -2379,17 +2379,28 @@ public class DocumentComponent
                   ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
                   AND tr.ReadyForAuthorization = FALSE";
 
-            if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
-            {
-                if (input.DocumentCategoryFilter.ToUpper() == "SOP")
-                {
-                    whereClause += " AND UPPER(dt.Code) = 'SOP'";
-                }
-                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
-                {
-                    whereClause += " AND UPPER(dt.Code) != 'SOP'";
-                }
-            }
+            //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
+            //{
+            //    if (input.DocumentCategoryFilter.ToUpper() == "SOP")
+            //    {
+            //        whereClause += " AND UPPER(dt.Code) = 'SOP'";
+            //    }
+            //    else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
+            //    {
+            //        whereClause += " AND UPPER(dt.Code) != 'SOP'";
+            //    }
+            //}
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -2410,9 +2421,7 @@ public class DocumentComponent
 
             string dataSql = $@"
                 SELECT
-                    doc.*,
-                    dt.Name AS DocumentType,
-                    dt.Code AS DocumentTypeCode,
+                    doc.*, 
                     dv.Version,
                     tr.TrainingMode,
                     tr.TrainingProofURL,
@@ -2420,8 +2429,7 @@ public class DocumentComponent
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
                     (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
-                FROM Vw_Documents doc 
-                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
+                FROM Vw_Documents doc  
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause}
@@ -2435,7 +2443,16 @@ public class DocumentComponent
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId, UserId = empCode };
+            var queryParams = new 
+            { 
+                CompanyId = CompanyId, 
+                UserId = empCode,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2474,4 +2491,10 @@ public class GetAuthorizedDocumentsDto : TableFiltersDto
 public class GetDocumentsPendingTrainingDto : TableFiltersDto
 {
     public string? DocumentCategoryFilter { get; set; }
+
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }

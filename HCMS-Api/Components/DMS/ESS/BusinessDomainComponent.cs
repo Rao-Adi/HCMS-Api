@@ -135,13 +135,24 @@ public class BusinessDomainComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // 📥 Fetch inserted record
-            string selectQuery = $@"
-                    SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
+                    -- 🔹 Audit Fields
+                     COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
+                     COALESCE(m.EmployeeName, bd.LastModifiedBy::text) AS LastModifiedByName 
+
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
                         LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
+ 
+                      -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames e
+                        ON e.CleanEmpCode = LTRIM(bd.CreatedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                     WHERE bd.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -167,7 +178,9 @@ public class BusinessDomainComponent
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
                                 .ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch
@@ -246,13 +259,24 @@ public class BusinessDomainComponent
 
             int offset = (input.PageNumber - 1) * input.PageSize;
 
-            string query = $@"
-                        SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
-                        FROM BusinessDomains bd
-                        LEFT JOIN SubDepartments dep
-                        ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Companies c
-                        ON bd.CompanyId = c.Id
+            string query = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
+                        -- 🔹 Audit Fields
+                         COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
+                         COALESCE(m.EmployeeName, bd.LastModifiedBy::text) AS LastModifiedByName 
+
+                            FROM BusinessDomains bd
+                            LEFT JOIN SubDepartments dep
+                            ON bd.subdepartmentcode = dep.Code
+                            LEFT JOIN Companies c
+                            ON bd.CompanyId = c.Id
+ 
+                          -- 🔹 Created By Employee
+                        LEFT JOIN Vw_EmployeeNames e
+                            ON e.CleanEmpCode = LTRIM(bd.CreatedBy::text, '0')
+
+                        -- 🔹 Last Modified By Employee
+                        LEFT JOIN Vw_EmployeeNames m 
+                            ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -293,6 +317,8 @@ public class BusinessDomainComponent
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    CreatedByName = row.Field<string>("CreatedByName"),
+                    LastModifiedByName = row.Field<string>("LastModifiedByName")
                 })
                 .ToList();
 
@@ -349,13 +375,24 @@ public class BusinessDomainComponent
     {
         try
         {
-            string query = $@"
-                SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
-                        FROM BusinessDomains bd
-                        LEFT JOIN SubDepartments dep
-                        ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Companies c
-                        ON bd.CompanyId = c.Id
+            string query = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
+                 COALESCE(m.EmployeeName, bd.LastModifiedBy::text) AS LastModifiedByName 
+
+                    FROM BusinessDomains bd
+                    LEFT JOIN SubDepartments dep
+                    ON bd.subdepartmentcode = dep.Code
+                    LEFT JOIN Companies c
+                    ON bd.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(bd.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                 WHERE bd.Code = '{code}'
                   AND bd.IsActive = True
                   AND bd.IsDeleted = False";
@@ -381,7 +418,9 @@ public class BusinessDomainComponent
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch (Exception)
@@ -395,13 +434,24 @@ public class BusinessDomainComponent
     {
         try
         {
-            string query = $@"
-                SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
-                        FROM BusinessDomains bd
-                        LEFT JOIN SubDepartments dep
-                        ON bd.subdepartmentcode = dep.Code
-                        LEFT JOIN Companies c
-                        ON bd.CompanyId = c.Id
+            string query = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
+                 COALESCE(m.EmployeeName, bd.LastModifiedBy::text) AS LastModifiedByName 
+
+                    FROM BusinessDomains bd
+                    LEFT JOIN SubDepartments dep
+                    ON bd.subdepartmentcode = dep.Code
+                    LEFT JOIN Companies c
+                    ON bd.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(bd.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                 WHERE bd.SubDepartmentCode = '{dCode}'
                   AND bd.IsActive = True
                   AND bd.IsDeleted = False";
@@ -427,7 +477,9 @@ public class BusinessDomainComponent
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch (Exception)
@@ -477,14 +529,25 @@ public class BusinessDomainComponent
                 throw new Exception("Update failed");
 
             // Return updated record
-            string selectQuery = $@"
-                        SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
+                    -- 🔹 Audit Fields
+                     COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
+                     COALESCE(m.EmployeeName, bd.LastModifiedBy::text) AS LastModifiedByName 
+
                         FROM BusinessDomains bd
                         LEFT JOIN SubDepartments dep
                         ON bd.subdepartmentcode = dep.Code
                         LEFT JOIN Companies c
                         ON bd.CompanyId = c.Id
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+ 
+                      -- 🔹 Created By Employee
+                    LEFT JOIN Vw_EmployeeNames e
+                        ON e.CleanEmpCode = LTRIM(bd.CreatedBy::text, '0')
+
+                    -- 🔹 Last Modified By Employee
+                    LEFT JOIN Vw_EmployeeNames m 
+                        ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
+            WHERE bd.Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -507,7 +570,9 @@ public class BusinessDomainComponent
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch
