@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -37,10 +37,7 @@ public class TransferWorkflowPolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,21 +45,32 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id < 0)
                 throw new CustomException("TransferWorkflowPolicy is required.", 400);
 
-             
+            // UC-18 Business Rule: A specific Division can only have one active transfer approval policy defined here.
+            string checkQuery = $@"
+            SELECT COUNT(1)
+            FROM TransferWorkflowPolicies
+            WHERE DivisionCode = '{input.DivisionCode?.Replace("'", "''")}'
+              AND IsDeleted = FALSE";
+
+            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+
+            if (exists > 0)
+                throw new CustomException("A transfer policy already exists for this division.", 409);
+
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO TransferWorkflowPolicies
             (   CompanyId,
-                DivisionCode,
-                DepartmentCode,
-                SubDepartmentCode,
-                BusinessDomainCode,
+                DivisionCode, 
                 ApprovalRoleId,
                 ApprovalUserId, 
                 IsActive,
@@ -74,19 +82,16 @@ public class TransferWorkflowPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
-                '{input.DivisionCode!.Replace("'", "''")}', 
-                '{input.DepartmentCode!.Replace("'", "''")}', 
-                '{input.SubDepartmentCode!.Replace("'", "''")}', 
-                '{input.BusinessDomainCode!.Replace("'", "''")}', 
-                '{input.ApprovalRoleId}',
-                '{input.ApprovalUserId}',
+                '{CompanyId}', 
+                '{input.DivisionCode!.Replace("'", "''")}',  
+                {input.ApprovalRoleId},
+                {input.ApprovalUserId},
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -94,18 +99,12 @@ public class TransferWorkflowPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"  
-            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
-            FROM TransferWorkflowPolicies t
-            LEFT JOIN Divisions div
-            ON t.DivisionCode = div.Code
-            LEFT JOIN Departments d
-            ON t.DepartmentCode = d.Code
-            LEFT JOIN SubDepartments sd
-            ON t.SubDepartmentCode = sd.Code
-            LEFT JOIN Companies c
-            ON d.CompanyId = c.Id
-            LEFT JOIN BusinessDomains bd
-            ON d.BusinessDomainCode = bd.Code
+            SELECT  t.*, div.Name AS Division, c.Name AS Company
+                        FROM TransferWorkflowPolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code 
+                        LEFT JOIN Companies c
+                        ON t.CompanyId = c.Id
             WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -118,22 +117,13 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
-
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
+                 
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -153,11 +143,17 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM TransferWorkflowPolicies
-                WHERE DivisionCode = {code}
+                WHERE DivisionCode = '{code?.Replace("'", "''")}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -168,8 +164,10 @@ public class TransferWorkflowPolicyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE TransferWorkflowPolicies
-                SET IsDeleted = False
-                WHERE DivisionCode = {code}";
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
+                WHERE DivisionCode = '{code?.Replace("'", "''")}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -183,7 +181,7 @@ public class TransferWorkflowPolicyComponent
     public async Task<PaginationResult<TransferWorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
-        {
+        { 
             var whereClause = @"
                 WHERE t.IsDeleted = False 
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
@@ -213,24 +211,18 @@ public class TransferWorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
+                        SELECT  t.*, div.Name AS Division, c.Name AS Company
                         FROM TransferWorkflowPolicies t
                         LEFT JOIN Divisions div
-                        ON t.DivisionCode = div.Code
-                        LEFT JOIN Departments d
-                        ON t.DepartmentCode = d.Code
-                        LEFT JOIN SubDepartments sd
-                        ON t.SubDepartmentCode = sd.Code
+                        ON t.DivisionCode = div.Code 
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
-                        LEFT JOIN BusinessDomains bd
-                        ON d.BusinessDomainCode = bd.Code
+                        ON t.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM TransferWorkflowPolicies
+                        FROM TransferWorkflowPolicies t
                         {whereClause};
                     ";
 
@@ -251,23 +243,14 @@ public class TransferWorkflowPolicyComponent
                 .Select(row => new TransferWorkflowPolicyReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Field<string>("Division"),
-                    DivisionCode = row.Field<string>("DivisionCode"),
+                    DivisionCode = row.Field<string>("DivisionCode"), 
 
-                    Department = row.Field<string>("Department"),
-                    DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                    SubDepartment = row.Field<string>("SubDepartment"),
-                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                    BusinessDomain = row.Field<string>("BusinessDomain"),
-                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<int>("ApprovalRoleId") : 0,
-                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<int>("ApprovalUserId") : 0,
+                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? (row.Field<int?>("ApprovalRoleId") ?? 0) : 0,
+                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? (row.Field<int?>("ApprovalUserId") ?? 0) : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -301,20 +284,18 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
-                SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
-                    FROM TransferWorkflowPolicies t
-                    LEFT JOIN Divisions div
-                    ON t.DivisionCode = div.Code
-                    LEFT JOIN Departments d
-                    ON t.DepartmentCode = d.Code
-                    LEFT JOIN SubDepartments sd
-                    ON t.SubDepartmentCode = sd.Code
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
-                    LEFT JOIN BusinessDomains bd
-                    ON d.BusinessDomainCode = bd.Code
-                WHERE t.DivisionCode = {code}
+                SELECT  t.*, div.Name AS Division, c.Name AS Company
+                        FROM TransferWorkflowPolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code 
+                        LEFT JOIN Companies c
+                        ON t.CompanyId = c.Id
+                WHERE t.DivisionCode = '{code?.Replace("'", "''")}'
+                  AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -328,23 +309,14 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
-                DivisionCode = row.Field<string>("DivisionCode"),
+                DivisionCode = row.Field<string>("DivisionCode"), 
 
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
+                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -363,37 +335,51 @@ public class TransferWorkflowPolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (string.IsNullOrWhiteSpace(input.DivisionCode))
-                throw new CustomException("Invalid division code.", 200);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            // Check existence (DivisionCode is VARCHAR → must be quoted)
+            if (input.Id <= 0)
+                throw new CustomException("Invalid policy Id.", 400);
+
+            // Check existence
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TransferWorkflowPolicies
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+            WHERE Id = {input.Id}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TransferWorkflowPolicy not found", 200);
+                throw new CustomException("TransferWorkflowPolicy not found", 404);
+
+            // Prevent assigning a DivisionCode that is already linked to another active policy
+            string dupQuery = $@"
+            SELECT COUNT(1)
+            FROM TransferWorkflowPolicies
+            WHERE DivisionCode = '{input.DivisionCode?.Replace("'", "''")}'
+              AND Id != {input.Id}
+              AND IsDeleted = FALSE";
+
+            int dupExists = Convert.ToInt32(_common.ExecuteScalarQuery(dupQuery));
+
+            if (dupExists > 0)
+                throw new CustomException("A transfer policy already exists for this division.", 409);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE TransferWorkflowPolicies
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
-                DepartmentCode = '{input.DepartmentCode!.Replace("'", "''")}',
-                SubDepartmentCode = '{input.SubDepartmentCode!.Replace("'", "''")}',
-                BusinessDomainCode = '{input.BusinessDomainCode!.Replace("'", "''")}',
-                ApprovalRoleId = '{input.ApprovalRoleId}',
+                DivisionCode = '{input.DivisionCode?.Replace("'", "''")}', 
+                ApprovalRoleId = {input.ApprovalRoleId},
+                ApprovalUserId = {input.ApprovalUserId},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -402,19 +388,13 @@ public class TransferWorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
-            FROM TransferWorkflowPolicies t
-            LEFT JOIN Divisions div
-            ON t.DivisionCode = div.Code
-            LEFT JOIN Departments d
-            ON t.DepartmentCode = d.Code
-            LEFT JOIN SubDepartments sd
-            ON t.SubDepartmentCode = sd.Code
-            LEFT JOIN Companies c
-            ON d.CompanyId = c.Id
-            LEFT JOIN BusinessDomains bd
-            ON d.BusinessDomainCode = bd.Code
-            WHERE t.Id = {updated}";
+            SELECT  t.*, div.Name AS Division, c.Name AS Company
+                        FROM TransferWorkflowPolicies t
+                        LEFT JOIN Divisions div
+                        ON t.DivisionCode = div.Code 
+                        LEFT JOIN Companies c
+                        ON t.CompanyId = c.Id
+            WHERE t.Id = {input.Id}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -426,23 +406,14 @@ public class TransferWorkflowPolicyComponent
             return new TransferWorkflowPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("Department"),
-                DepartmentCode = row.Field<string>("DepartmentCode"),
-
-                SubDepartment = row.Field<string>("SubDepartment"),
-                SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
-
-                BusinessDomain = row.Field<string>("BusinessDomain"),
-                BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
-
-                ApprovalRoleId = row.Field<int>("ApprovalRoleId"),
-                ApprovalUserId = row.Field<int>("ApprovalUserId"),
+                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
+                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),

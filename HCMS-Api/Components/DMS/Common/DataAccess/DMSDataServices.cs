@@ -56,6 +56,32 @@ namespace HCMS_Api.Components.DMS.Common.DataAccess
             else
                 return "successful";
         }
+
+        public string ExecuteStatementForHCMS(string commandStatement,
+           ref object returnObject,
+           int returnType)
+        {
+            DMSErrorHandler objErrorHandler = new DMSErrorHandler();
+            DMSDataProcess objDataProcess = new DMSDataProcess(_configuration);
+
+            string _ConStringSecurity = _configuration.GetRequiredConnectionString("ConnectionString");
+            objDataProcess.Initialize(_ConStringSecurity, ref objErrorHandler);
+
+            switch (returnType)
+            {
+                case 1:
+                    returnObject = objDataProcess.ExecuteScalarValue(commandStatement, ref objErrorHandler);
+                    break;
+                case 2:
+                    returnObject = objDataProcess.ExecuteStatement(commandStatement, ref objErrorHandler);
+                    break;
+            }
+
+            if (objErrorHandler.ErrorOccurred)
+                return objErrorHandler.ErrorMessage;
+            else
+                return "successful";
+        }
         public string GetDataWithClauseDS(string strQuery, ref DataSet dataset)
         {
             DMSErrorHandler objErrorHandler = new DMSErrorHandler();

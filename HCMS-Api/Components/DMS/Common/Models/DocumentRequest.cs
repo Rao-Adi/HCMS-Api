@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿﻿﻿﻿using HCMS_Api.Common.Misc;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
@@ -84,7 +85,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? BusinessDomainCode { get; set; }
     public string? DraftFileURL { get; set; }
 
-    
+    public bool IsReworked { get; set; }
 
     public int Status { get; set; }
     public string RowVersion { get; set; }
@@ -111,7 +112,10 @@ public class DocumentRequestUserDistribution
     public int DocumentRequestId { get; set; }
 
     // UserId BIGINT NOT NULL
-    public long UserId { get; set; }
+    public string EmployeeCode { get; set; }
+    public string EmployeeName { get; set; } 
+    public string Designation { get; set; } 
+    public string Role { get; set; } 
 
     // IsActive BOOLEAN NOT NULL DEFAULT TRUE
     public bool IsActive { get; set; } = true;
@@ -123,13 +127,13 @@ public class DocumentRequestUserDistribution
     public string? CreatedAt { get; set; }  
 
     // CreatedBy BIGINT NOT NULL
-    public long CreatedBy { get; set; }
+    public string CreatedBy { get; set; }
 
     // LastModifiedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     public string? LastModifiedAt { get; set; }
 
     // LastModifiedBy BIGINT NOT NULL
-    public long LastModifiedBy { get; set; }
+    public string LastModifiedBy { get; set; }
 }
 
 public class DocumentRoleDistribution
@@ -251,16 +255,13 @@ public class DocumentRequestCreate
     public string Justification { get; set; }
 }
 
-public class GetPendingRequestDto
+public class GetPendingRequestDto : TableFiltersDto
 {
-    public int CompanyId { get; set; }
-    public int UserId { get; set; }
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-    public string? DocumentTypeCode { get; set; }
-    public string? EmployeeCode { get; set; }
+    public string? DocumentTypeCode { get; set; } 
 
     public string? RequestStatus { get; set; }
 }
@@ -276,13 +277,13 @@ public class DraftRequestReadDto
     public DateTime CreatedAt { get; set; }
 }
 
-public class MyRequestFilterDto
-{
-    public int CompanyId { get; set; }
-    public string Initiator { get; set; }  // logged in username
+public class MyRequestFilterDto : TableFiltersDto
+{ 
+    public string? Initiator { get; set; }  // logged in username
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public int? Status { get; set; }       // Pending / Approved / Rejected
+    public int? CompanyId { get; set; } // this will be filled via generic way
 }
 
 public class MyRequestPendingDto  
@@ -395,8 +396,11 @@ public class DocumentRequestDetailsDto
     public string Division { get; set; }
     public string Department { get; set; }
     public string SubDepartment { get; set; }
+    public string BusinessDomain { get; set; }
+    public int? DesignationId { get; set; }
     public string Designation { get; set; }
 
+    public int? RoleId { get; set; }
     // r.Name AS RoleName
     public string RoleName { get; set; }
 
@@ -411,6 +415,8 @@ public class DocumentRequestDetailsDto
     public string StatusUpdatedOn { get; set; }
     // wes.IsActive
     public bool IsActive { get; set; }
+    public string CreatedByName { get; set; }
+    public string LastModifiedByName { get; set; }
 
 }
 
@@ -433,8 +439,7 @@ public class DocumentRequestDetailsDto
 ///
 
 public class DraftDocumentRequestDto
-{
-    public long CompanyId { get; set; }
+{ 
     public string DocumentRequestTypeCode { get; set; }
     public string DocumentTypeCode { get; set; }
 
@@ -446,12 +451,11 @@ public class DraftDocumentRequestDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-
-    public long CreatedByUserId { get; set; }
+     
 
     // 🟩 UC-22
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserIds { get; set; }
+    public List<string>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
@@ -459,32 +463,62 @@ public class DraftDocumentRequestDto
 
 public class UpdateDraftRequestDto
 {
-    public int CompanyId { get; set; }
     public int RequestId { get; set; }
 
     public string DocumentName { get; set; }
     public string Justification { get; set; }
-    public string ProposedContent { get; set; }
-    public long ModifiedByUserId { get; set; }
+    public string? ProposedContent { get; set; } 
      
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserList { get; set; }
+    public List<string>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
 
+public class EffectiveDocumentDetailsDto : AuditableEntity
+{
+    public int Id { get; set; }
+    public int CompanyId { get; set; }
+    public string Company { get; set; }
+    public int DocumentId { get; set; }
+    public string DocumentNumber { get; set; }
+    public int RequestId { get; set; } 
+    public int ParentDocumentId { get; set; } 
+    public string DocumentName { get; set; }
+    public string? Division { get; set; }
+    public string? DivisionCode { get; set; }
+    public string DocumentType { get; set; }
+    public string DocumentTypeCode { get; set; }
+    public string? Department { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartment { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomain { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? NextReviewDate { get; set; } 
+    public string? DocumentURL { get; set; } 
+    public string? VersionContent { get; set; }
+    public string? Version { get; set; }
+    public string? VersionType { get; set; }
+    public string? ChangeDescription { get; set; } 
+    public string? CreatedByName { get; set; } 
+    public string? LastModifiedByName { get; set; } 
+     
+
+    // Lists to populate on the FrontEnd
+    public List<DistributionListReadDto> DistributionList { get; set; } = new List<DistributionListReadDto>();
+    public List<DocumentRequestUserDistribution> UserList { get; set; } = new List<DocumentRequestUserDistribution>();
+}
 
 public class SubmitDocumentRequestDto
-{
-    public int CompanyId { get; set; }
-    public int RequestId { get; set; }
-    public int SubmittedBy { get; set; }
+{ 
+    public int RequestId { get; set; } 
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<long>? UserList { get; set; }
+    public List<string>? UserIds { get; set; }
 }
 
 
@@ -492,9 +526,9 @@ public class SubmitDocumentRequestDto
 
 public class ApproveRejectWorkflowStepDto
 {
-    public int CompanyId { get; set; }
-    public int StepId { get; set; }
-    public int UserId { get; set; }
+    public int EmpId { get; set; }
+
+    public int StepId { get; set; } 
 
     public string Action { get; set; }
     // Approve

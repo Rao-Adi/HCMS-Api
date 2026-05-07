@@ -1,17 +1,18 @@
-﻿using HCMS_Api.Components.HCMS.Common.DataAccess;
+﻿using Dapper;
+using HCMS_Api.Common;
+using HCMS_Api.Components.HCMS.Common.DataAccess;
+using HCMS_Api.Components.HCMS.Common.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
-using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 using System.Data;
+using System.Data.SqlClient;
 using System.IdentityModel.Tokens.Jwt;
 using System.Reflection.Metadata;
 using System.Security.Cryptography;
 using System.Text;
 using System.Transactions;
-using System.Data.SqlClient;
-using HCMS_Api.Components.HCMS.Common.Models;
-using HCMS_Api.Common;
+using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 
 namespace HCMS_Api.Components.HCMS.Common.Security
 {
@@ -1539,6 +1540,46 @@ namespace HCMS_Api.Components.HCMS.Common.Security
             string jsonResult = JsonConvert.SerializeObject(new { Key = "Value" });
 
             // Other code...
+        }
+
+
+
+        public async Task SaveApplicationAccessLogAsync(LogUserActivityRequest dto)
+        {
+            if (dto == null) throw new ArgumentNullException(nameof(dto));
+
+            try
+            {
+                string connectionString = _configuration.GetConnectionString("SecurityConnectionString");
+                string storedProcedureName = "SP_SaveApplicationAccessLog";
+
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    SqlCommand cmd = new SqlCommand(storedProcedureName, con);
+                    cmd.CommandType = CommandType.StoredProcedure;
+                    cmd.Parameters.AddWithValue("@Param_UserId", dto.UserId);
+                    cmd.Parameters.AddWithValue("@Param_UserEmpId", dto.UserEmpId);
+                    cmd.Parameters.AddWithValue("@Param_appRelativeVirtualPath", dto.AppRelativeVirtualPath);
+                    cmd.Parameters.AddWithValue("@Param_LoginCompanyId", dto.LoginCompanyId);
+                    cmd.Parameters.AddWithValue("@Param_AppCode", dto.AppCode ?? "ESSv4.5");
+                    cmd.Parameters.AddWithValue("@Param_EntTerminal", dto.EntTerminal ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_EntTerminalIP", dto.EntTerminalIP ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_EntDevice", dto.EntDevice ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_MachineId", dto.MachineId ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_GeoLocation", dto.GeoLocation ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_DevicePlatform", dto.DevicePlatform ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_Model", dto.Model ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_Manufacturer", dto.Manufacturer ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Param_Version", dto.Version ?? (object)DBNull.Value);
+
+                    await con.OpenAsync();
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Error(String.Format("{0} {1}", "Unable to TRACK ACTIVITY Error :", ex.Message), ex);
+            }
         }
     }
     public class YourDbContext : DbContext

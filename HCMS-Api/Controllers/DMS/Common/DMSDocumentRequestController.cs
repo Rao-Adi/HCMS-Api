@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -69,7 +69,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<DocumentRequestReadDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetMyInboxRequestsAsync(input),
@@ -97,7 +97,7 @@ public class DMSDocumentRequestController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<IEnumerable<MyRequestPendingDto>>()
+            return Ok(new HttpApiResponse<PaginationResult<MyRequestPendingDto>>()
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetMyRequestsPendingApprovalAsync(input),
@@ -121,14 +121,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-document-observation-details")]
-    public async Task<IActionResult> GetRequestDetails(int companyId, int requestId, string entityType)
+    public async Task<IActionResult> GetDocumentObservationDetails(int requestId, string entityType)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetRequestDetailsAsync(companyId, requestId, entityType),
+                Data = await _documentRequestComponent.GetDocumentObservationDetailsAsync(requestId, entityType),
                 Message = "Success",
                 Code = 200
             });
@@ -150,14 +150,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-workflow-details")]
-    public async Task<IActionResult> GetWorkflowDetail(int companyId, int requestId, string entityType)
+    public async Task<IActionResult> GetWorkflowDetail(int requestId, string entityType)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(companyId, requestId, entityType),
+                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(requestId, entityType),
                 Message = "Success",
                 Code = 200
             });
@@ -534,6 +534,94 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    [HttpPost("create-and-submit-document-request")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> CreateAndSubmitDocumentRequest([FromForm] DraftDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<long>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.CreateAndSubmitDocumentRequestAsync(input),
+                Message = "Document Request submitted successfully.",
+                Code = 201
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-effective-documents-details-by-id")]
+    public async Task<IActionResult> GetEffectiveDocumentDetailsForRevision(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<EffectiveDocumentDetailsDto>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetEffectiveDocumentDetailsForRevisionAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpPost("get-effective-documents-for-revision")]
+    public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     //[HttpPost("create-document-request")]
     //public async Task<IActionResult> Create([FromBody] CreateDocumentRequest2Dto input)

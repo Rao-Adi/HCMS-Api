@@ -221,6 +221,7 @@ builder.Services.AddScoped<PFSlipViaEmailComponent>();
 builder.Services.AddScoped<PerformanceJournalPolicyComponent>();
 builder.Services.AddScoped<PerformanceJournalComponent>();
 builder.Services.AddScoped<AttendanceSheetComponent>();
+builder.Services.AddScoped<PeoplePartnersComponent>();
 
 #region DMS Services
 
@@ -261,9 +262,10 @@ builder.Services.AddScoped<CompanyComponent>();
 builder.Services.AddScoped<DocumentRequestTypeComponent>();  
 builder.Services.AddScoped<ControlTypeComponent>();  
 builder.Services.AddScoped<UserAccessLevelComponent>();
+builder.Services.AddScoped<DashboardComponent>();
 
 
-//builder.Services.AddHostedService<DataSyncService>();
+builder.Services.AddHostedService<DataSyncService>();
 #endregion DMS Service
 
 

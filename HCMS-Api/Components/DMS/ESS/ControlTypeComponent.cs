@@ -37,10 +37,7 @@ public class ControlTypeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -50,9 +47,12 @@ public class ControlTypeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("ControlType name is required.", 400);
 
@@ -87,9 +87,9 @@ public class ControlTypeComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -131,6 +131,12 @@ public class ControlTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -146,7 +152,9 @@ public class ControlTypeComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE ControlTypes
-                SET IsDeleted = False
+                SET IsDeleted = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -322,9 +330,12 @@ public class ControlTypeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id <= 0)
                 throw new CustomException("ControlType code is required.", 400);
 
@@ -361,7 +372,7 @@ public class ControlTypeComponent
                         SET 
                             Name = '{input.Name.Replace("'", "''")}', 
                             LastModifiedAt = NOW(),
-                            LastModifiedBy = '{userId.Replace("'", "''")}'
+                            LastModifiedBy = '{empCode.Replace("'", "''")}'
                         WHERE Id = {input.Id}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

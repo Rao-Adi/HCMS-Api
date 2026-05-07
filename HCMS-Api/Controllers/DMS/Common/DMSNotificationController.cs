@@ -51,22 +51,22 @@ public class DMSNotificationController : Controller
         }
     }
 
-    [HttpPut("MarkAsRead/{id}")]
-    public async Task<IActionResult> MarkAsRead(int id)
-    {
+    [HttpPut("mark-as-read/{notificationId}")]
+    public async Task<IActionResult> MarkAsRead(int notificationId)
+{
         try
         {
-            bool isSuccess = await _notificationComponent.MarkAsReadAsync(id);
+            bool isSuccess = await _notificationComponent.MarkAsReadAsync(notificationId);
             return Ok(new { success = isSuccess });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error marking notification {id} as read");
+            _logger.LogError(ex, $"Error marking notification {notificationId} as read");
             return StatusCode(500, new { message = "An error occurred marking notification as read." });
         }
     }
 
-    [HttpPut("MarkAllAsRead")]
+    [HttpPut("mark-all-as-read")]
     public async Task<IActionResult> MarkAllAsRead()
     {
         try
@@ -83,7 +83,7 @@ public class DMSNotificationController : Controller
     }
 
 
-    [HttpPost("SendTestNotification")] 
+    [HttpPost("SendTestNotification")]
     public async Task<IActionResult> SendTestNotification([FromBody] TestNotificationDto request)
     {
         await _notificationComponent.SendTestNotification(request.Title, request.Message, request.Type);
@@ -119,15 +119,15 @@ public class DMSNotificationController : Controller
     }
 
 
-    [HttpGet("get-notification-by-code/{code}")]
-    public async Task<IActionResult> GetNotificationById(string code)
+    [HttpGet("get-notification-by-code/{isRead}")]
+    public async Task<IActionResult> GetNotificationById(bool isRead)
     {
         try
         {
-            return Ok(new HttpApiResponse<NotificationReadDto>()
+            return Ok(new HttpApiResponse<List<NotificationReadDto>>()
             {
                 Success = true,
-                Data = await _notificationComponent.GetByIdAsync(code),
+                Data = await _notificationComponent.GetByIdAsync(isRead),
                 Message = "Success",
                 Code = 200
             });
@@ -207,21 +207,10 @@ public class DMSNotificationController : Controller
     }
 
     [HttpDelete("delete-notification/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    public async Task<IActionResult> DeleteAsync(int code)
     {
         try
         {
-            var existingRecord = await _notificationComponent.GetByIdAsync(code);
-            if (existingRecord is null)
-            {
-                return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "DocumentType not found",
-                    Code = 404
-                });
-            }
 
             return Ok(new HttpApiResponse<bool>()
             {

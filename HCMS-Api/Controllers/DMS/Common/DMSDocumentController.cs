@@ -1,15 +1,10 @@
-﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
-using System.ComponentModel.Design;
-using System.Net;
-using System.Reflection.Metadata;
-using System.Xml.Linq;
-using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
@@ -22,20 +17,20 @@ public class DMSDocumentController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DocumentComponent _documentComponent;
+    private readonly DocumentComponent _documentComponent; 
 
     public DMSDocumentController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DocumentComponent documentComponent)
+     DocumentComponent documentComponent )
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _documentComponent = documentComponent;
+        _documentComponent = documentComponent; 
     }
 
     [HttpPost("get-all-document")]
@@ -298,15 +293,15 @@ public class DMSDocumentController : Controller
     }
 
 
-    [HttpGet("get-draft-by-request/{companyId}/{requestId}")]
-    public async Task<IActionResult> GetDraftDocumentByRequest(int companyId, int requestId)
+    [HttpGet("get-draft-by-request/{requestId}")]
+    public async Task<IActionResult> GetDraftDocumentByRequest(int requestId)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<dynamic>>()
             {
                 Success = true,
-                Data = await _documentComponent.GetDraftDocumentByRequestAsync(companyId, requestId),
+                Data = await _documentComponent.GetDraftDocumentByRequestAsync(requestId),
                 Message = "Success",
                 Code = 200
             });
@@ -419,6 +414,114 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpPost("get-pending-authorizations")]
+    public async Task<IActionResult> GetPendingAuthorizationsAsync(GetPendingAuthorization input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetPendingAuthorizationsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-authorized-documents")]
+    public async Task<IActionResult> GetAuthorizedDocumentsAsync(GetAuthorizedDocumentsDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetAuthorizedDocumentsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-documents-pending-training")]
+    public async Task<IActionResult> GetDocumentsPendingTrainingAcknowledgmentAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsPendingTrainingAcknowledgmentAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("authorize-document-post-training")]
+    public async Task<IActionResult> AuthorizeDocumentPostTraining([FromBody] AuthorizeDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentComponent.AuthorizeDocumentPostTrainingAsync(input),
+                Message = "Document successfully authorized and made effective.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+     
 
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)

@@ -6,9 +6,7 @@ public class BusinessDomainDto
 
 
 public class BusinessDomainCreateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{ 
 
     public string Code { get; set; }
 
@@ -17,11 +15,7 @@ public class BusinessDomainCreateDto
 }
 
 public class BusinessDomainUpdateDto
-{
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
-    public string Company { get; set; } = null!;
-
+{ 
     public string Code { get; set; }
     public string Name { get; set; }
 
@@ -30,7 +24,7 @@ public class BusinessDomainUpdateDto
     public bool IsActive { get; set; }
 }
 
-public class BusinessDomainReadDto
+public class BusinessDomainReadDto : AuditableEntity
 {
     public int Id { get; set; }
 
@@ -41,11 +35,5 @@ public class BusinessDomainReadDto
     public string Code { get; set; }
     public string Name { get; set; }
     public string SubDepartment { get; set; }
-    public string SubDepartmentCode { get; set; }
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
-    public string? CreatedAt { get; set; }
-    public string CreatedBy { get; set; }
-    public string? LastModifiedAt { get; set; }
-    public string LastModifiedBy { get; set; }
+    public string SubDepartmentCode { get; set; } 
 }

@@ -37,10 +37,7 @@ public class TrainingPolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -50,10 +47,12 @@ public class TrainingPolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-             
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
@@ -82,16 +81,16 @@ public class TrainingPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentTypeCode}',
                 '{input.TrainingRequired}',
                 '{input.MinimumScore}',
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -102,7 +101,7 @@ public class TrainingPolicyComponent
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON t.CompanyId = c.Id
             WHERE Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -115,7 +114,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -139,6 +138,12 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -154,7 +159,10 @@ public class TrainingPolicyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE TrainingPolicies
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -229,7 +237,7 @@ public class TrainingPolicyComponent
                 .Select(row => new TrainingPolicyReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
                     MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
@@ -271,10 +279,10 @@ public class TrainingPolicyComponent
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TrainingPolicies t
                     LEFT JOIN Companies c
-                    ON r.CompanyId = c.Id
-                WHERE Id = {code}
-                  AND IsActive = True
-                  AND IsDeleted = False";
+                    ON t.CompanyId = c.Id
+                WHERE t.Id = {code}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -286,7 +294,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
@@ -310,9 +318,12 @@ public class TrainingPolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id < 0)
                 throw new CustomException("Invalid Id.", 200);
 
@@ -335,7 +346,7 @@ public class TrainingPolicyComponent
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -348,7 +359,7 @@ public class TrainingPolicyComponent
             SELECT t.*, c.Id AS CompanyId, c.Name AS Company
             FROM TrainingPolicies t
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
+            ON t.CompanyId = c.Id
             WHERE Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -361,7 +372,7 @@ public class TrainingPolicyComponent
             return new TrainingPolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),

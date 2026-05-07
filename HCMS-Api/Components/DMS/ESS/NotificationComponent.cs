@@ -1,3 +1,4 @@
+﻿﻿﻿﻿using HCMS_Api.Common;
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -23,6 +24,7 @@ public class NotificationComponent
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly PeoplePartnersComponent _peoplePartnersComponent;
     public NotificationComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -32,7 +34,8 @@ public class NotificationComponent
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
         DMSCommon common,
-        IHubContext<NotificationHub> hubContext
+        IHubContext<NotificationHub> hubContext,
+        PeoplePartnersComponent peoplePartnersComponent
         )
     {
         _http = http;
@@ -44,61 +47,70 @@ public class NotificationComponent
         _dapperService = dapper;
         _common = common;
         _hubContext = hubContext;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _peoplePartnersComponent = peoplePartnersComponent;
     }
 
     /// <summary>
     /// Triggers a system notification aligned with the predefined Notification Matrix.
     /// </summary>
-    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, int recipientUserId, Dictionary<string, string> placeholders)
+    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders)
     {
         try
         {
+            string targetUserId = recipientUserId?.Trim() ?? string.Empty;
+
             var (title, message, relatedEntityType, redirectionUrl) = GetNotificationDetails(scenario, placeholders);
 
             string insertQuery = $@"
             INSERT INTO Notifications
             (   CompanyId,
-                UserId,
+                EmployeeCode,
                 Title,
                 Message,
                 NotificationType,
                 RelatedEntityType,
                 RelatedEntityId,
+                RedirectionUrl,
                 IsRead, 
                 CreatedAt
             )
             VALUES
             (
                 {companyId},
-                {recipientUserId},
+                '{targetUserId}',
                 '{title.Replace("'", "''")}',
                 '{message.Replace("'", "''")}',
                 {(int)scenario},
                 '{relatedEntityType}',
                 {relatedEntityId},
+                '{redirectionUrl}',
                 FALSE,
                 NOW()
             )
             RETURNING Id;";
 
-            _common.ExecuteScalarQuery(insertQuery);
             var newIdObj = _common.ExecuteScalarQuery(insertQuery);
-            int newId = newIdObj != null && newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
+            int newId = newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
 
-            // Dispatch real-time event
-            await _hubContext.Clients.User(recipientUserId.ToString()).SendAsync("ReceiveNotification", new
+            // Dispatch real-time event to specific User and Group (Secure Targeting)
+            var payload = new
             {
-                Id = newId,
-                Title = title,
-                Message = message,
-                RelatedEntityType = relatedEntityType,
-                RelatedEntityId = relatedEntityId,
-                RedirectionUrl = redirectionUrl,
-                CreatedAt = DateTime.UtcNow
-            });
+                id = newId,
+                recipientUserId = targetUserId,
+                title = title,
+                message = message,
+                type = (int)scenario,
+                relatedEntityType = relatedEntityType,
+                relatedEntityId = relatedEntityId,
+                redirectionUrl = redirectionUrl,
+                createdAt = DateTime.UtcNow
+            };
+
+            await _hubContext.Clients.User(targetUserId).SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group(targetUserId).SendAsync("ReceiveNotification", payload);
+
+            // Dispatch Email
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl);
 
             return true;
         }
@@ -118,105 +130,105 @@ public class NotificationComponent
                 "New Request Pending",
                 $"A new request (Request ID: {Get("ID")}) is pending your approval.",
                 "Request",
-                "My Approvals - Request for Document Creation/Update"
+                "/dms/approvals/requests"
             ),
             NotificationScenario.RequestApprovedForwarded => (
                 "Request Approved - Forwarded",
                 $"Request ID: {Get("ID")} has been approved and requires your action.",
                 "Request",
-                "My Approvals - Request for Document Creation/Update"
+                "/dms/approvals/requests"
             ),
             NotificationScenario.RequestRejected => (
                 "Request Rejected",
                 $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Request",
-                "My Request Pending Approval"
+                "/dms/my-requests"
             ),
             NotificationScenario.RequestRevertedForRework => (
                 "Request Rework Required",
                 $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Get("Observation")}.",
                 "Request",
-                "Request for Document Creation/Update (Edit View)"
+                $"/dms/requests/edit/{Get("ID")}"
             ),
             NotificationScenario.OverdueRequestReminder => (
                 "Overdue Action Required",
                 $"ACTION REQUIRED: Request ID: {Get("ID")} is overdue. Please process immediately.",
                 "Request",
-                "My Approvals - Request for Document Creation/Update"
+                "/dms/approvals/requests"
             ),
             NotificationScenario.PendingDocumentApproval => (
                 "New Document Pending Review",
                 $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) is pending your technical review.",
                 "Document",
-                "My Approvals - Documents"
+                "/dms/approvals/documents"
             ),
             NotificationScenario.DocumentApprovedForwarded => (
                 "Document Approved - Forwarded",
                 $"Document {Get("Doc Name")} has been approved and requires your action/authorization.",
                 "Document",
-                "My Approvals - Documents / Document Authorization - Post Training"
+                "/dms/approvals/documents"
             ),
             NotificationScenario.DocumentRejected => (
                 "Document Rejected",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Document",
-                "My Request Pending Approval"
+                "/dms/my-requests"
             ),
             NotificationScenario.DocumentRevertedForRework => (
                 "Document Rework Required",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
                 "Document",
-                "Upload or Create Document (Edit View)"
+                $"/dms/documents/edit/{Get("ID")}"
             ),
             NotificationScenario.TrainingProofRequired => (
                 "Training Proof Required",
                 $"Action needed: Upload Training Proof for document {Get("Doc Name")} (V:{Get("V#")}) for final authorization.",
                 "Authorization",
-                "Document Authorization - Post Training"
+                "/dms/authorization/post-training"
             ),
             NotificationScenario.TrainingProofSubmitted => (
                 "Proof Submitted - Final Authorization",
                 $"Training proof has been submitted for {Get("Doc Name")} (V:{Get("V#")}). Final authorization is now pending.",
                 "Authorization",
-                "Document Authorization - Post Training"
+                "/dms/authorization/post-training"
             ),
             NotificationScenario.DocumentAuthorizedEffective => (
                 "Document Authorized & Effective",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
-                "My Documents"
+                "/dms/my-documents"
             ),
             NotificationScenario.PeriodicReviewDue => (
                 "Document Review Due Soon",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is due for review on {Get("Date")}. Please initiate a Revision Request.",
                 "Review",
-                "My Documents"
+                "/dms/my-documents"
             ),
             NotificationScenario.DocumentObsoleted => (
                 "Document Obsoleted",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) has been officially obsoleted as of {Get("Date")}.",
                 "Obsoletion",
-                "N/A"
+                "/dms/documents/obsoleted"
             ),
             NotificationScenario.PhysicalCopyRetrievalTask => (
                 "Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
-                "N/A"
+                "/dms/tasks/physical-copies"
             ),
             NotificationScenario.NewUserAccountCreated => (
                 "Welcome to DMS",
                 "Your DMS account has been created. Use your credentials to log in.",
                 "Setup",
-                "Login Screen/DMS Dashboard"
+                "/dashboard"
             ),
             NotificationScenario.TransferRequestApproval => (
                 "Responsibility Transfer Effective",
                 $"Your responsibility transfer from {Get("Emp From")} to {Get("Emp To")} is now effective from {Get("Date From")} to {Get("Date To")}.",
                 "Setup",
-                "My Documents/Tasks"
+                "/dms/my-documents"
             ),
-            _ => ("Notification", "You have a new notification.", "General", "")
+            _ => ("Notification", "You have a new notification.", "General", "/")
         };
     }
 
@@ -224,30 +236,13 @@ public class NotificationComponent
     public async Task<NotificationReadDto> CreateAsync(NotificationCreateDto input)
     {
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("Notifications code is required.", 400);
-
-            // Check duplicate by Id OR UserId
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM Notifications
-            WHERE (Id = '{input.Id}'
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("Notifications already exists", 409);
+        {  
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Notifications
             (   CompanyId,
-                UserId,
+                EmployeeCode,
                 Title,
                 Message,
                 NotificationType,
@@ -259,7 +254,7 @@ public class NotificationComponent
             VALUES
             (
                 '{input.CompanyId}',
-                '{input.UserId}',
+                '{input.EmployeeCode}',
                 '{input.Title}',
                 '{input.Message}',
                 '{input.NotificationType}',
@@ -274,10 +269,8 @@ public class NotificationComponent
 
             // Fetch inserted record
             string selectQuery = $@"
-             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+             SELECT n.*, c.Name AS Company FROM Notifications n
+             LEFT JOIN Companies c ON n.CompanyId = c.Id
             WHERE n.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -290,14 +283,15 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
                 RelatedEntityType = row.Field<string>("RelatedEntityType"),
                 RelatedEntityId = row.Field<int>("RelatedEntityId"),
+                RedirectionUrl = row.Field<string>("RedirectionUrl"),
                 IsRead = row.Field<bool>("IsRead"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
@@ -309,15 +303,16 @@ public class NotificationComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int code)
     {
         try
         {
+            var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(code);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Notifications
-                WHERE Id = {code}
+                WHERE EmployeeCode = '{empDetail.empcode}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -351,8 +346,7 @@ public class NotificationComponent
                 : input.SearchText;
 
             var whereClause = @"
-                WHERE n.IsDeleted = False 
-                  AND n.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE n.IsRead = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -360,37 +354,32 @@ public class NotificationComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(n.UserId) LIKE '%{search}%'
-                    OR UPPER(n.Id) LIKE '%{search}%'
+                    UPPER(n.Title) LIKE '%{search}%'
+                    OR UPPER(n.Title) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "n.UserId",
-                "CODE" => "n.Id",
-                "ISACTIVE" => "n.IsActive",
-                _ => "n.UserId"
+                "TITLE" => "n.Title",
+                _ => "n.EmployeeCode"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
             int offset = (input.PageNumber - 1) * input.PageSize;
 
-            string query = $@"
-                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
-                            FROM Notifications n
-                            LEFT JOIN Companies c
-                            ON d.CompanyId = c.Id
+            string query = $@"SELECT n.*,c.Name AS Company
+                        FROM Notifications n
+	                    LEFT JOIN Companies c ON n.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Notifications
-                        {whereClause};
-                    ";
+                        FROM Notifications n
+                        {whereClause}; ";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];  // your first result set (paged data)
@@ -409,14 +398,15 @@ public class NotificationComponent
                 .Select(row => new NotificationReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
+                    EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
                     Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
                     NotificationType = row.Table.Columns.Contains("NotificationType") ? row.Field<int>("NotificationType") : 0,
                     RelatedEntityType = row.Table.Columns.Contains("RelatedEntityType") ? row.Field<string>("RelatedEntityType") : string.Empty,
                     RelatedEntityId = row.Table.Columns.Contains("RelatedEntityId") ? row.Field<int>("RelatedEntityId") : 0,
+                    RedirectionUrl = row.Table.Columns.Contains("RedirectionUrl") ? row.Field<string>("RedirectionUrl") : string.Empty,
                     IsRead = row.Table.Columns.Contains("IsRead") && row.Field<bool?>("IsRead") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
@@ -441,40 +431,51 @@ public class NotificationComponent
         }
     }
 
-    public async Task<NotificationReadDto> GetByIdAsync(string code)
+    public async Task<List<NotificationReadDto>> GetByIdAsync(bool isRead)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()); 
+
             string query = $@"
-                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                 SELECT n.*,c.Name AS Company
                     FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
-                WHERE n.Id = {code}
-                  AND n.IsActive = True
-                  AND n.IsDeleted = False";
+	                LEFT JOIN Companies c ON n.CompanyId = c.Id
+                WHERE n.EmployeeCode = '{empCode}'
+                  AND n.CompanyId = {CompanyId}
+                  AND n.IsRead = {isRead}
+                  ORDER BY n.CreatedAt DESC";
 
-            DataTable dt = await _common.ExecuteSqlQuery(query);
+            DataTable divisionsTable = await _common.ExecuteSqlQuery(query);
 
-            if (dt.Rows.Count == 0)
+            if (divisionsTable.Rows.Count == 0)
                 throw new CustomException("Notifications not found", 200);
+             
 
-            DataRow row = dt.Rows[0];
+            var divisions = divisionsTable.AsEnumerable()
+               .Select(row => new NotificationReadDto
+               {
+                   Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                   CompanyId = row.Field<int>("CompanyId"),
+                   Company = row.Field<string>("Company"),
+                   EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
+                   Title = row.Table.Columns.Contains("Title") ? row.Field<string>("Title") : string.Empty,
+                   Message = row.Table.Columns.Contains("Message") ? row.Field<string>("Message") : string.Empty,
+                   NotificationType = row.Table.Columns.Contains("NotificationType") ? row.Field<int>("NotificationType") : 0,
+                   RelatedEntityType = row.Table.Columns.Contains("RelatedEntityType") ? row.Field<string>("RelatedEntityType") : string.Empty,
+                   RelatedEntityId = row.Table.Columns.Contains("RelatedEntityId") ? row.Field<int>("RelatedEntityId") : 0,
+                   RedirectionUrl = row.Table.Columns.Contains("RedirectionUrl") ? row.Field<string>("RedirectionUrl") : string.Empty,
+                   IsRead = row.Table.Columns.Contains("IsRead") && row.Field<bool?>("IsRead") == true,
+                   CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                               ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+               })
+               .ToList();
 
-            return new NotificationReadDto
-            {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
-                Title = row.Field<string>("Title"),
-                Message = row.Field<string>("Message"),
-                NotificationType = row.Field<int>("NotificationType"),
-                RelatedEntityType = row.Field<string>("RelatedEntityType"),
-                RelatedEntityId = row.Field<int>("RelatedEntityId"),
-                IsRead = row.Field<bool>("IsRead"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            return divisions; 
         }
         catch (Exception)
         {
@@ -486,10 +487,7 @@ public class NotificationComponent
     public async Task<NotificationReadDto> UpdateAsync(NotificationUpdateDto input)
     {
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+        { 
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -509,9 +507,9 @@ public class NotificationComponent
             string updateQuery = $@"
             UPDATE Notifications
             SET 
-                UserId = '{input.UserId}', 
+                EmployeeCode = '{input.EmployeeCode}', 
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{input.EmployeeCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -521,10 +519,9 @@ public class NotificationComponent
 
             // Return updated record
             string selectQuery = $@" 
-                SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
+                SELECT n.*,c.Name AS Company
                     FROM Notifications n
-                    LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+	                LEFT JOIN Companies c ON n.CompanyId = c.Id
             WHERE n.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -537,14 +534,15 @@ public class NotificationComponent
             return new NotificationReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Title = row.Field<string>("Title"),
                 Message = row.Field<string>("Message"),
                 NotificationType = row.Field<int>("NotificationType"),
                 RelatedEntityType = row.Field<string>("RelatedEntityType"),
                 RelatedEntityId = row.Field<int>("RelatedEntityId"),
+                RedirectionUrl = row.Field<string>("RedirectionUrl"),
                 IsRead = row.Field<bool>("IsRead"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss")
             };
@@ -560,12 +558,16 @@ public class NotificationComponent
         try
         {
 
-            JwtArray loginUser = await _common.GetJwtUser();
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND UserId = {loginUser.UserID}";
+                WHERE Id = {notificationId} AND CompanyID = {CompanyId} AND EmployeeCode = '{empCode}'";
 
             return _common.ExecuteNonQuery(updateQuery);
         }
@@ -579,8 +581,13 @@ public class NotificationComponent
     {
         try
         {
-            JwtArray loginUser = await _common.GetJwtUser();
-            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE UserId = {loginUser.UserID} AND IsRead = FALSE";
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = {empCode} AND CompanyID = {CompanyId} AND IsRead = FALSE";
             return _common.ExecuteNonQuery(updateQuery);
         }
         catch (Exception)
@@ -607,6 +614,35 @@ public class NotificationComponent
         catch (Exception)
         {
             throw;
+        }
+    }
+
+
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl)
+    {
+        try
+        {
+            string emailQuery = "SELECT Email FROM tblEmployee WHERE TRIM(empCode) = @EmpCode AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
+            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId.Trim(), CompanyId = companyId });
+
+            if (!string.IsNullOrWhiteSpace(recipientEmail))
+            {
+                string emailBody = $@"
+                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 8px;'>
+                        <h2 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;'>{title}</h2>
+                        <p style='font-size: 16px; color: #333; line-height: 1.5;'>{message}</p>
+                        <p style='font-size: 14px; color: #555; margin-top: 20px;'><strong>Action Required At:</strong> {redirectionUrl}</p>
+                        <hr style='border: none; border-top: 1px solid #eee; margin-top: 30px;' />
+                        <p style='font-size: 12px; color: #999; text-align: center;'>This is an automated notification from the Document Management System. Please do not reply.</p>
+                    </div>";
+
+                await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions
+            Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
         }
     }
 

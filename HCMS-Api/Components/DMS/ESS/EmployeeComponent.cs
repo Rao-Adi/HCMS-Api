@@ -40,10 +40,7 @@ public class EmployeeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
     public async Task<int> InsertDepartmentMasterAsync(tblSetupsdetail input)

@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+﻿﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.DMS.Common.DataAccess; 
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
@@ -1676,6 +1676,15 @@ namespace HCMS_Api.Components.DMS.Common
             return obj;
         }
 
+        public object GetScalarDataForHCMS(string strQuery)
+        {
+            object obj = null;
+            string result = _dataservice.ExecuteStatementForHCMS(strQuery, ref obj, 1);
+            if (obj == null)
+                return "";
+            return obj;
+        }
+
 
         public async Task SendEmailAsync(string recipient, string subject, string body)
         {
@@ -2256,6 +2265,48 @@ namespace HCMS_Api.Components.DMS.Common
 
             return EmpCode;
         }
+
+        public string GetEmpCodeForHCMS(string EmpId)
+        {
+            string empcode = "";
+            try
+            {  
+                Object obj = new object();
+                obj = GetScalarDataForHCMS("Select empcode from tblEmployee where EmpId = '" + EmpId + "'");
+                if (obj != null)
+                {
+                    empcode = obj.ToString();
+                }
+                return empcode;
+            }
+            catch (Exception ex)
+            {
+                empcode = "";
+            }
+
+            return empcode;
+        }
+
+        public string GetEmpNameForHCMS(string EmpId)
+        {
+            string empName = "";
+            try
+            {  
+                Object obj = GetScalarDataForHCMS("SELECT LTRIM(RTRIM(COALESCE(FirstName, '') || ' ' || COALESCE(MidName, '') || ' ' || COALESCE(LastName, ''))) FROM tblEmployee WHERE EmpId = '" + EmpId + "'");
+                if (obj != null)
+                {
+                    empName = obj.ToString();
+                }
+                return empName;
+            }
+            catch (Exception ex)
+            {
+                empName = "";
+            }
+
+            return empName;
+        }
+        
 
         public DataSet GetSubordinates(string EmpId, string CompanyId, string Culture)
         {

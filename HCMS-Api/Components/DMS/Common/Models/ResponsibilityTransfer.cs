@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HCMS_Api.Common.Misc;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HCMS_Api.Components.DMS.Common.Models;
@@ -10,7 +11,7 @@ public class ResponsibilityTransfer : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
@@ -21,6 +22,11 @@ public class ResponsibilityTransfer : AuditableEntity
     public string Attachment { get; set; }
     public string Remarks { get; set; }
 
+    public string Status { get; set; }
+    public int ApproverId { get; set; }
+    public string Observation { get; set; }
+    public string? ActionDate { get; set; }
+
 }
 
 public class ResponsibilityTransferReadDto : AuditableEntity
@@ -28,11 +34,13 @@ public class ResponsibilityTransferReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public string EmployeeFrom { get; set; }
+    public string EmployeeFromName { get; set; }
     public string EmployeeTo { get; set; }
+    public string EmployeeToName { get; set; }
     public string ReasonForTransfer { get; set; }
     public DateTime EffectiveDateFrom { get; set; }
     public DateTime EffectiveDateTo { get; set; }
@@ -40,12 +48,14 @@ public class ResponsibilityTransferReadDto : AuditableEntity
     public string Attachment { get; set; }
     public string Remarks { get; set; }
 
+    public int Status { get; set; }
+    public int ApproverId { get; set; }
+    public string Observation { get; set; }
+    public string? ActionDate { get; set; } 
 }
 
 public class ResponsibilityTransferCreateDto
-{
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+{ 
 
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
@@ -55,15 +65,16 @@ public class ResponsibilityTransferCreateDto
     public bool PermanentTransfer { get; set; }
     public IFormFile Attachment { get; set; }
     public string Remarks { get; set; }
+     
+    public int ApproverId { get; set; } 
+    public DateTime? ActionDate { get; set; }
 
 }
 
 public class ResponsibilityTransferUpdateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+     
     public string EmployeeFrom { get; set; }
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }
@@ -73,7 +84,17 @@ public class ResponsibilityTransferUpdateDto
     public IFormFile Attachment { get; set; }
     public string Remarks { get; set; }
 
+    public string Status { get; set; }
+    public int ApproverId { get; set; }
+    public string Observation { get; set; }
+    public string? ActionDate { get; set; }
+
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 
+}
+
+public class GetResponsibilityTransferByStatusDto :TableFiltersDto
+{
+    public int StatusId { get; set; }
 }

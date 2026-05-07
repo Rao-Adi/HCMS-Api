@@ -38,9 +38,6 @@ public class AuditLogComponent
         _clientContextService = clientContextService;
         _dapperService = dapper;
         _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
     }
 
 
@@ -48,17 +45,19 @@ public class AuditLogComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.UserId))
-            //    throw new CustomException("AuditLog code is required.", 200);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var userId = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            // Check duplicate by UserId OR Action
+            // Check duplicate by EmployeeCode OR Action
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM AuditLogs
-            WHERE (UserId = '{input.UserId}'
+            WHERE (EmployeeCode = '{input.EmployeeCode}'
                    OR Action = '{input.Action.Replace("'", "''")}')
               AND IsDeleted = FALSE";
 
@@ -72,7 +71,7 @@ public class AuditLogComponent
             INSERT INTO AuditLogs
             (
                 CompanyId,
-                UserId,
+                EmployeeCode,
                 Action,
                 EntityType,
                 EntityTid,
@@ -83,8 +82,8 @@ public class AuditLogComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
-                '{input.UserId}',
+                '{CompanyId}',
+                '{input.EmployeeCode}',
                 '{input.Action.Replace("'", "''")}',
                 '{input.EntityId}',
                 '{input.EntityType}',
@@ -112,9 +111,9 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Action = row.Field<string>("Action"),
                 EntityType = row.Field<string>("EntityType"),
                 EntityId = row.Field<int>("EntityId"),
@@ -139,7 +138,7 @@ public class AuditLogComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM AuditLogs
-                WHERE UserId = {code}
+                WHERE EmployeeCode = {code}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -150,8 +149,8 @@ public class AuditLogComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE AuditLogs
-                SET IsDeleted = False
-                WHERE UserId = {code}";
+                SET IsDeleted = True
+                WHERE EmployeeCode = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -175,7 +174,7 @@ public class AuditLogComponent
                 whereClause += $@"
                 AND (
                     UPPER(Action) LIKE '%{search}%'
-                    OR UPPER(UserId) LIKE '%{search}%'
+                    OR UPPER(EmployeeCode) LIKE '%{search}%'
                 )";
             }
 
@@ -183,7 +182,7 @@ public class AuditLogComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "Action" => "Action",
-                "UserId" => "UserId", 
+                "EmployeeCode" => "EmployeeCode", 
                 _ => "Action"
             };
 
@@ -219,9 +218,9 @@ public class AuditLogComponent
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new AuditLogReadDto
                 {
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
-                    UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
+                    EmployeeCode = row.Table.Columns.Contains("EmployeeCode") ? row.Field<string>("EmployeeCode") : string.Empty,
                     Action = row.Table.Columns.Contains("Action") ? row.Field<string>("Action") : string.Empty,
                     EntityId = row.Table.Columns.Contains("EntityId") ? row.Field<int>("EntityId") : 0,
                     EntityType = row.Table.Columns.Contains("EntityType") ? row.Field<string>("EntityType") : string.Empty,
@@ -250,14 +249,14 @@ public class AuditLogComponent
         }
     }
      
-    public async Task<AuditLogReadDto> GetByUserIdAsync(string code)
+    public async Task<AuditLogReadDto> GetByEmployeeCodeAsync(string code)
     {
         try
         {
             string query = $@"
                 SELECT *
                 FROM AuditLogs
-                WHERE UserId = {code}";
+                WHERE EmployeeCode = '{code}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -268,9 +267,9 @@ public class AuditLogComponent
 
             return new AuditLogReadDto
             {
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
+                EmployeeCode = row.Field<string>("EmployeeCode"),
                 Action = row.Field<string>("Action"),
                 EntityId = row.Field<int>("EntityId"),
                 EntityType = row.Table.Columns.Contains("EntityType") ? row.Field<string>("EntityType") : string.Empty,
@@ -286,73 +285,5 @@ public class AuditLogComponent
         }
     }
 
-     
-    public async Task<AuditLogReadDto> UpdateAsync(AuditLogUpdateDto input)
-    {
-        try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.UserId))
-            //    throw new CustomException("Invalid division code.", 200);
-
-            // Check existence (UserId is VARCHAR → must be quoted)
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM AuditLogs
-            WHERE UserId = '{input.UserId}'";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists == 0)
-                throw new CustomException("AuditLog not found", 200);
-
-            // Update (PostgreSQL boolean + timestamp)
-            string updateQuery = $@"
-            UPDATE AuditLogs
-            SET 
-                Action = '{input.Action.Replace("'", "''")}', 
-                LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
-            WHERE UserId = '{input.UserId}'";
-
-            bool updated = _common.ExecuteNonQuery(updateQuery);
-
-            if (!updated)
-                throw new Exception("Update failed");
-
-            // Return updated record
-            string selectQuery = $@"
-            SELECT *
-            FROM AuditLogs
-            WHERE UserId = '{input.UserId}'";
-
-            DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
-
-            if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
-
-            DataRow row = dt.Rows[0];
-
-            return new AuditLogReadDto
-            {
-                CompanyId = row.Field<Int64>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                UserId = row.Field<int>("UserId"),
-                Action = row.Field<string>("Action"),
-                EntityId = row.Field<int>("EntityId"),
-                EntityType = row.Field<string>("EntityType"),
-                OldValues = row.Field<string>("OldValues"),
-                NewValues = row.Field<string>("NewValues"),
-                Timestamp = row.Field<DateTime>("Timestamp"),
-                IPAddress = row.Field<string>("IPAddress")
-            };
-        }
-        catch
-        {
-            throw;
-        }
-    }
-
+      
 }

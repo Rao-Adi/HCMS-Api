@@ -1,7 +1,39 @@
-﻿namespace HCMS_Api.Components.DMS.Common.Models;
+﻿﻿using HCMS_Api.Common.Misc;
+using System.Collections.Generic;
+
+namespace HCMS_Api.Components.DMS.Common.Models;
 
 public class PeoplePartners
 {
+}
+
+public class EmployeeCreateDto
+{ 
+    public int? CompanyId { get; set; }
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public string Email { get; set; }
+    public string MobileNumber { get; set; }
+    public int? dptId { get; set; }
+    public int? dsgId { get; set; }
+    public DateTime? DateofBirth { get; set; }
+    public DateTime? DateJoin { get; set; }
+    public string ReportTo { get; set; }
+}
+
+public class EmployeeFilterDto : TableFiltersDto
+{
+    public int? ReportingTo { get; set; } // e.g. reportingto >= n
+    public int? DesignationId { get; set; } // Maps to e.dsgId
+    public int? RoleId { get; set; } // Maps to TblEmpJobProfile.RoleId
+    public bool? IsHeadOfDivision { get; set; }
+    public bool? IsHeadOfDepartment { get; set; }
+    public bool? IsHeadOfSubDepartment { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }
 
 
@@ -105,7 +137,7 @@ public class tblEmployee
     public decimal? SumInsured { get; set; }
     public int? AssetStatus { get; set; }
     public string LReason { get; set; }
-    public char? Shift { get; set; }
+    public string? Shift { get; set; }
     public bool AutoPresent { get; set; }
     public string PGIds { get; set; }
     public int? CountryId { get; set; }
@@ -195,52 +227,52 @@ public class tblEmployee
     public int? SpnsCategory { get; set; }
 
 
-    public int NoOfSpnsChangedOfVisa { get; set; }
-    public int EmpCategoryId { get; set; }
-    public TimeSpan AutoPresentFromDate { get; set; }
-    public TimeSpan AutoPresentToDate { get; set; }
+    public int? NoOfSpnsChangedOfVisa { get; set; }
+    public int? EmpCategoryId { get; set; }
+    public DateTime? AutoPresentFromDate { get; set; }
+    public DateTime? AutoPresentToDate { get; set; }
     public string TransactionSource { get; set; }
-    public int SalaryChangedStatus { get; set; }
-    public int ReviewTransactionId { get; set; }
+    public int? SalaryChangedStatus { get; set; }
+    public int? ReviewTransactionId { get; set; }
     public string HrSeries { get; set; }
-    public bool IsLeaveAllocated { get; set; }
-    public bool IsEmployeeSalary { get; set; }
-    public bool IsHiringChecklistFinalized { get; set; }
-    public bool IsEmployeeProfileExtended { get; set; }
-    public bool IsEmployeeExpenseEntitlement { get; set; }
-    public bool IsEmployeeJD { get; set; }
-    public bool IsApprovalForPayroll { get; set; }
-    public bool IsUserId { get; set; }
+    public bool? IsLeaveAllocated { get; set; }
+    public bool? IsEmployeeSalary { get; set; }
+    public bool? IsHiringChecklistFinalized { get; set; }
+    public bool? IsEmployeeProfileExtended { get; set; }
+    public bool? IsEmployeeExpenseEntitlement { get; set; }
+    public bool? IsEmployeeJD { get; set; }
+    public bool? IsApprovalForPayroll { get; set; }
+    public bool? IsUserId { get; set; }
     public string PreferredCulture { get; set; }
-    public int DomCntId { get; set; }
-    public TimeSpan EntDate { get; set; }
+    public int? DomCntId { get; set; }
+    public DateTime? EntDate { get; set; }
     public string ApplicationId { get; set; }
-    public TimeSpan RetirementDate { get; set; }
-    public int SalaryReviewChangedStatus { get; set; }
-    public TimeSpan TimeStamp { get; set; }
-    public int JobIdOld { get; set; }
-    public int PGIdOld { get; set; }
-    public int ReportToOld { get; set; }
-    public bool FlexiShift { get; set; }
-    public int FlexiType { get; set; }
-    public decimal RequiredHours { get; set; }
+    public DateTime? RetirementDate { get; set; }
+    public int? SalaryReviewChangedStatus { get; set; }
+    public byte[]? TimeStamp { get; set; }
+    public int? JobIdOld { get; set; }
+    public int? PGIdOld { get; set; }
+    public int? ReportToOld { get; set; }
+    public bool? FlexiShift { get; set; }
+    public int? FlexiType { get; set; }
+    public decimal? RequiredHours { get; set; }
     public string EditByUser { get; set; }
-    public bool secondment { get; set; }
+    public bool? secondment { get; set; }
     public string PhotoPath { get; set; }
     public string CompanyShortName { get; set; }
     public string ACids { get; set; }
     public string DrivingLicenseNo { get; set; }
-    public TimeSpan DrivingLicenseExpiryDate { get; set; }
-    public bool isSpouseEmployed { get; set; }
-    public bool isAnyOtherIncomeSource { get; set; }
-    public bool isAnyPhysicalDisability { get; set; }
+    public DateTime? DrivingLicenseExpiryDate { get; set; }
+    public bool? isSpouseEmployed { get; set; }
+    public bool? isAnyOtherIncomeSource { get; set; }
+    public bool? isAnyPhysicalDisability { get; set; }
     public string OtherIncomeSourceDetails { get; set; }
     public string PhysicalDisabilityDetails { get; set; }
-    public int ResidentialStatusId { get; set; }
+    public int? ResidentialStatusId { get; set; }
     public string FatherHusbandPhone { get; set; }
     public string FatherHusbandOccupation { get; set; }
-    public bool isOwnConveyance { get; set; }
-    public int ConveyanceType { get; set; }
+    public bool? isOwnConveyance { get; set; }
+    public int? ConveyanceType { get; set; }
     public string ConveyanceMake { get; set; }
     public string ConveyanceModel { get; set; }
     public string ConveyanceYear { get; set; }
@@ -249,6 +281,8 @@ public class tblEmployee
     public string SittingLocation { get; set; }
 
 }
+
+ 
 
 public class tblSetupsdetail
 {
@@ -435,4 +469,3 @@ public class TblEmpJobProfile
 
     public string? ChangeResponsibilityDetail { get; set; }
 }
-

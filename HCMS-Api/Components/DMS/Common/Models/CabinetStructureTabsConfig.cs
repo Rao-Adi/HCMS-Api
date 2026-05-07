@@ -6,12 +6,7 @@ public class CabinetStructureTabsConfig
 
 
 public class CabinetStructureTabsConfigCreateDto
-{
-
-    public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+{ 
 
     public string Name { get; set; }
 }
@@ -19,9 +14,7 @@ public class CabinetStructureTabsConfigCreateDto
 public class CabinetStructureTabsConfigUpdateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+     
 
     public string Name { get; set; }
 

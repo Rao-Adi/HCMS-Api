@@ -32,7 +32,7 @@ public class DMSResponsibilityTransferController : Controller
     }
 
     [HttpPost("get-all-responsibility-transfer")]
-    public async Task<IActionResult> GetAllResponsibilityTransfer(TableFiltersDto input)
+    public async Task<IActionResult> GetAllResponsibilityTransfer(GetResponsibilityTransferByStatusDto input)
     {
         try
         {
@@ -69,6 +69,60 @@ public class DMSResponsibilityTransferController : Controller
                 Success = true,
                 Data = await _responsibilityTransferComponent.GetByCodeAsync(code),
                 Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-my-approvals")]
+    public async Task<IActionResult> GetMyApprovals([FromBody] GetTransferApprovalsDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _responsibilityTransferComponent.GetMyApprovalsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("take-action")]
+    public async Task<IActionResult> TakeAction([FromBody] ResponsibilityTransferActionDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _responsibilityTransferComponent.TakeActionAsync(input),
+                Message = "Action taken successfully.",
                 Code = 200
             });
         }

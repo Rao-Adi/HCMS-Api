@@ -37,10 +37,7 @@ public class DocumentAttributeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,11 +45,12 @@ public class DocumentAttributeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("DocumentAttribute Id is required.", 400);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
 
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
@@ -84,7 +82,7 @@ public class DocumentAttributeComponent
             )
             VALUES
             (
-                {input.CompanyId},
+                {CompanyId},
                 '{input.DocumentTypeCode}',
                 '{input.ControlLabel.Trim()}',
                 '{input.ControlTypeId}',
@@ -92,9 +90,9 @@ public class DocumentAttributeComponent
                 {input.IsMandatory}, 
                 TRUE,
                 FALSE,
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW()
             )
             RETURNING Id;";
@@ -154,6 +152,12 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -169,7 +173,9 @@ public class DocumentAttributeComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentAttributes
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -288,10 +294,14 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<List<DocumentAttributeReadDto2>> GetDocumentAttributesByDocumentIdAsync(int companyId, int documentId)
+    public async Task<List<DocumentAttributeReadDto2>> GetDocumentAttributesByDocumentIdAsync(int documentId)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId); 
+
+
             var query = $@"SELECT 
                         da.Id AS DocumentAttributeId,
                         da.ControlLabel,
@@ -305,7 +315,7 @@ public class DocumentAttributeComponent
                     FROM DocumentAttributeValues dav
                     JOIN DocumentAttributes da
                         ON da.Id = dav.DocumentAttributeId
-                    WHERE dav.CompanyId = {companyId}
+                    WHERE dav.CompanyId = {CompanyId}
                       AND dav.DocumentId = {documentId}
                       AND da.IsDeleted = FALSE
                       AND da.IsActive = TRUE
@@ -552,9 +562,11 @@ public class DocumentAttributeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);            
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -578,7 +590,7 @@ public class DocumentAttributeComponent
                 IsMandatory = '{input.IsMandatory}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

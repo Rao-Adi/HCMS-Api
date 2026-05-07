@@ -37,10 +37,7 @@ public class TransferScopePolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,9 +45,12 @@ public class TransferScopePolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id < 0)
                 throw new CustomException("TransferScopePolicy is required.", 400);
 
@@ -58,7 +58,7 @@ public class TransferScopePolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TransferScopePolicies
-            WHERE (DivisionCode = '{input.DivisionCode.Replace("'", "''")}' 
+            WHERE (DivisionCode = '{input.DivisionCode!.Replace("'", "''")}' 
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -88,14 +88,14 @@ public class TransferScopePolicyComponent
                 '{input.DivisionCode.Replace("'", "''")}', 
                 '{input.DepartmentCode!.Replace("'", "''")}', 
                 '{input.SubDepartmentCode!.Replace("'", "''")}', 
-                '{input.BusinessDomainCode.Replace("'", "''")}', 
+                '{input.BusinessDomainCode!.Replace("'", "''")}', 
                 '{input.ReportingToLevel}',
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -127,7 +127,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -161,6 +161,12 @@ public class TransferScopePolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -176,7 +182,9 @@ public class TransferScopePolicyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE TransferScopePolicies
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE DivisionCode = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -238,7 +246,7 @@ public class TransferScopePolicyComponent
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM TransferScopePolicies
+                        FROM TransferScopePolicies t
                         {whereClause};
                     ";
 
@@ -259,7 +267,7 @@ public class TransferScopePolicyComponent
                 .Select(row => new TransferScopePolicyReadDto
                 {
                     Id = row.Field<int>("Id"),
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
                     Division = row.Field<string>("Division"),
@@ -335,7 +343,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
                 Division = row.Field<string>("Division"),
@@ -368,9 +376,12 @@ public class TransferScopePolicyComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (string.IsNullOrWhiteSpace(input.DivisionCode))
                 throw new CustomException("Invalid division code.", 200);
 
@@ -397,7 +408,7 @@ public class TransferScopePolicyComponent
                 ReportingToLevel = '{input.ReportingToLevel}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -431,7 +442,7 @@ public class TransferScopePolicyComponent
             return new TransferScopePolicyReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),

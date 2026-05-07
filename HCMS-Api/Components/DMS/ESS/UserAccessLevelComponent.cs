@@ -37,10 +37,7 @@ public class UserAccessLevelComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        //string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        //_dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -48,25 +45,12 @@ public class UserAccessLevelComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            if (input.Id < 0)
-                throw new CustomException("UserAccessLevel Id is required.", 400);
-
-            // Check duplicate by Id OR Name
-            string checkQuery = $@"
-            SELECT COUNT(1)
-            FROM UserAccessLevels
-            WHERE (Id = '{input.Id}' 
-              AND IsDeleted = FALSE";
-
-            int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
-
-            if (exists > 0)
-                throw new CustomException("UserAccessLevel already exists", 409);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()); 
              
-
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -87,7 +71,7 @@ public class UserAccessLevelComponent
             )
             VALUES
             (
-                {input.CompanyId}, 
+                {CompanyId}, 
                 '{input.EmployeeCode}', 
                 '{input.DivisionCode}', 
                 '{input.DepartmentCode}', 
@@ -97,9 +81,9 @@ public class UserAccessLevelComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -172,6 +156,12 @@ public class UserAccessLevelComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -187,7 +177,10 @@ public class UserAccessLevelComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE UserAccessLevels
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    IsActive = False,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -399,14 +392,88 @@ public class UserAccessLevelComponent
         }
     }
 
+    public async Task<List<UserAccessLevelReadDto>> GetByEmployeeCodeAsync(string employeeCode)
+    {
+        try
+        {
+            string query = $@"
+                   SELECT u.*,div.Name as Division, dep.Name as Department,
+                     sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
+                     FROM UserAccessLevels u 
+                     LEFT JOIN Divisions div 
+                     ON u.divisionCode = div.Code
+                     LEFT JOIN Departments dep
+                     ON u.DepartmentCode = dep.Code
+                     LEFT JOIN SubDepartments sdep
+                     ON u.SubdepartmentCode = sdep.Code 
+                     LEFT JOIN BusinessDomains bd
+                     ON u.BusinessDomainCode = bd.Code
+                     LEFT JOIN Companies c
+                     ON u.CompanyId = c.Id
+                     LEFT JOIN DocumentTypes dt
+                     ON u.DocumentTypeCode = dt.Code
+                WHERE u.EmployeeCode = '{employeeCode}'
+                  AND u.IsActive = True
+                  AND u.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("UserAccessLevels not found", 200);
+
+            var list = new List<UserAccessLevelReadDto>();
+            foreach (DataRow row in dt.Rows)
+            {
+                list.Add(new UserAccessLevelReadDto
+                {
+                    Id = row.Field<int>("Id"),
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+                    EmployeeCode = row.Field<string>("EmployeeCode"), 
+
+                    Division = row.Field<string>("Division"),
+                    DivisionCode = row.Field<string>("DivisionCode"),
+
+                    Department = row.Field<string>("Department"),
+                    DepartmentCode = row.Field<string>("DepartmentCode"),
+
+                    SubDepartment = row.Field<string>("SubDepartment"),
+                    SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
+
+                    BusinessDomain = row.Field<string>("BusinessDomain"),
+                    BusinessDomainCode = row.Field<string>("BusinessDomainCode"),
+
+                    DocumentType = row.Field<string>("DocumentType"),
+                    DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+
+                    IsDeleted = row.Field<bool>("IsDeleted"),
+                    IsActive = row.Field<bool>("IsActive"),
+                    CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    CreatedBy = row.Field<string>("CreatedBy"),
+                    LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                    LastModifiedBy = row.Field<string>("LastModifiedBy")
+                });
+            }
+
+            return list;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
 
     public async Task<UserAccessLevelReadDto> UpdateAsync(UserAccessLevelUpdateDto input)
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -414,7 +481,7 @@ public class UserAccessLevelComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -435,7 +502,7 @@ public class UserAccessLevelComponent
                 DocumentTypeCode = '{input.DocumentTypeCode}',  
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

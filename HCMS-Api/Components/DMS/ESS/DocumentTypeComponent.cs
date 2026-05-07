@@ -5,8 +5,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
-using System.Data;
-using static HCMS_Api.Controllers.HCMS.Common.SecurityController;
+using System.Data; 
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -38,10 +37,7 @@ public class DocumentTypeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -49,9 +45,11 @@ public class DocumentTypeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual";
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Document type name is required.", 400);
@@ -107,16 +105,16 @@ public class DocumentTypeComponent
                     )
                     VALUES
                     (
-                        {input.CompanyId},
+                        {CompanyId},
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.Description?.Replace("'", "''")}',
                         TRUE,
                         FALSE,
                         NOW(),
-                        '{userId.Replace("'", "''")}',
+                        '{empCode.Replace("'", "''")}',
                         NOW(),
-                        '{userId.Replace("'", "''")}'
+                        '{empCode.Replace("'", "''")}'
                     )
                     RETURNING Id;";
 
@@ -124,11 +122,22 @@ public class DocumentTypeComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(insertQuery));
 
             // 📥 Fetch inserted record
-            string selectQuery = $@"
-                SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"SELECT d.*, c.Name AS Company,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, d.CreatedBy::text) AS CreatedByName, 
+                 COALESCE(m.EmployeeName, d.LastModifiedBy::text) AS LastModifiedByName 
+    
                 FROM DocumentTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(d.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
                 WHERE d.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -154,7 +163,9 @@ public class DocumentTypeComponent
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt")
                                 .ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch
@@ -168,6 +179,12 @@ public class DocumentTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -183,7 +200,9 @@ public class DocumentTypeComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentTypes
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = '{empCode.Replace("'", "''")}'
                 WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -227,11 +246,22 @@ public class DocumentTypeComponent
 
             int offset = (input.PageNumber - 1) * input.PageSize;
 
-            string query = $@"
-                        SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+            string query = $@"SELECT d.*, c.Name AS Company,
+                        -- 🔹 Audit Fields
+                         COALESCE(e.EmployeeName, d.CreatedBy::text) AS CreatedByName, 
+                         COALESCE(m.EmployeeName, d.LastModifiedBy::text) AS LastModifiedByName 
+    
                         FROM DocumentTypes d
                         LEFT JOIN Companies c
                         ON d.CompanyId = c.Id
+ 
+                          -- 🔹 Created By Employee
+                        LEFT JOIN Vw_EmployeeNames e
+                            ON e.CleanEmpCode = LTRIM(d.CreatedBy::text, '0')
+
+                        -- 🔹 Last Modified By Employee
+                        LEFT JOIN Vw_EmployeeNames m 
+                            ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -271,6 +301,8 @@ public class DocumentTypeComponent
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    CreatedByName = row.Field<string>("CreatedByName"),
+                    LastModifiedByName = row.Field<string>("LastModifiedByName")
                 })
                 .ToList();
 
@@ -327,11 +359,22 @@ public class DocumentTypeComponent
     {
         try
         {
-            string query = $@"
-                SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+            string query = $@"SELECT d.*, c.Name AS Company,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, d.CreatedBy::text) AS CreatedByName, 
+                 COALESCE(m.EmployeeName, d.LastModifiedBy::text) AS LastModifiedByName 
+    
                 FROM DocumentTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(d.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
                 WHERE d.Code = '{code}'
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
@@ -356,7 +399,9 @@ public class DocumentTypeComponent
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch (Exception)
@@ -370,9 +415,12 @@ public class DocumentTypeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (string.IsNullOrWhiteSpace(input.Code))
                 throw new CustomException("Invalid division code.", 200);
 
@@ -396,7 +444,7 @@ public class DocumentTypeComponent
                 Description = '{input.Description!.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -405,11 +453,22 @@ public class DocumentTypeComponent
                 throw new Exception("Update failed");
 
             // Return updated record
-            string selectQuery = $@"
-            SELECT d.*, c.Id AS CompanyId, c.Name AS Company
+            string selectQuery = $@"SELECT d.*, c.Name AS Company,
+                -- 🔹 Audit Fields
+                 COALESCE(e.EmployeeName, d.CreatedBy::text) AS CreatedByName, 
+                 COALESCE(m.EmployeeName, d.LastModifiedBy::text) AS LastModifiedByName 
+    
                 FROM DocumentTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
+ 
+                  -- 🔹 Created By Employee
+                LEFT JOIN Vw_EmployeeNames e
+                    ON e.CleanEmpCode = LTRIM(d.CreatedBy::text, '0')
+
+                -- 🔹 Last Modified By Employee
+                LEFT JOIN Vw_EmployeeNames m 
+                    ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
             WHERE Code = '{input.Code.Replace("'", "''")}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -432,7 +491,9 @@ public class DocumentTypeComponent
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                LastModifiedBy = row.Field<string>("LastModifiedBy"),
+                CreatedByName = row.Field<string>("CreatedByName"),
+                LastModifiedByName = row.Field<string>("LastModifiedByName")
             };
         }
         catch

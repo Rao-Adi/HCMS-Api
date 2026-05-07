@@ -38,9 +38,7 @@ public class AttributeMandatoryScopeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
+        _common = common; 
 
     }
 
@@ -48,11 +46,11 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.Id))
-            //    throw new CustomException("AttributeMandatoryScope code is required.", 200);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check duplicate by DocumentAttributeId OR DivisionCode
             string checkQuery = $@"
@@ -86,7 +84,7 @@ public class AttributeMandatoryScopeComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentAttributeId}',
                 '{input.DivisionCode}',
                 '{input.DepartmentCode}',
@@ -96,9 +94,9 @@ public class AttributeMandatoryScopeComponent
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -166,6 +164,12 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -181,7 +185,9 @@ public class AttributeMandatoryScopeComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE AttributeMandatoryScopes
-                SET IsDeleted = False
+                SET IsDeleted = True,
+                LastUpdatedAt = NOW(),
+                LastUpdatedBy = '{empCode.Replace("'", "''")}'
                 WHERE DocumentAttributeId = {code}";
 
             return _common.ExecuteNonQuery(deleteQuery);
@@ -196,7 +202,7 @@ public class AttributeMandatoryScopeComponent
     public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
-        {
+        { 
             var whereClause = @"
                 WHERE doc.IsDeleted = False 
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
@@ -349,7 +355,8 @@ public class AttributeMandatoryScopeComponent
     public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetByCodeAsync(int id)
     {
         try
-        {
+        { 
+
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
@@ -438,6 +445,7 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+             
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
@@ -528,11 +536,11 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
-            //if (string.IsNullOrWhiteSpace(input.DocumentAttributeId))
-            //    throw new CustomException("Invalid division code.", 200);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // Check existence (DocumentAttributeId is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -556,7 +564,7 @@ public class AttributeMandatoryScopeComponent
                 IsMandatory = {(input.IsMandatory ? "TRUE" : "FALSE")},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE DocumentAttributeId = '{input.DocumentAttributeId}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);

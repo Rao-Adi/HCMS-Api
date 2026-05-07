@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -38,10 +38,7 @@ public class DocumentTrainingComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common;
-        string connectionString = _configuration.GetRequiredConnectionString("DMSConnectionString");
-        _dataservice.BeginProcess(connectionString);
-
+        _common = common; 
     }
 
 
@@ -49,9 +46,12 @@ public class DocumentTrainingComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id <0)
                 throw new CustomException("DocumentTraining code is required.", 400);
 
@@ -73,15 +73,10 @@ public class DocumentTrainingComponent
             (   CompanyId,
                 DocumentId,
                 TrainingMode,
-                DocumentId,
                 TrainingProofURL,
                 AssessmentScore,
                 ValidationStatus,
                 ReadyForAuthorization,
-                DocumentName, 
-                Justification, 
-                Status,  
-                CurrentStep,  
                 IsActive,
                 IsDeleted,
                 CreatedAt,
@@ -94,17 +89,16 @@ public class DocumentTrainingComponent
                 '{input.CompanyId}',
                 '{input.DocumentId}',
                 '{input.TrainingMode}',
-                '{input.DocumentId}',
                 '{input.TrainingProofURL}',
                 '{input.AssessmentScore}', 
                 '{input.ValidationStatus}', 
-                '{input.ReadyForAuthorization}', 
+                {(input.ReadyForAuthorization ? "TRUE" : "FALSE")}, 
                 TRUE,
                 FALSE,
                 NOW(),
-                '{userId.Replace("'", "''")}',
+                '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{userId.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -115,7 +109,7 @@ public class DocumentTrainingComponent
             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
             FROM DocumentTraining dt
             LEFT JOIN Companies c
-            ON d.CompanyId = c.Id
+            ON dt.CompanyId = c.Id
             WHERE dt.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -155,6 +149,12 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -204,10 +204,10 @@ public class DocumentTrainingComponent
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "dt.Name",
+                "ID" => "dt.Id",
                 "CODE" => "dt.Id",
                 "ISACTIVE" => "dt.IsActive",
-                _ => "dt.Name"
+                _ => "dt.Id"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -218,13 +218,13 @@ public class DocumentTrainingComponent
                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
+                        ON dt.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM DocumentTraining dep
+                        FROM DocumentTraining dt
                         {whereClause};
                     ";
 
@@ -321,7 +321,7 @@ public class DocumentTrainingComponent
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
+                        ON dt.CompanyId = c.Id
                 WHERE dt.Id = {id}
                   AND dt.IsActive = True
                   AND dt.IsDeleted = False";
@@ -364,9 +364,12 @@ public class DocumentTrainingComponent
     {
         try
         {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            var userId = "manual"; //_utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP(); 
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
             if (input.Id <0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -394,7 +397,7 @@ public class DocumentTrainingComponent
                 ReadyForAuthorization = '{input.ReadyForAuthorization}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
-                LastModifiedBy = '{userId.Replace("'", "''")}'
+                LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = '{input.Id}'";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -407,7 +410,7 @@ public class DocumentTrainingComponent
                     SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM DocumentTraining dt
                     LEFT JOIN Companies c
-                    ON d.CompanyId = c.Id
+                    ON dt.CompanyId = c.Id
             WHERE dt.Id = '{input.Id}'";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -442,4 +445,142 @@ public class DocumentTrainingComponent
         }
     }
 
+    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId)
+    {
+        try
+        {
+            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            var empCode = _utilities.GetUserid(prefix);
+
+            string query = @"
+                SELECT 
+                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                    dut.EmployeeCode AS EmployeeCode,
+                    dut.TrainingStatus,
+                    dut.AssessmentScore,
+                    dut.TrainingProofUrl,
+                    r.name AS RoleName,
+                    desig.name AS Designation,
+                    div.name AS Division,
+                    dep.name AS Department,
+                    subd.name AS SubDepartment
+                FROM DocumentUserTraining dut
+                
+                LEFT JOIN tblEmployee e 
+                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')
+                    
+                LEFT JOIN public.tblempjobprofile ejp 
+                    ON ejp.empid = e.empid 
+                    AND COALESCE(ejp.Active, TRUE) = TRUE
+                    
+                LEFT JOIN public.tblsetupsdetail r 
+                    ON r.sdlid = ejp.roleid
+                    
+                LEFT JOIN public.tblsetupsdetail desig 
+                    ON desig.sdlid = ejp.dsgid
+                    
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON div.sdlid = e.divid
+                    
+                LEFT JOIN public.tblsetupsdetail dep 
+                    ON dep.sdlid = e.mdptid
+                    
+                LEFT JOIN public.tblsetupsdetail subd 
+                    ON subd.sdlid = e.dptid
+                    
+                WHERE dut.DocumentId = @DocumentId 
+                  AND dut.CompanyId = @CompanyId
+                  AND dut.IsDeleted = FALSE";
+
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId) })).ToList();
+
+            var totalAssigned = userScores.Count;
+            var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed
+            var avgScore = totalCompleted > 0 ? userScores.Where(x => x.TrainingStatus == 1).Average(x => x.AssessmentScore) : 0;
+            var participation = totalAssigned > 0 ? ((decimal)totalCompleted / totalAssigned) * 100 : 0;
+
+            return new TrainingAssessmentResultDto
+            {
+                TotalAssigned = totalAssigned,
+                TotalCompleted = totalCompleted,
+                AverageScore = Math.Round(avgScore, 2),
+                ParticipationPercentage = Math.Round(participation, 2),
+                UserScores = userScores
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        int CompanyId = int.Parse(_CompanyId);
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        await using var tx = await _common.BeginTransactionAsync();
+        try
+        { 
+
+            // 1. Mark Document Training as Acknowledged / Ready
+            string updateQuery = @"
+                UPDATE DocumentTraining
+                SET 
+                    ReadyForAuthorization = TRUE,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId 
+                  AND CompanyId = @CompanyId
+                  AND IsDeleted = FALSE";
+            
+            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
+            string stateQuery = @"
+                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
+                SELECT @CompanyId, @DocumentId, 
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
+            
+            await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public class TrainingAssessmentResultDto
+{
+    public decimal AverageScore { get; set; }
+    public decimal ParticipationPercentage { get; set; }
+    public int TotalAssigned { get; set; }
+    public int TotalCompleted { get; set; }
+    public List<TrainingUserScoreDto> UserScores { get; set; } = new();
+}
+
+public class TrainingUserScoreDto
+{
+    public string EmployeeName { get; set; } = string.Empty;
+    public string EmployeeCode { get; set; } = string.Empty;
+    public int TrainingStatus { get; set; }
+    public decimal AssessmentScore { get; set; }
+    public string TrainingProofUrl { get; set; } = string.Empty;
+    public string RoleName { get; set; } = string.Empty;
+    public string Designation { get; set; } = string.Empty;
+    public string Division { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+    public string SubDepartment { get; set; } = string.Empty;
 }
