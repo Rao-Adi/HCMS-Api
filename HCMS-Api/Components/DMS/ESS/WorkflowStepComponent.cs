@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using Dapper;
+﻿﻿﻿﻿﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -268,24 +268,26 @@ public class WorkflowStepComponent
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
                 -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND wsd.IsActive = TRUE
                 AND wsd.IsDeleted = FALSE
                 ORDER BY wsd.StepOrder, e.empcode ASC;
                 ";
+
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
             var queryParams = new
             {
                 CompanyId = CompanyId,
                 input.EntityType,
                 input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode
+                DivisionCode = Normalize(input.DivisionCode),
+                DepartmentCode = Normalize(input.DepartmentCode),
+                SubDepartmentCode = Normalize(input.SubDepartmentCode),
+                BusinessDomainCode = Normalize(input.BusinessDomainCode)
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
@@ -376,23 +378,25 @@ public class WorkflowStepComponent
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
                 -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND ws.IsActive = TRUE
                 AND ws.IsDeleted = FALSE
                 ORDER BY ws.StepOrder, ws.employeecode ASC;";
+
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
             var queryParams = new
             {
                 CompanyId = CompanyId,
                 input.EntityType,
                 input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode
+                DivisionCode = Normalize(input.DivisionCode),
+                DepartmentCode = Normalize(input.DepartmentCode),
+                SubDepartmentCode = Normalize(input.SubDepartmentCode),
+                BusinessDomainCode = Normalize(input.BusinessDomainCode)
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
@@ -763,6 +767,12 @@ public class WorkflowStepComponent
 
             filters.CompanyId = CompanyId; // Ensure CompanyId is set in filters for downstream queries
 
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+            string divCode = Normalize(filters.DivisionCode);
+            string depCode = Normalize(filters.DepartmentCode);
+            string subDepCode = Normalize(filters.SubDepartmentCode);
+            string bdCode = Normalize(filters.BusinessDomainCode);
+
             //-----------------------------------------
             // 1️⃣ Resolve WorkflowPolicyId
             //-----------------------------------------
@@ -773,20 +783,20 @@ public class WorkflowStepComponent
                 WHERE CompanyId = @CompanyId
                 AND EntityType = @EntityType
                 AND DocumentTypeCode = @DocumentTypeCode
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 filters.EntityType,
                 filters.DocumentTypeCode,
-                filters.DivisionCode,
-                filters.DepartmentCode,
-                filters.SubDepartmentCode,
-                filters.BusinessDomainCode
+                DivisionCode = divCode,
+                DepartmentCode = depCode,
+                SubDepartmentCode = subDepCode,
+                BusinessDomainCode = bdCode
             });
 
 
@@ -812,10 +822,10 @@ public class WorkflowStepComponent
                 {
                     CompanyId,
                     EntityType = filters.EntityType,
-                    DivisionCode = filters.DivisionCode,
-                    DepartmentCode = filters.DepartmentCode,
-                    SubDepartmentCode = filters.SubDepartmentCode,
-                    BusinessDomainCode = filters.BusinessDomainCode,
+                    DivisionCode = divCode,
+                    DepartmentCode = depCode,
+                    SubDepartmentCode = subDepCode,
+                    BusinessDomainCode = bdCode,
                     DocumentTypeCode = filters.DocumentTypeCode,
                     CreatedBy = empCode
                 });
@@ -1017,10 +1027,10 @@ public class WorkflowStepComponent
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
                 -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND wsd.IsActive = TRUE
                 AND wsd.IsDeleted = FALSE
                 ORDER BY wsd.StepOrder, e.empcode ASC";
@@ -1030,10 +1040,10 @@ public class WorkflowStepComponent
                 CompanyId = CompanyId,
                 filters.EntityType,
                 filters.DocumentTypeCode,
-                filters.DivisionCode,
-                filters.DepartmentCode,
-                filters.SubDepartmentCode,
-                filters.BusinessDomainCode
+                DivisionCode = divCode,
+                DepartmentCode = depCode,
+                SubDepartmentCode = subDepCode,
+                BusinessDomainCode = bdCode
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams); 
@@ -1115,7 +1125,12 @@ public class WorkflowStepComponent
             string businessDomainCode)
     {
 
-        
+        // ────────────────────────────────────────────────
+        // Convert empty strings → null (this is the key fix)
+        // ────────────────────────────────────────────────
+        string? Normalize(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
         //-----------------------------------------
         // 1️⃣ Find Policy
         //-----------------------------------------
@@ -1126,10 +1141,10 @@ public class WorkflowStepComponent
             WHERE CompanyId = @CompanyId
             AND EntityType = @EntityType
             AND DocumentTypeCode = @DocType
-            AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-            AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-            AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-            AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+            AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+            AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+            AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+            AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
             AND IsActive = TRUE
             AND IsDeleted = FALSE;",
         new
@@ -1137,10 +1152,10 @@ public class WorkflowStepComponent
             CompanyId = companyId,
             EntityType = entityType,
             DocType = documentTypeCode,
-            DivisionCode = divisionCode,
-            DepartmentCode = departmentCode,
-            SubDepartmentCode = subDepartmentCode,
-            BusinessDomainCode = businessDomainCode
+            DivisionCode = Normalize(divisionCode),
+            DepartmentCode = Normalize(departmentCode),
+            SubDepartmentCode = Normalize(subDepartmentCode),
+            BusinessDomainCode = Normalize(businessDomainCode)
         });
 
         if (policyId == null)

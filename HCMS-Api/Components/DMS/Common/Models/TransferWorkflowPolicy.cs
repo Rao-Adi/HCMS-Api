@@ -15,8 +15,9 @@ public class TransferWorkflowPolicy : AuditableEntity
      
     public string? DivisionCode { get; set; }  
 
-    public int ApprovalRoleId { get; set; }
-    public int ApprovalUserId { get; set; }
+    public string ApprovalRoleId { get; set; }
+    public string ApprovalUserId { get; set; }
+    public string ApproverEmpCode { get; set; }
 
 }
 
@@ -31,8 +32,12 @@ public class TransferWorkflowPolicyReadDto : AuditableEntity
     public string? Division { get; set; }
     public string? DivisionCode { get; set; } 
 
-    public int ApprovalRoleId { get; set; }
-    public int ApprovalUserId { get; set; }
+    public string ApprovalRoleId { get; set; }
+    public string ApprovalUserId { get; set; }
+
+     
+    public string DivisionHeadName { get; set; }
+    public string DivisionHeadDesignation { get; set; } 
 
 }
 
@@ -41,8 +46,9 @@ public class TransferWorkflowPolicyCreateDto
     public int Id { get; set; } 
      
     public string? DivisionCode { get; set; }  
-    public int ApprovalRoleId { get; set; }
-    public int ApprovalUserId { get; set; }
+    public string ApproverEmpCode { get; set; }  
+    public string ApprovalRoleId { get; set; }
+    public string ApprovalUserId { get; set; }
 
 }
 
@@ -53,8 +59,8 @@ public class TransferWorkflowPolicyUpdateDto
     public string Company { get; set; } = null!;  
     public string? DivisionCode { get; set; }  
 
-    public int ApprovalRoleId { get; set; }
-    public int ApprovalUserId { get; set; }
+    public string ApprovalRoleId { get; set; }
+    public string ApprovalUserId { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
 

@@ -1,4 +1,4 @@
-﻿﻿using Dapper;
+﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -657,26 +657,28 @@ public class DocumentComponent
             // 2️⃣ Resolve Correct Workflow Policy
             //-------------------------------------------------
 
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+
             var policyId = await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = 'Document'
                 AND DocumentTypeCode = @DocType
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND IsActive = TRUE
                 AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 DocType = doc.documenttypecode,
-                DivisionCode = doc.divisioncode,
-                DepartmentCode = doc.departmentcode,
-                SubDepartmentCode = doc.subdepartmentcode,
-                BusinessDomainCode = doc.businessdomaincode
+                DivisionCode = Normalize(Convert.ToString(doc.divisioncode)),
+                DepartmentCode = Normalize(Convert.ToString(doc.departmentcode)),
+                SubDepartmentCode = Normalize(Convert.ToString(doc.subdepartmentcode)),
+                BusinessDomainCode = Normalize(Convert.ToString(doc.businessdomaincode))
             }, transaction);
 
             if (policyId == null)

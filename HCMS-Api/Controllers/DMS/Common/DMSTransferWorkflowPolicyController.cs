@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -190,4 +190,84 @@ public class DMSTransferWorkflowPolicyController : Controller
         }
     }
 
+    [HttpPost("get-my-responsibility-transfers-approvals")]
+    public async Task<IActionResult> GetMyResponsibilityTransfersApprovals([FromBody] GetMyResponsibilityTransfersDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _transferWorkflowPolicyComponent.GetMyResponsibilityTransfersApprovalsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-my-submitted-responsibility-transfers")]
+    public async Task<IActionResult> GetMySubmittedResponsibilityTransfers([FromBody] GetMyResponsibilityTransfersDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _transferWorkflowPolicyComponent.GetMySubmittedResponsibilityTransfersAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("take-action")]
+    public async Task<IActionResult> TakeActionAsync([FromBody] ResponsibilityTransferActionDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _transferWorkflowPolicyComponent.TakeActionAsync(input),
+                Message = "Action submitted successfully.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 }

@@ -68,30 +68,69 @@ public class ResponsibilityTransferComponent
             }
 
             // FSD UC-16 Post-condition: Route to Division Head for approval.
+            //var empFromDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            //    SELECT DivisionCode, DepartmentCode 
+            //    FROM UserAccessLevels 
+            //    WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
+            //      AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeFrom });
             var empFromDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT DivisionCode, DepartmentCode 
-                FROM UserAccessLevels 
-                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
-                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeFrom });
+                SELECT 
+                    e.empcode, 
+                    e.firstname || ' ' || e.midname || ' ' || e.lastname AS FullName,
+                    -- Division details
+                    div.Name AS DivisionName,
+                    div.sdlid AS DivisionId,
+                    -- Department details (Using mdptid)
+                    dept.Name AS DepartmentName,
+                    dept.code AS DepartmentCode
+                FROM public.tblemployee e
+                -- Join for Division using divid
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON e.divid = div.sdlid 
+                    AND div.smsid = 70 
+                -- Join for Department using mdptid (As per your data analysis)
+                LEFT JOIN public.tblsetupsdetail dept 
+                    ON e.mdptid = dept.sdlid 
+                    AND dept.smsid = 84
+                WHERE e.empcode = @EmpCode
+                  AND e.companyid = @CompanyId;", 
+                  new { EmpCode = input.EmployeeFrom, CompanyId });
 
             var empToDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT DivisionCode, DepartmentCode 
-                FROM UserAccessLevels 
-                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
-                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeTo });
+                SELECT 
+                    e.empcode, 
+                    e.firstname || ' ' || e.midname || ' ' || e.lastname AS FullName,
+                    -- Division details
+                    div.Name AS DivisionName,
+                    div.sdlid AS DivisionId,
+                    -- Department details (Using mdptid)
+                    dept.Name AS DepartmentName,
+                    dept.code AS DepartmentCode
+                FROM public.tblemployee e
+                -- Join for Division using divid
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON e.divid = div.sdlid 
+                    AND div.smsid = 70 
+                -- Join for Department using mdptid (As per your data analysis)
+                LEFT JOIN public.tblsetupsdetail dept 
+                    ON e.mdptid = dept.sdlid 
+                    AND dept.smsid = 84
+                WHERE e.empcode = @EmpCode
+                  AND e.companyid = @CompanyId;", 
+                  new { EmpCode = input.EmployeeTo, CompanyId });
             
-            if (empFromDetails == null || string.IsNullOrWhiteSpace(empFromDetails.departmentcode))
+            if (empFromDetails == null)
             {
                 throw new CustomException("Cannot determine the department for the 'Employee From'.", 400);
             }
 
-            if (empToDetails == null || string.IsNullOrWhiteSpace(empToDetails.departmentcode))
+            if (empToDetails == null)
             {
                 throw new CustomException("Cannot determine the department for the 'Employee To'.", 400);
             }
 
             // UC-16 Business Rule: Initial transfers must be contained within the same Department.
-            if (!string.Equals((string)empFromDetails.departmentcode, (string)empToDetails.departmentcode, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals((string)empFromDetails.DepartmentCode, (string)empToDetails.DepartmentCode, StringComparison.OrdinalIgnoreCase))
             {
                 throw new CustomException("Transfers must be contained within the same Department for operational control.", 400);
             }
@@ -100,38 +139,57 @@ public class ResponsibilityTransferComponent
             var policy = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT ApprovalUserId, ApprovalRoleId 
                 FROM TransferWorkflowPolicies 
-                WHERE DivisionCode = @DivCode AND IsActive = TRUE", new { DivCode = empFromDetails.divisioncode });
+                WHERE DivisionCode::Integer = @DivCode AND IsActive = TRUE", new { DivCode = empFromDetails.divisionid });
 
-            int approverId = policy?.approvaluserid ?? 0;
-            int approvalRoleId = policy?.approvalroleid ?? 0;
+            string approverId = policy?.approvaluserid ?? string.Empty;
+            string approvalRoleId = policy?.approvalroleid ?? string.Empty;
 
-            if (approverId == 0 && approvalRoleId > 0)
+            if (approverId == string.Empty && approvalRoleId != string.Empty)
             {
                 // Resolve role to specific user using Job Profiles
-                approverId = await _common.ExecuteScalarAsync<int>(@"
-                    SELECT e.empid 
+                approverId = await _common.ExecuteScalarAsync<string>(@"
+                    SELECT e.empCode 
                     FROM public.tblEmployee e
                     INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
                     INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
                     WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 LIMIT 1",
-                    new { DivCode = empFromDetails.divisioncode, RoleId = approvalRoleId });
+                    new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId });
             }
 
-            if (approverId == 0)
+            if (approverId == string.Empty)
             {
                 // UC-18 Default Routing: Automatically route to default generic Division Head role
-                var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
-                    SELECT e.empid 
-                    FROM public.tblEmployee e
-                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
-                    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
-                    new { DivCode = empFromDetails.divisioncode });
+                //var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
+                //    SELECT e.empid 
+                //    FROM public.tblEmployee e
+                //    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                //    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
+                //    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                //    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
+                //    new { DivCode = empFromDetails.divisioncode });
+                var defaultDivHead = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT 
+                        e.empid, 
+                        e.empcode, 
+                        e.firstname, 
+                        e.lastname, 
+                        dsg.name AS Designation
+                    FROM public.tblemployee e
+                    JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                    WHERE e.divid = @DivCode 
+                    ORDER BY 
+                        CASE 
+                            WHEN dsg.name LIKE '%Sr. Director%' THEN 1
+                            WHEN dsg.name LIKE '%Director%' THEN 2
+                            WHEN dsg.name LIKE '%Sr. General Manager%' THEN 3
+                            WHEN dsg.name LIKE '%General Manager%' THEN 4
+                            ELSE 5 
+                        END ASC
+                    LIMIT 1",
+                    new { DivCode = empFromDetails.divisionid });
+                approverId = defaultDivHead ?? string.Empty;
 
-                approverId = defaultDivHead ?? 0;
-
-                if (approverId == 0)
+                if (approverId == string.Empty)
                     throw new CustomException("Approval routing policy not found, and no default Division Head could be identified.", 400);
             }
 
@@ -144,7 +202,7 @@ public class ResponsibilityTransferComponent
                     Directory.CreateDirectory(uploadsRoot);
 
                 var fileExtension = Path.GetExtension(input.Attachment.FileName);
-                var fileName = $"{Guid.NewGuid()}{fileExtension}"; // Unique filename
+                var fileName = input.Attachment.FileName; 
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -196,12 +254,13 @@ public class ResponsibilityTransferComponent
 
             // Parameterized SELECT query
             string selectQuery = @"
-            SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
-            FROM ResponsibilityTransfers rt
-            LEFT JOIN Companies c
-            ON rt.CompanyId = c.Id
-            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+            SELECT rt.*, c.Name AS Company, uf.firstname || ' ' || uf.midname || ' ' || uf.lastname AS EmployeeFromName, 
+                ut.firstname || ' ' || ut.midname || ' ' || ut.lastname AS EmployeeToName
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN Companies c
+                ON rt.CompanyId = c.Id
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
             WHERE rt.Id = @Id";
 
             var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });

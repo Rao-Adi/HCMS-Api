@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.Models.Enums;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -19,6 +20,7 @@ public class TransferWorkflowPolicyComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
+    private readonly NotificationComponent _notificationComponent;
     public TransferWorkflowPolicyComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -27,7 +29,8 @@ public class TransferWorkflowPolicyComponent
         , IDMSDapperDataService dapper
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
-        DMSCommon common
+        DMSCommon common,
+        NotificationComponent notificationComponent
         )
     {
         _http = http;
@@ -36,6 +39,7 @@ public class TransferWorkflowPolicyComponent
         _dataservice = dataservice;
         _configuration = configuration;
         _clientContextService = clientContextService;
+        _notificationComponent = notificationComponent;
         _dapperService = dapper;
         _common = common; 
     }
@@ -78,20 +82,22 @@ public class TransferWorkflowPolicyComponent
                 CreatedAt,
                 CreatedBy,
                 LastModifiedAt,
-                LastModifiedBy
+                LastModifiedBy,
+                ApproverEmpCode
             )
             VALUES
             (
                 '{CompanyId}', 
                 '{input.DivisionCode!.Replace("'", "''")}',  
-                {input.ApprovalRoleId},
-                {input.ApprovalUserId},
+                '{input.ApprovalRoleId}',
+                '{input.ApprovalUserId}',
                 TRUE,
                 FALSE,
                 NOW(),
                 '{empCode.Replace("'", "''")}',
                 NOW(),
-                '{empCode.Replace("'", "''")}'
+                '{empCode.Replace("'", "''")}',
+                '{input.ApproverEmpCode!.Replace("'", "''")}'
             )
             RETURNING Id;";
 
@@ -99,13 +105,39 @@ public class TransferWorkflowPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@"  
-            SELECT  t.*, div.Name AS Division, c.Name AS Company
-                        FROM TransferWorkflowPolicies t
-                        LEFT JOIN Divisions div
-                        ON t.DivisionCode = div.Code 
-                        LEFT JOIN Companies c
-                        ON t.CompanyId = c.Id
-            WHERE t.Id = {newId}";
+                SELECT 
+                    t.*, 
+                    div_setup.Name AS Division, 
+                    c.Name AS Company,
+                    head.FullName AS DivisionHeadName,
+                    head.Designation AS DivisionHeadDesignation
+                FROM TransferWorkflowPolicies t
+                -- Join on sdlid because divisioncode contains the ID '12916'
+                LEFT JOIN public.tblsetupsdetail div_setup 
+                    ON t.DivisionCode::int = div_setup.sdlid 
+                    AND div_setup.smsid = 70
+                LEFT JOIN Companies c 
+                    ON t.CompanyId = c.Id
+                -- Sub-query to fetch the most senior person in that division
+                LEFT JOIN LATERAL (
+                    SELECT 
+                        e.firstname || ' ' || e.lastname AS FullName,
+                        dsg.name AS Designation
+                    FROM public.tblemployee e
+                    INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                    WHERE e.divid = div_setup.sdlid  
+                    ORDER BY 
+                        CASE 
+                            WHEN dsg.name LIKE '%Director%' THEN 1
+                            WHEN dsg.name LIKE '%General Manager%' THEN 2
+                            WHEN dsg.name LIKE '%Head%' THEN 3
+                            WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
+                            ELSE 5 
+                        END ASC,
+                        e.datejoin ASC
+                    LIMIT 1
+                ) head ON TRUE
+                WHERE t.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -122,8 +154,11 @@ public class TransferWorkflowPolicyComponent
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
-                 
-                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
+                
+                DivisionHeadName = row.Field<string>("DivisionHeadName"),
+                DivisionHeadDesignation = row.Field<string>("DivisionHeadDesignation"),
+                ApprovalRoleId = row.Field<string>("ApprovalRoleId"),
+                ApprovalUserId = row.Field<string>("ApprovalUserId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -193,14 +228,14 @@ public class TransferWorkflowPolicyComponent
                 whereClause += $@"
                 AND (
                     UPPER(t.DivisionCode) LIKE '%{search}%'
-                    OR UPPER(t.DivisionCode) LIKE '%{search}%'
+                    OR UPPER(div_setup.Name) LIKE '%{search}%'
                 )";
             }
 
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "NAME" => "t.DivisionCode",
+                "NAME" => "div_setup.Name",
                 "DESCRIPTION" => "t.ApprovalRoleId",
                 "ISACTIVE" => "t.IsActive",
                 _ => "t.DivisionCode"
@@ -211,18 +246,47 @@ public class TransferWorkflowPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT  t.*, div.Name AS Division, c.Name AS Company
+                        SELECT 
+                            t.*, 
+                            div_setup.Name AS Division, 
+                            c.Name AS Company,
+                            head.FullName AS DivisionHeadName,
+                            head.Designation AS DivisionHeadDesignation
                         FROM TransferWorkflowPolicies t
-                        LEFT JOIN Divisions div
-                        ON t.DivisionCode = div.Code 
-                        LEFT JOIN Companies c
-                        ON t.CompanyId = c.Id
+                        -- Join on sdlid because divisioncode contains the ID '12916'
+                        LEFT JOIN public.tblsetupsdetail div_setup 
+                            ON t.DivisionCode::int = div_setup.sdlid 
+                            AND div_setup.smsid = 70
+                        LEFT JOIN Companies c 
+                            ON t.CompanyId = c.Id
+                        -- Sub-query to fetch the most senior person in that division
+                        LEFT JOIN LATERAL (
+                            SELECT 
+                                e.firstname || ' ' || e.lastname AS FullName,
+                                dsg.name AS Designation
+                            FROM public.tblemployee e
+                            INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                            WHERE e.divid = div_setup.sdlid  
+                            ORDER BY 
+                                CASE 
+                                    WHEN dsg.name LIKE '%Director%' THEN 1
+                                    WHEN dsg.name LIKE '%General Manager%' THEN 2
+                                    WHEN dsg.name LIKE '%Head%' THEN 3
+                                    WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
+                                    ELSE 5 
+                                END ASC,
+                                e.datejoin ASC
+                            LIMIT 1
+                        ) head ON TRUE
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
                         FROM TransferWorkflowPolicies t
+                        LEFT JOIN public.tblsetupsdetail div_setup 
+                            ON t.DivisionCode::int = div_setup.sdlid 
+                            AND div_setup.smsid = 70
                         {whereClause};
                     ";
 
@@ -248,9 +312,12 @@ public class TransferWorkflowPolicyComponent
 
                     Division = row.Field<string>("Division"),
                     DivisionCode = row.Field<string>("DivisionCode"), 
+                    DivisionHeadName = row.Table.Columns.Contains("DivisionHeadName") ? row.Field<string>("DivisionHeadName") : string.Empty,
+                    DivisionHeadDesignation = row.Table.Columns.Contains("DivisionHeadDesignation") ? row.Field<string>("DivisionHeadDesignation") : string.Empty,
 
-                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? (row.Field<int?>("ApprovalRoleId") ?? 0) : 0,
-                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? (row.Field<int?>("ApprovalUserId") ?? 0) : 0,
+                    ApprovalRoleId = row.Table.Columns.Contains("ApprovalRoleId") ? row.Field<string>("ApprovalRoleId") : string.Empty,
+                    ApprovalUserId = row.Table.Columns.Contains("ApprovalUserId") ? row.Field<string>("ApprovalUserId") : string.Empty,
+
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -288,12 +355,36 @@ public class TransferWorkflowPolicyComponent
             int CompanyId = int.Parse(_CompanyId);
 
             string query = $@"
-                SELECT  t.*, div.Name AS Division, c.Name AS Company
-                        FROM TransferWorkflowPolicies t
-                        LEFT JOIN Divisions div
-                        ON t.DivisionCode = div.Code 
-                        LEFT JOIN Companies c
-                        ON t.CompanyId = c.Id
+                SELECT 
+                    t.*, 
+                    div_setup.Name AS Division, 
+                    c.Name AS Company,
+                    head.FullName AS DivisionHeadName,
+                    head.Designation AS DivisionHeadDesignation
+                FROM TransferWorkflowPolicies t
+                LEFT JOIN public.tblsetupsdetail div_setup 
+                    ON t.DivisionCode::int = div_setup.sdlid 
+                    AND div_setup.smsid = 70
+                LEFT JOIN Companies c 
+                    ON t.CompanyId = c.Id
+                LEFT JOIN LATERAL (
+                    SELECT 
+                        e.firstname || ' ' || e.lastname AS FullName,
+                        dsg.name AS Designation
+                    FROM public.tblemployee e
+                    INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                    WHERE e.divid = div_setup.sdlid  
+                    ORDER BY 
+                        CASE 
+                            WHEN dsg.name LIKE '%Director%' THEN 1
+                            WHEN dsg.name LIKE '%General Manager%' THEN 2
+                            WHEN dsg.name LIKE '%Head%' THEN 3
+                            WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
+                            ELSE 5 
+                        END ASC,
+                        e.datejoin ASC
+                    LIMIT 1
+                ) head ON TRUE
                 WHERE t.DivisionCode = '{code?.Replace("'", "''")}'
                   AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
@@ -314,9 +405,11 @@ public class TransferWorkflowPolicyComponent
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"), 
+                DivisionHeadName = row.Table.Columns.Contains("DivisionHeadName") ? row.Field<string>("DivisionHeadName") : string.Empty,
+                DivisionHeadDesignation = row.Table.Columns.Contains("DivisionHeadDesignation") ? row.Field<string>("DivisionHeadDesignation") : string.Empty,
 
-                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
-                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
+                ApprovalRoleId = row.Field<string>("ApprovalRoleId"),
+                ApprovalUserId = row.Field<string>("ApprovalUserId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -388,12 +481,36 @@ public class TransferWorkflowPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT  t.*, div.Name AS Division, c.Name AS Company
-                        FROM TransferWorkflowPolicies t
-                        LEFT JOIN Divisions div
-                        ON t.DivisionCode = div.Code 
-                        LEFT JOIN Companies c
-                        ON t.CompanyId = c.Id
+            SELECT 
+                t.*, 
+                div_setup.Name AS Division, 
+                c.Name AS Company,
+                head.FullName AS DivisionHeadName,
+                head.Designation AS DivisionHeadDesignation
+            FROM TransferWorkflowPolicies t
+            LEFT JOIN public.tblsetupsdetail div_setup 
+                ON t.DivisionCode::int = div_setup.sdlid 
+                AND div_setup.smsid = 70
+            LEFT JOIN Companies c 
+                ON t.CompanyId = c.Id
+            LEFT JOIN LATERAL (
+                SELECT 
+                    e.firstname || ' ' || e.lastname AS FullName,
+                    dsg.name AS Designation
+                FROM public.tblemployee e
+                INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                WHERE e.divid = div_setup.sdlid  
+                ORDER BY 
+                    CASE 
+                        WHEN dsg.name LIKE '%Director%' THEN 1
+                        WHEN dsg.name LIKE '%General Manager%' THEN 2
+                        WHEN dsg.name LIKE '%Head%' THEN 3
+                        WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
+                        ELSE 5 
+                    END ASC,
+                    e.datejoin ASC
+                LIMIT 1
+            ) head ON TRUE
             WHERE t.Id = {input.Id}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -411,9 +528,11 @@ public class TransferWorkflowPolicyComponent
 
                 Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
+                DivisionHeadName = row.Table.Columns.Contains("DivisionHeadName") ? row.Field<string>("DivisionHeadName") : string.Empty,
+                DivisionHeadDesignation = row.Table.Columns.Contains("DivisionHeadDesignation") ? row.Field<string>("DivisionHeadDesignation") : string.Empty,
 
-                ApprovalRoleId = row.Field<int?>("ApprovalRoleId") ?? 0,
-                ApprovalUserId = row.Field<int?>("ApprovalUserId") ?? 0,
+                ApprovalRoleId = row.Field<string>("ApprovalRoleId"),
+                ApprovalUserId = row.Field<string>("ApprovalUserId"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
                 CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
@@ -428,4 +547,234 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
+    public async Task<PaginationResult<dynamic>> GetMyResponsibilityTransfersApprovalsAsync(GetMyResponsibilityTransfersDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+             
+
+            var whereClause = @"
+                WHERE rt.IsDeleted = FALSE 
+                  AND rt.CompanyId = @CompanyId
+                  AND rt.Status = @Status
+                  AND rt.ApproverId = @UserId";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(rt.Remarks) LIKE '%{search}%'
+                    OR UPPER(uf.firstname) LIKE '%{search}%'
+                    OR UPPER(ut.firstname) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "ACTIONDATE" => "rt.ActionDate",
+                "EFFECTIVEDATEFROM" => "rt.EffectiveDateFrom",
+                _ => "rt.Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT rt.Id,
+                       COALESCE(NULLIF(LTRIM(RTRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, ''))), ''), rt.CreatedBy) AS CreatedBy,
+                       LTRIM(RTRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, ''))) AS employeefromname,
+                       LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, ''))) AS employeetoname,
+                       rt.ReasonForTransfer,
+                       rt.EffectiveDateFrom,
+                       rt.EffectiveDateTo,
+                       rt.Remarks,
+                       rt.ActionDate,
+                       rt.Status
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                {whereClause};";
+
+            var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic> { Items = items, TotalCount = totalCount };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<PaginationResult<dynamic>> GetMySubmittedResponsibilityTransfersAsync(GetMyResponsibilityTransfersDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string empCode = string.IsNullOrWhiteSpace(input.UserId) 
+                ? _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString()) 
+                : input.UserId;
+
+            var whereClause = @"
+                WHERE rt.IsDeleted = FALSE 
+                  AND rt.CompanyId = @CompanyId
+                  AND rt.CreatedBy = @UserId
+                  AND rt.Status = @Status";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(rt.Remarks) LIKE '%{search}%'
+                    OR UPPER(uf.firstname) LIKE '%{search}%'
+                    OR UPPER(ut.firstname) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "ACTIONDATE" => "rt.ActionDate",
+                "EFFECTIVEDATEFROM" => "rt.EffectiveDateFrom",
+                _ => "rt.Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT rt.Id,
+                       COALESCE(NULLIF(LTRIM(RTRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, ''))), ''), rt.CreatedBy) AS CreatedBy,
+                       LTRIM(RTRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, ''))) AS employeefromname,
+                       LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, ''))) AS employeetoname,
+                       rt.ReasonForTransfer,
+                       rt.EffectiveDateFrom,
+                       rt.EffectiveDateTo,
+                       rt.Remarks,
+                       rt.ActionDate,
+                       rt.Status
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM ResponsibilityTransfers rt
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                {whereClause};";
+
+            var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic> { Items = items, TotalCount = totalCount };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<bool> TakeActionAsync(ResponsibilityTransferActionDto input)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        var clientIp = _clientContextService.GetClientIP();
+        int CompanyId = int.Parse(_CompanyId);
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        await using var tx = await _common.BeginTransactionAsync();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(input.Observation))
+                throw new CustomException("Observation is required to submit action.", 400);
+
+            int newStatus = input.Action.ToUpper() switch
+            {
+                "APPROVE" => 2,
+                "REJECT" => 3,
+                "REVERT" => 4,
+                _ => throw new CustomException("Invalid action specified.", 400)
+            };
+
+            var transfer = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT EmployeeFrom, EmployeeTo, Status, EffectiveDateFrom, EffectiveDateTo FROM ResponsibilityTransfers WHERE Id = @Id FOR UPDATE;", 
+                new { Id = input.TransferId }, tx);
+
+            if (transfer == null) throw new CustomException("Transfer request not found.", 404);
+            if (transfer.status != 1) throw new CustomException("This request has already been processed.", 400);
+
+            await _common.ExecuteAsync(@"
+                UPDATE ResponsibilityTransfers
+                SET Status = @Status,
+                    Observation = @Observation,
+                    ActionDate = NOW(),
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @empCode
+                WHERE Id = @Id;", 
+                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId }, tx);
+
+            // UC-17: Workflow Transfer Logic
+            if (newStatus == 2)
+            {
+                await _common.ExecuteAsync(@"
+                    UPDATE WorkflowExecutionSteps
+                    SET AssignedUserId = @EmpToCode
+                    WHERE AssignedUserId = @EmpFromCode
+                    AND Decision IS NULL;",
+                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom }, tx);
+
+                // Send notifications to both parties
+                var placeholders = new Dictionary<string, string> {
+                    { "Emp From", transfer.employeefrom },
+                    { "Emp To", transfer.employeeto },
+                    { "Date From", transfer.effectivedatefrom?.ToString("yyyy-MM-dd") ?? "Now" },
+                    { "Date To", transfer.effectivedateto != null ? transfer.effectivedateto.ToString("yyyy-MM-dd") : "Permanent" }
+                };
+                 
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeefrom, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeeto, placeholders);
+            }
+
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public class GetMyResponsibilityTransfersDto : TableFiltersDto
+{
+    public int Status { get; set; }
+    public string? UserId { get; set; }
 }

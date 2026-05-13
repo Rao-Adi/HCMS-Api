@@ -1,5 +1,5 @@
-﻿﻿using Azure.Storage.Blobs;
-using HCMS_Api.Components.DMS.Common.DataAccess; 
+﻿using Azure.Storage.Blobs;
+using HCMS_Api.Components.DMS.Common.DataAccess;
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
 using Microsoft.WindowsAzure.Storage;
@@ -12,7 +12,7 @@ using System.Data.SqlClient;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using HCMS_Api.Common; 
+using HCMS_Api.Common;
 //using Microsoft.EntityFrameworkCore.Storage;
 using Dapper;
 using HCMS_Api.Components.DMS.Common.Dapper;
@@ -1693,24 +1693,31 @@ namespace HCMS_Api.Components.DMS.Common
 
         public async Task SendEmailAsync(List<string> recipients, string subject, string body)
         {
-            var email = new MimeMessage();
-            email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
-
-            foreach (var recipient in recipients)
-                email.To.Add(MailboxAddress.Parse(recipient));
-
-            email.Subject = subject;
-            var builder = new BodyBuilder();
-            builder.HtmlBody = body;
-            email.Body = builder.ToMessageBody();
-
-            using (var smtp = new MailKit.Net.Smtp.SmtpClient())
+            try
             {
-                int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
-                await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
-                await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
-                await smtp.SendAsync(email);
-                await smtp.DisconnectAsync(true);
+                var email = new MimeMessage();
+                email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
+
+                foreach (var recipient in recipients)
+                    email.To.Add(MailboxAddress.Parse(recipient));
+
+                email.Subject = subject;
+                var builder = new BodyBuilder();
+                builder.HtmlBody = body;
+                email.Body = builder.ToMessageBody();
+
+                using (var smtp = new MailKit.Net.Smtp.SmtpClient())
+                {
+                    int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
+                    await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+                    await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
+                    await smtp.SendAsync(email);
+                    await smtp.DisconnectAsync(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
             }
         }
 
@@ -2270,7 +2277,7 @@ namespace HCMS_Api.Components.DMS.Common
         {
             string empcode = "";
             try
-            {  
+            {
                 Object obj = new object();
                 obj = GetScalarDataForHCMS("Select empcode from tblEmployee where EmpId = '" + EmpId + "'");
                 if (obj != null)
@@ -2291,7 +2298,7 @@ namespace HCMS_Api.Components.DMS.Common
         {
             string empName = "";
             try
-            {  
+            {
                 Object obj = GetScalarDataForHCMS("SELECT LTRIM(RTRIM(COALESCE(FirstName, '') || ' ' || COALESCE(MidName, '') || ' ' || COALESCE(LastName, ''))) FROM tblEmployee WHERE EmpId = '" + EmpId + "'");
                 if (obj != null)
                 {
@@ -2306,7 +2313,7 @@ namespace HCMS_Api.Components.DMS.Common
 
             return empName;
         }
-        
+
 
         public DataSet GetSubordinates(string EmpId, string CompanyId, string Culture)
         {

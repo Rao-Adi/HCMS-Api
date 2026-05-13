@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -367,6 +367,12 @@ public class DocumentRequestComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            // ────────────────────────────────────────────────
+            // Convert empty strings → null (this is the key fix)
+            // ────────────────────────────────────────────────
+            string? Normalize(string? value) =>
+                string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
             // Validation: Justification is mandatory for submission
             if (string.IsNullOrWhiteSpace(dto.Justification))
                 throw new CustomException("Justification is required to submit a document request.", 400);
@@ -429,19 +435,19 @@ public class DocumentRequestComponent
             var policyId = await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId AND EntityType = 'Request' AND DocumentTypeCode = @DocType
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND IsActive = TRUE AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 DocType = dto.DocumentTypeCode,
-                dto.DivisionCode,
-                dto.DepartmentCode,
-                dto.SubDepartmentCode,
-                dto.BusinessDomainCode
+                DivisionCode = Normalize(dto.DivisionCode),
+                DepartmentCode = Normalize(dto.DepartmentCode),
+                SubDepartmentCode = Normalize(dto.SubDepartmentCode),
+                BusinessDomainCode = Normalize(dto.BusinessDomainCode)
             }, transaction);
 
             if (policyId == null)
@@ -707,26 +713,28 @@ public class DocumentRequestComponent
             // Resolve Correct Policy FIRST (Scope Routing)
             //-------------------------------------------------
 
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+
             var policyId = await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = 'Request'
                 AND DocumentTypeCode = @DocType
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND IsActive = TRUE
                 AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 DocType = request.documenttypecode,
-                DivisionCode = request.divisioncode,
-                DepartmentCode = request.departmentcode,
-                SubDepartmentCode = request.subdepartmentcode,
-                BusinessDomainCode = request.businessdomaincode
+                DivisionCode = Normalize(Convert.ToString(request.divisioncode)),
+                DepartmentCode = Normalize(Convert.ToString(request.departmentcode)),
+                SubDepartmentCode = Normalize(Convert.ToString(request.subdepartmentcode)),
+                BusinessDomainCode = Normalize(Convert.ToString(request.businessdomaincode))
             }, tx);
 
             if (policyId == null)
