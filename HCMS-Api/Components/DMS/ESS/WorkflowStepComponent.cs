@@ -814,13 +814,13 @@ public class WorkflowStepComponent
                     )
                     VALUES
                     (
-                        @CompanyId, 'Configured Policy', @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
+                        @CompanyId, @PolicyName, @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
                         @DocumentTypeCode, TRUE, FALSE, NOW(), @CreatedBy,  NOW(), @CreatedBy
                     )
                     RETURNING Id;",
                 new
                 {
-                    CompanyId,
+                    CompanyId, 
                     EntityType = filters.EntityType,
                     DivisionCode = divCode,
                     DepartmentCode = depCode,

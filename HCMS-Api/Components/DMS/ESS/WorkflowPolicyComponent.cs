@@ -38,7 +38,7 @@ public class WorkflowPolicyComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -72,7 +72,7 @@ public class WorkflowPolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
+                {CompanyId}, 
                 '{input.Name}',
                 '{input.EntityType}',
                 '{input.DivisionCode}',
@@ -141,7 +141,7 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int id)
     {
         try
         {
@@ -155,7 +155,7 @@ public class WorkflowPolicyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM WorkflowPolicies
-                WHERE Id = {code}
+                WHERE Id = {id}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -170,7 +170,7 @@ public class WorkflowPolicyComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = '{code}'";
+                WHERE Id = {id}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -181,12 +181,13 @@ public class WorkflowPolicyComponent
     }
 
 
-    public async Task<PaginationResult<WorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
+    public async Task<PaginationResult<WorkflowPolicyReadDto>> GetAllAsync(WorkflowPolicyGetDto input)
     {
         try
         {
-            var whereClause = @"
+            var whereClause = $@"
                 WHERE w.IsDeleted = False 
+                  AND w.EntityType ='{input.EntityType}'
                   AND w.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -196,7 +197,11 @@ public class WorkflowPolicyComponent
                 whereClause += $@"
                 AND (
                     UPPER(w.Name) LIKE '%{search}%'
-                    OR UPPER(w.Id) LIKE '%{search}%'
+                    OR w.Id::text LIKE '%{search}%'
+                    OR UPPER(w.Division) LIKE '%{search}%'
+                    OR UPPER(w.Department) LIKE '%{search}%'
+                    OR UPPER(w.SubDepartment) LIKE '%{search}%'
+                    OR UPPER(w.BusinessDomain) LIKE '%{search}%'
                 )";
             }
 
@@ -221,7 +226,7 @@ public class WorkflowPolicyComponent
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM WorkflowPolicies w
+                        FROM vw_WorkflowPolicy w
                         {whereClause};
                     ";
 
@@ -291,13 +296,47 @@ public class WorkflowPolicyComponent
         }
     }
 
-    public async Task<WorkflowPolicyReadDto> GetByCodeAsync(string code)
+    public async Task<IQueryable<SelectList2Dto>> GetPoliciesByEntityTypeAsync(string entityType)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
+            SELECT Id, Name
+            FROM WorkflowPolicies
+            WHERE IsActive = True
+              AND IsDeleted = False
+              AND EntityType = '{entityType?.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
+            ORDER BY Name";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectList2Dto
+                {
+                    Id = row.Field<int>("Id"),
+                    Value = row.Field<string>("Name")
+                })
+                .ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<WorkflowPolicyReadDto> GetByCodeAsync(int id)
     {
         try
         {
             string query = $@"
                 SELECT * FROM vw_WorkflowPolicy w
-                WHERE w.Id = {code}
+                WHERE w.Id = {id}
                   AND w.IsActive = True
                   AND w.IsDeleted = False";
 
@@ -313,7 +352,7 @@ public class WorkflowPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
-                Name = row.Field<string>("Name"), 
+                Name = row.Field<string>("Name"),
                 EntityType = row.Field<string>("EntityType"),
 
                 Division = row.Field<string>("Division"),
@@ -344,7 +383,7 @@ public class WorkflowPolicyComponent
             throw;
         }
     }
-     
+
     public async Task<WorkflowPolicyReadDto> UpdateAsync(WorkflowPolicyUpdateDto input)
     {
         try

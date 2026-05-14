@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -37,7 +37,7 @@ public class DMSWorkflowPolicyController : Controller
     }
 
     [HttpPost("get-all-workflow-policy")]
-    public async Task<IActionResult> GetAllTransferWorkflowPolicies(TableFiltersDto input)
+    public async Task<IActionResult> GetAllWorkflowPolicies(WorkflowPolicyGetDto input)
     {
         try
         {
@@ -63,17 +63,43 @@ public class DMSWorkflowPolicyController : Controller
         }
     }
 
+    [HttpGet("get-policies-by-entity-type/{entityType}")]
+    public async Task<IActionResult> GetPoliciesByEntityType(string entityType)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IList<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = (await _workflowPolicyComponent.GetPoliciesByEntityTypeAsync(entityType)).ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
 
 
-    [HttpGet("get-workflow-policy-by-code/{code}")]
-    public async Task<IActionResult> GetWorkflowPolicyById(string code)
+    [HttpGet("get-workflow-policy-by-id/{id}")]
+    public async Task<IActionResult> GetWorkflowPolicyById(int id)
     {
         try
         {
             return Ok(new HttpApiResponse<WorkflowPolicyReadDto>()
             {
                 Success = true,
-                Data = await _workflowPolicyComponent.GetByCodeAsync(code),
+                Data = await _workflowPolicyComponent.GetByCodeAsync(id),
                 Message = "Success",
                 Code = 200
             });
@@ -153,12 +179,12 @@ public class DMSWorkflowPolicyController : Controller
         }
     }
 
-    [HttpDelete("delete-workflow-policy/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    [HttpDelete("delete-workflow-policy/{id}")]
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
         {
-            var existingRecord = await _workflowPolicyComponent.GetByCodeAsync(code);
+            var existingRecord = await _workflowPolicyComponent.GetByCodeAsync(id);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
@@ -173,7 +199,7 @@ public class DMSWorkflowPolicyController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _workflowPolicyComponent.DeleteAsync(code),
+                Data = await _workflowPolicyComponent.DeleteAsync(id),
                 Message = "Audit Log deleted successfully.",
                 Code = 200
             });
