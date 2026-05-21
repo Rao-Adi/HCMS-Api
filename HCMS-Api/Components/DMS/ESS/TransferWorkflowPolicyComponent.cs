@@ -597,9 +597,9 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
-                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -607,8 +607,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
@@ -674,9 +674,9 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
-                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -684,8 +684,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };

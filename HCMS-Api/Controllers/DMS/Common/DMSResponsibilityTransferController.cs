@@ -151,7 +151,7 @@ public class DMSResponsibilityTransferController : Controller
 
         try
         {
-            return Ok(new HttpApiResponse<ResponsibilityTransferReadDto>()
+            return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.CreateAsync(input),

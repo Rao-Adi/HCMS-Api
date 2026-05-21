@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using Dapper;
+﻿﻿﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -2175,6 +2175,98 @@ public class DocumentComponent
                 SELECT COUNT(1) 
                 FROM Documents doc 
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                {whereClause};";
+
+            var queryParams = new { CompanyId = CompanyId };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
+    public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(TableFiltersDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            // UC-33: Filter to show only documents in the pipeline (Not Draft, Effective, Rejected, or Obsolete)
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      SELECT ds.Code 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                  ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+                SELECT 
+                    doc.*,
+                    dv.Version,
+                    (SELECT ds.Name 
+                     FROM DocumentStateHistory dsh 
+                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                     WHERE dsh.DocumentId = doc.Id 
+                     ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
+                    -- Resolve the current workflow authority dynamically
+                    COALESCE(
+                        (SELECT STRING_AGG(
+                            COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
+                        )
+                        FROM WorkflowExecutionSteps wes
+                        LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+                        LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
+                        LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
+                        WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
+                        'Pending Training/Authorization'
+                    ) AS CurrentWorkflowAuthority,
+                    doc.CreatedAt
+                FROM Vw_Documents doc
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+                LEFT JOIN LATERAL (
+                    SELECT Version FROM DocumentVersions 
+                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
+                    ORDER BY CreatedAt DESC LIMIT 1
+                ) dv ON TRUE
+                LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(1) 
+                FROM Documents doc 
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId };

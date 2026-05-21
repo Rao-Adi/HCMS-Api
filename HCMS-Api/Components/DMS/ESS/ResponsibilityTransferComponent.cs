@@ -45,7 +45,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<ResponsibilityTransferReadDto> CreateAsync(ResponsibilityTransferCreateDto input)
+    public async Task<bool> CreateAsync(ResponsibilityTransferCreateDto input)
     {
         try
         {
@@ -187,7 +187,7 @@ public class ResponsibilityTransferComponent
                         END ASC
                     LIMIT 1",
                     new { DivCode = empFromDetails.divisionid });
-                approverId = defaultDivHead ?? string.Empty;
+                approverId = defaultDivHead.empcode;
 
                 if (approverId == string.Empty)
                     throw new CustomException("Approval routing policy not found, and no default Division Head could be identified.", 400);
@@ -251,50 +251,51 @@ public class ResponsibilityTransferComponent
             };
 
             int newId = await _common.ExecuteScalarAsync<int>(insertQuery, insertParams);
+            return newId > 0 ? true : false;
 
-            // Parameterized SELECT query
-            string selectQuery = @"
-            SELECT rt.*, c.Name AS Company, uf.firstname || ' ' || uf.midname || ' ' || uf.lastname AS EmployeeFromName, 
-                ut.firstname || ' ' || ut.midname || ' ' || ut.lastname AS EmployeeToName
-                FROM ResponsibilityTransfers rt
-                LEFT JOIN Companies c
-                ON rt.CompanyId = c.Id
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
-            WHERE rt.Id = @Id";
+            //// Parameterized SELECT query
+            //string selectQuery = @"
+            //SELECT rt.*, c.Name AS Company, uf.firstname || ' ' || uf.midname || ' ' || uf.lastname AS EmployeeFromName, 
+            //    ut.firstname || ' ' || ut.midname || ' ' || ut.lastname AS EmployeeToName
+            //    FROM ResponsibilityTransfers rt
+            //    LEFT JOIN Companies c
+            //    ON rt.CompanyId = c.Id
+            //    LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+            //    LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+            //WHERE rt.Id = @Id";
 
-            var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
+            //var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
 
-            if (newRecord == null)
-                throw new Exception("Failed to fetch created responsibility transfer request.");
+            //if (newRecord == null)
+            //    throw new Exception("Failed to fetch created responsibility transfer request.");
 
-            // Map dynamic object to DTO
-            return new ResponsibilityTransferReadDto
-            {
-                Id = newRecord.id,
-                CompanyId = newRecord.companyid,
-                Company = newRecord.company,
-                EmployeeFrom = newRecord.employeefrom,
-                EmployeeTo = newRecord.employeeto,
-                EmployeeFromName = newRecord.employeefromname,
-                EmployeeToName = newRecord.employeetoname,
-                ReasonForTransfer = newRecord.reasonfortransfer,
-                EffectiveDateFrom = newRecord.effectivedatefrom,
-                EffectiveDateTo = newRecord.effectivedateto ?? null, // Handle nullable DateOnly
-                PermanentTransfer = newRecord.permanenttransfer ?? false, // Handle nullable bool
-                Attachment = newRecord.attachment,
-                Remarks = newRecord.remarks,
-                Status = newRecord.status,
-                ApproverId = newRecord.approverid,
-                Observation = newRecord.observation,
-                ActionDate = newRecord.actiondate,
-                IsDeleted = newRecord.isdeleted,
-                IsActive = newRecord.isactive,
-                CreatedAt = newRecord.createdat.ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = newRecord.createdby,
-                LastModifiedAt = newRecord.lastmodifiedat.ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = newRecord.lastmodifiedby
-            };
+            //// Map dynamic object to DTO
+            //return new ResponsibilityTransferReadDto
+            //{
+            //    Id = newRecord.id,
+            //    CompanyId = newRecord.companyid,
+            //    Company = newRecord.company,
+            //    EmployeeFrom = newRecord.employeefrom,
+            //    EmployeeTo = newRecord.employeeto,
+            //    EmployeeFromName = newRecord.employeefromname,
+            //    EmployeeToName = newRecord.employeetoname,
+            //    ReasonForTransfer = newRecord.reasonfortransfer,
+            //    EffectiveDateFrom = newRecord.effectivedatefrom.ToString("yyyy-MM-dd"),
+            //    EffectiveDateTo = newRecord.effectivedateto.ToString("yyyy-MM-dd") ?? null, // Handle nullable DateOnly
+            //    PermanentTransfer = newRecord.permanenttransfer ?? false, // Handle nullable bool
+            //    Attachment = newRecord.attachment,
+            //    Remarks = newRecord.remarks,
+            //    Status = newRecord.status,
+            //    ApproverId = newRecord.approverid,
+            //    Observation = newRecord.observation,
+            //    ActionDate = newRecord.actiondate ?? null,
+            //    IsDeleted = newRecord.isdeleted,
+            //    IsActive = newRecord.isactive,
+            //    CreatedAt = newRecord.createdat.ToString("yyyy-MM-dd HH:mm:ss"),
+            //    CreatedBy = newRecord.createdby,
+            //    LastModifiedAt = newRecord.lastmodifiedat.ToString("yyyy-MM-dd HH:mm:ss"),
+            //    LastModifiedBy = newRecord.lastmodifiedby
+            //};
         }
         catch
         {
@@ -386,8 +387,8 @@ public class ResponsibilityTransferComponent
                          SELECT rt.*, c.Id AS CompanyId, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                             FROM ResponsibilityTransfers rt
                             LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -669,8 +670,8 @@ public class ResponsibilityTransferComponent
                 LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.lastname, ''))) AS EmployeeToName
                 FROM ResponsibilityTransfers rt
                 LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
