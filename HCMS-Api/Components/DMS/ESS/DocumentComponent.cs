@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using Dapper;
+﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -1246,7 +1246,7 @@ public class DocumentComponent
             //-----------------------------------------
             // Activate Final Version
             //-----------------------------------------
-            
+
             // 1. Archive previous effective versions (Critical for UC-22 Revisions)
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions 
@@ -1255,7 +1255,7 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId 
                   AND VersionType = 2 
                   AND CompanyId = @CompanyId;", new { companyId, documentId }, transaction);
-                  
+
             // 2. Promote the current Draft version to Effective
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions
@@ -1510,11 +1510,11 @@ public class DocumentComponent
                     FROM DocumentUserDistributions
                     WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
                     new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
-                    
+
                 // 5. Notify Users about assigned training
                 await NotifyPendingUsersAsync(companyId, documentId, tx);
             }
-             
+
         }
         catch (Exception ex)
         {
@@ -1529,7 +1529,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -2097,7 +2097,7 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
             string stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
@@ -2465,7 +2465,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -2548,9 +2548,9 @@ public class DocumentComponent
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new 
-            { 
-                CompanyId = CompanyId, 
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
                 UserId = empCode,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
@@ -2572,6 +2572,413 @@ public class DocumentComponent
         {
             throw;
         }
+    }
+
+    public async Task<PaginationResult<dynamic>> GetApprovedEffectiveDocumentsAsync(GetApprovedDocumentsFilterDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            // Base condition: Document is not deleted and its current state is 'EFFECTIVE'
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      SELECT ds.Code 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                  ) = 'EFFECTIVE'";
+
+            // 1. Keyword Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            // 2. Date Range Filters
+            if (input.DateFrom.HasValue && input.DateTo.HasValue)
+            {
+                if (!string.IsNullOrWhiteSpace(input.DateFilterType) && input.DateFilterType.Equals("CreationDate", StringComparison.OrdinalIgnoreCase))
+                {
+                    whereClause += " AND (doc.CreatedAt >= @DateFrom AND doc.CreatedAt <= @DateTo)";
+                }
+                else
+                {
+                    // Default to Approval/Authorization Date filter
+                    whereClause += @" AND EXISTS (
+                        SELECT 1 FROM DocumentStateHistory dshDate 
+                        JOIN DocumentStates dsDate ON dsDate.Id = dshDate.ToStateId
+                        WHERE dshDate.DocumentId = doc.Id 
+                          AND dsDate.Code = 'EFFECTIVE'
+                          AND dshDate.ChangedAt >= @DateFrom AND dshDate.ChangedAt <= @DateTo
+                    )";
+                }
+            }
+
+            // 3. Sorting
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "DATEOFAUTHORIZATION" => "DateOfAuthorization",
+                "VERSION" => "dv.Version",
+                _ => "DateOfAuthorization"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            // 4. Data Query
+            string dataSql = $@"
+                SELECT DISTINCT
+                    doc.*,
+                    dv.Version,
+                    (SELECT dsh2.ChangedAt 
+                     FROM DocumentStateHistory dsh2 
+                     JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
+                     WHERE dsh2.DocumentId = doc.Id 
+                       AND ds2.Code = 'EFFECTIVE'
+                     ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
+                FROM VW_Documents doc
+                LEFT JOIN LATERAL (
+                    SELECT Version FROM DocumentVersions 
+                    WHERE DocumentId = doc.Id AND VersionType = 2 AND IsActive = TRUE 
+                    ORDER BY CreatedAt DESC LIMIT 1
+                ) dv ON TRUE
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(DISTINCT doc.Id) 
+                FROM VW_Documents doc 
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DateFrom = input.DateFrom,
+                DateTo = input.DateTo
+            };
+
+            var documents = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            if (!documents.Any())
+            {
+                return new PaginationResult<dynamic> { Items = new List<dynamic>(), TotalCount = 0 };
+            }
+
+            // 5. Fetch Distribution Lists for the retrieved documents
+            var documentIds = documents.Select(x => (int)x.id).ToArray();
+
+            var roleDistributions = (await _common.QueryAsync<dynamic>(@"
+                SELECT drd.DocumentId, r.Name AS RoleName, div.Name AS Division, dep.Name AS Department
+                FROM DocumentRoleDistributions drd
+                LEFT JOIN Roles r ON drd.RoleId = r.Id 
+                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code 
+                LEFT JOIN Departments dep ON drd.DepartmentCode = dep.Code
+                WHERE drd.CompanyId = @CompanyId AND drd.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            var userDistributions = (await _common.QueryAsync<dynamic>(@"
+                SELECT dud.DocumentId, e.empCode AS EmployeeCode, 
+                       LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
+                FROM DocumentUserDistributions dud
+                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode
+                WHERE dud.CompanyId = @CompanyId AND dud.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            // 6. Map Distributions back to their respective documents
+            var finalResult = documents.Select(doc =>
+            {
+                var docDict = (IDictionary<string, object>)doc;
+                int currentDocId = (int)docDict["id"];
+
+                docDict["RoleDistributions"] = roleDistributions.Where(r => (int)r.documentid == currentDocId).ToList();
+                docDict["UserDistributions"] = userDistributions.Where(u => (int)u.documentid == currentDocId).ToList();
+
+                return docDict;
+            }).ToList<dynamic>();
+
+            return new PaginationResult<dynamic>
+            {
+                Items = finalResult,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile csvFile)
+    {
+        var results = new List<string>();
+        if (csvFile == null || csvFile.Length == 0)
+        {
+            results.Add("No file provided.");
+            return results;
+        }
+
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        using var reader = new StreamReader(csvFile.OpenReadStream());
+        var header = await reader.ReadLineAsync();
+
+        if (string.IsNullOrWhiteSpace(header))
+        {
+            results.Add("Empty or invalid CSV.");
+            return results;
+        }
+
+        int rowCount = 1;
+        while (!reader.EndOfStream)
+        {
+            rowCount++;
+            var line = await reader.ReadLineAsync();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            // Safe CSV split supporting commas inside quotes
+            var cols = System.Text.RegularExpressions.Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
+                                                           .Select(x => x.Trim('"', ' ')).ToArray();
+
+            // Expected CSV Order: DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Title, NextReviewDate, Version, DocumentFileName
+            if (cols.Length < 10)
+            {
+                results.Add($"Row {rowCount}: Insufficient columns.");
+                continue;
+            }
+
+            var docNum = cols[0].Trim();
+            var docType = cols[1].Trim();
+            var divCode = cols[2].Trim();
+            var deptCode = cols[3].Trim();
+            var subDeptCode = cols[4].Trim();
+            var bizDomain = cols[5].Trim();
+            var title = cols[6].Trim();
+            var nextReviewDateStr = cols[7].Trim();
+            var version = string.IsNullOrWhiteSpace(cols[8]) ? "1.0" : cols[8].Trim();
+            var expectedFileName = cols[9].Trim();
+
+            if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
+            {
+                results.Add($"Row {rowCount}: Invalid NextReviewDate.");
+                continue;
+            }
+
+            await using var tx = await _common.BeginTransactionAsync();
+            try
+            {
+                int exists = await _common.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(1) FROM Documents 
+                    WHERE (Title = @Title OR DocumentNumber = @DocumentNumber) 
+                      AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                    new { Title = title, DocumentNumber = docNum, CompanyId }, tx);
+
+                if (exists > 0)
+                {
+                    results.Add($"Row {rowCount}: Document Title or Number already exists.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                int newId = await _common.ExecuteScalarAsync<int>(@"
+                    INSERT INTO Documents
+                    (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                        SubDepartmentCode, BusinessDomainCode, Title, NextReviewdate, DocumentURL, EffectiveDate,
+                        IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                    )
+                    VALUES
+                    (
+                        @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
+                        @SubDepartmentCode, @BusinessDomainCode, @Title, @NextReviewDate, @ExpectedFileName, NOW(),
+                        TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                    )
+                    RETURNING Id;", new
+                {
+                    CompanyId,
+                    DocumentNumber = docNum,
+                    DocumentTypeCode = docType,
+                    DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
+                    DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
+                    SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
+                    BusinessDomainCode = string.IsNullOrEmpty(bizDomain) ? null : bizDomain,
+                    Title = title,
+                    NextReviewDate = nextReviewDate,
+                    ExpectedFileName = expectedFileName, // Temporarily bind actual filename here for later matching
+                    UserId = empCode
+                }, tx);
+
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentVersions
+                    (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
+                    VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());",
+                    new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
+
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory
+                    (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded via Bulk Import', NOW());",
+                    new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
+
+                await tx.CommitAsync();
+                results.Add($"Row {rowCount}: Successfully imported metadata for '{docNum}'.");
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                results.Add($"Row {rowCount}: Error - {ex.Message}");
+            }
+        }
+
+        return results;
+    }
+
+    public async Task<List<string>> BulkUploadDocumentFilesAsync(List<IFormFile> files)
+    {
+        var results = new List<string>();
+        if (files == null || !files.Any())
+        {
+            results.Add("No files provided.");
+            return results;
+        }
+
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+        if (!Directory.Exists(uploadsRoot))
+            Directory.CreateDirectory(uploadsRoot);
+
+        foreach (var file in files)
+        {
+            if (file.Length == 0)
+            {
+                results.Add($"File {file.FileName}: Empty file.");
+                continue;
+            }
+
+            try
+            {
+                var safeFileName = Path.GetFileName(file.FileName);
+                var fileExtension = Path.GetExtension(safeFileName).ToLower();
+
+                // 1. Hybrid processing: Handle Zip archives containing legacy documents of various types
+                if (fileExtension == ".zip")
+                {
+                    using var stream = file.OpenReadStream();
+                    using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+
+                    foreach (var entry in archive.Entries)
+                    {
+                        if (string.IsNullOrEmpty(entry.Name)) continue; // Skip directories
+
+                        var entryExt = Path.GetExtension(entry.Name);
+                        var entryNameWithoutExt = Path.GetFileNameWithoutExtension(entry.Name);
+
+                        // Find matching document metadata by exact file name or base name
+                        var docId = await _common.ExecuteScalarAsync<int?>(@"
+                            SELECT Id 
+                            FROM Documents 
+                            WHERE CompanyId = @CompanyId 
+                              AND (DocumentURL = @FileName OR DocumentURL = @FileNameWithoutExt)
+                              AND IsDeleted = FALSE 
+                            ORDER BY Id DESC 
+                            LIMIT 1;",
+                            new { CompanyId, FileName = entry.Name, FileNameWithoutExt = entryNameWithoutExt });
+
+                        if (docId == null || docId == 0)
+                        {
+                            results.Add($"Zip Entry {entry.Name}: No matching metadata record found.");
+                            continue;
+                        }
+
+                        var newFileName = $"{Guid.NewGuid()}{entryExt}";
+                        var filePath = Path.Combine(uploadsRoot, newFileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            using var entryStream = entry.Open();
+                            await entryStream.CopyToAsync(fileStream);
+                        }
+
+                        var documentUrl = $"/uploads/documents/{newFileName}";
+
+                        await _common.ExecuteAsync(@"
+                            UPDATE Documents 
+                            SET DocumentURL = @DocumentUrl,
+                                LastModifiedAt = NOW(),
+                                LastModifiedBy = @UserId
+                            WHERE Id = @DocumentId;",
+                            new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = docId });
+
+                        results.Add($"Zip Entry {entry.Name}: Successfully attached to Document ID {docId}.");
+                    }
+                }
+                else
+                {
+                    // 2. Hybrid processing: Handle individual files of any type (Word, PDF, PNG, etc.)
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(safeFileName);
+
+                    var documentId = await _common.ExecuteScalarAsync<int?>(@"
+                        SELECT Id 
+                        FROM Documents 
+                        WHERE CompanyId = @CompanyId 
+                          AND (DocumentURL = @FileName OR DocumentURL = @FileNameWithoutExt)
+                          AND IsDeleted = FALSE 
+                        ORDER BY Id DESC 
+                        LIMIT 1;",
+                        new { CompanyId, FileName = safeFileName, FileNameWithoutExt = fileNameWithoutExt });
+
+                    if (documentId == null || documentId == 0)
+                    {
+                        results.Add($"File {safeFileName}: No matching metadata record found.");
+                        continue;
+                    }
+
+                    var newFileName = $"{Guid.NewGuid()}{fileExtension}";
+                    var filePath = Path.Combine(uploadsRoot, newFileName);
+
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    var documentUrl = $"/uploads/documents/{newFileName}";
+
+                    await _common.ExecuteAsync(@"
+                        UPDATE Documents 
+                        SET DocumentURL = @DocumentUrl,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE Id = @DocumentId;",
+                        new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = documentId });
+
+                    results.Add($"File {safeFileName}: Successfully attached to Document ID {documentId}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                results.Add($"File {file.FileName}: Error - {ex.Message}");
+            }
+        }
+
+        return results;
     }
 
 }
@@ -2602,4 +3009,15 @@ public class GetDocumentsPendingTrainingDto : TableFiltersDto
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
+}
+
+public class GetApprovedDocumentsFilterDto : TableFiltersDto
+{
+    public DateTime? DateFrom { get; set; }
+    public DateTime? DateTo { get; set; }
+
+    /// <summary>
+    /// Accepts "ApprovalDate" or "CreationDate"
+    /// </summary>
+    public string? DateFilterType { get; set; }
 }

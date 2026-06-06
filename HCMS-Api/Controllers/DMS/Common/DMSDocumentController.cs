@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -17,20 +17,20 @@ public class DMSDocumentController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
-    private readonly DocumentComponent _documentComponent; 
+    private readonly DocumentComponent _documentComponent;
 
     public DMSDocumentController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     DocumentComponent documentComponent )
+     DocumentComponent documentComponent)
     {
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
         _clientContextService = clientContextService;
-        _documentComponent = documentComponent; 
+        _documentComponent = documentComponent;
     }
 
     [HttpPost("get-all-document")]
@@ -522,6 +522,35 @@ public class DMSDocumentController : Controller
         }
     }
 
+
+
+    [HttpPost("get-approved-effective-documents")]
+    public async Task<IActionResult> GetApprovedEffectiveDocuments(GetApprovedDocumentsFilterDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetApprovedEffectiveDocumentsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("authorize-document-post-training")]
     public async Task<IActionResult> AuthorizeDocumentPostTraining([FromBody] AuthorizeDocumentDto input)
     {
@@ -548,7 +577,62 @@ public class DMSDocumentController : Controller
             return StatusCode(response.Code, response);
         }
     }
-     
+
+    [HttpPost("bulk-import-metadata")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> BulkImportMetadata([FromForm] IFormFile csvFile)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<string>>()
+            {
+                Success = true,
+                Data = await _documentComponent.BulkImportDocumentMetadataAsync(csvFile),
+                Message = "Bulk import metadata process completed.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("bulk-upload-files")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> BulkUploadFiles([FromForm] List<IFormFile> files)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<string>>()
+            {
+                Success = true,
+                Data = await _documentComponent.BulkUploadDocumentFilesAsync(files),
+                Message = "Bulk file upload process completed.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
