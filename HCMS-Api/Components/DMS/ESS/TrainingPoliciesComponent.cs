@@ -134,7 +134,7 @@ public class TrainingPolicyComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int code)
     {
         try
         {
@@ -271,7 +271,7 @@ public class TrainingPolicyComponent
         }
     }
 
-    public async Task<TrainingPolicyReadDto> GetByIdAsync(string code)
+    public async Task<TrainingPolicyReadDto> GetByIdAsync(int id)
     {
         try
         {
@@ -280,7 +280,49 @@ public class TrainingPolicyComponent
                     FROM TrainingPolicies t
                     LEFT JOIN Companies c
                     ON t.CompanyId = c.Id
-                WHERE t.Id = {code}
+                WHERE t.Id = {id}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("TrainingPolicy not found", 200);
+
+            DataRow row = dt.Rows[0];
+
+            return new TrainingPolicyReadDto
+            {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                TrainingRequired = row.Field<bool>("TrainingRequired"),
+                MinimumScore = row.Field<int>("MinimumScore"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<TrainingPolicyReadDto> GetByDocumentTypeAsync(string dtCode)
+    {
+        try
+        {
+            string query = $@"
+                SELECT t.*, c.Id AS CompanyId, c.Name AS Company
+                    FROM TrainingPolicies t
+                    LEFT JOIN Companies c
+                    ON t.CompanyId = c.Id
+                WHERE t.DocumentTypeCode = '{dtCode}'
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 

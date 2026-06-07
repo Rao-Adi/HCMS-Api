@@ -654,6 +654,11 @@ public class DocumentComponent
             await ValidateAndSaveAttributesAsync(input, doc, transaction);
 
             //-------------------------------------------------
+            // Validate & Save Training Users
+            //-------------------------------------------------
+            await ValidateAndSaveTrainingUsersAsync(input, doc, CompanyId, empCode, transaction);
+
+            //-------------------------------------------------
             // 2️⃣ Resolve Correct Workflow Policy
             //-------------------------------------------------
 
@@ -977,6 +982,46 @@ public class DocumentComponent
                     submitted.ValueBoolean,
                     empCode
                 }, transaction);
+            }
+        }
+    }
+
+    private async Task ValidateAndSaveTrainingUsersAsync(dynamic input, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction)
+    {
+        // 1. Check if Training is required for this DocumentType
+        var tp = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT TrainingRequired 
+            FROM TrainingPolicies 
+            WHERE CompanyId = @CompanyId 
+              AND DocumentTypeCode = @DocTypeCode 
+              AND IsActive = TRUE;", 
+            new { CompanyId = companyId, DocTypeCode = (string)documentInfo.documenttypecode }, transaction);
+            
+        bool requiresTraining = tp != null && tp.trainingrequired == true;
+
+        if (requiresTraining)
+        {
+            // UC Requirement: Users must be attached if Training = True
+            // Note: Ensure your 'SubmitDocument' DTO contains: public List<string>? TrainingUserIds { get; set; }
+            if (input.TrainingUserIds == null || input.TrainingUserIds.Count == 0)
+                throw new CustomException("Training is required for this document type. Please select users for training.", 400);
+
+            // Clear any existing training users (useful in case of rework/resubmission)
+            await _common.ExecuteAsync(@"
+                DELETE FROM DocumentUserTraining 
+                WHERE DocumentId = @DocumentId 
+                  AND CompanyId = @CompanyId;", 
+                new { DocumentId = input.DocumentId, CompanyId = companyId }, transaction);
+
+            // Insert new explicitly attached training users
+            foreach (string uid in input.TrainingUserIds)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentUserTraining
+                    (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                    VALUES
+                    (@CompanyId, @DocumentId, @EmployeeCode, 1, 0, '', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                new { CompanyId = companyId, DocumentId = input.DocumentId, EmployeeCode = uid, UserId = empCode }, transaction);
             }
         }
     }
@@ -1501,17 +1546,8 @@ public class DocumentComponent
                     (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
                     new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
 
-                // 4. Matrix the Training Requirements for Users
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentUserTraining
-                    (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL,  AssessmentScore,ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
-                    SELECT
-                        CompanyId, DocumentId, EmployeeCode, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
-                    FROM DocumentUserDistributions
-                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
-                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
 
-                // 5. Notify Users about assigned training
+                // 4. Notify Users about assigned training (Those already saved during Document Submit)
                 await NotifyPendingUsersAsync(companyId, documentId, tx);
             }
 
@@ -2635,9 +2671,8 @@ public class DocumentComponent
 
             // 4. Data Query
             string dataSql = $@"
-                SELECT DISTINCT
-                    doc.*,
-                    dv.Version,
+                SELECT 
+                    Distinct doc.*,
                     (SELECT dsh2.ChangedAt 
                      FROM DocumentStateHistory dsh2 
                      JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
@@ -2645,17 +2680,14 @@ public class DocumentComponent
                        AND ds2.Code = 'EFFECTIVE'
                      ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
                 FROM VW_Documents doc
-                LEFT JOIN LATERAL (
-                    SELECT Version FROM DocumentVersions 
-                    WHERE DocumentId = doc.Id AND VersionType = 2 AND IsActive = TRUE 
-                    ORDER BY CreatedAt DESC LIMIT 1
-                ) dv ON TRUE
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.VersionType = 2 AND dv.IsActive = TRUE
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(DISTINCT doc.Id) 
+                SELECT COUNT(Distinct doc.Id) 
                 FROM VW_Documents doc 
                 {whereClause};";
 

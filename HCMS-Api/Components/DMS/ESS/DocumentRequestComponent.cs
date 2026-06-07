@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -648,65 +648,11 @@ public class DocumentRequestComponent
             WHERE DocumentRequestId = @RequestId;", new { input.RequestId }, tx);
 
             //-------------------------------------------------
-            // RE-INSERT UPDATED ROLE DISTRIBUTION
+            // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
-
-            if (input.DistributionList?.Any() == true)
-            {
-                foreach (var d in input.DistributionList)
-                {
-                    await _common.ExecuteAsync(@"
-                        INSERT INTO DocumentRequestRoleDistributions
-                        (CompanyId,DocumentRequestId,DivisionCode,
-                         DepartmentCode,SubDepartmentCode,
-                         BusinessDomainCode,RoleId,DistributionTypeId,
-                         CreatedBy,LastModifiedBy)
-                        VALUES
-                        (@CompanyId,@RequestId,@DivisionCode,
-                         @DepartmentCode,@SubDepartmentCode,
-                         @BusinessDomainCode,@RoleId,@DistributionTypeId,
-                         @CreatedBy,@LastModifiedBy);",
-                    new
-                    {
-                        CompanyId,
-                        input.RequestId,
-                        d.DivisionCode,
-                        d.DepartmentCode,
-                        d.SubDepartmentCode,
-                        d.BusinessDomainCode,
-                        d.RoleId,
-                        d.DistributionTypeId,
-                        CreatedBy = empCode,
-                        LastModifiedBy = empCode
-                    }, tx);
-                }
-            }
-
-            //-------------------------------------------------
-            // RE-INSERT UPDATED USER LIST
-            //-------------------------------------------------
-
-            if (input.UserIds?.Any() == true)
-            {
-                foreach (var _userId in input.UserIds)
-                {
-                    await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentRequestUserDistributions
-                    (CompanyId,DocumentRequestId,EmployeeCode,
-                     CreatedBy,LastModifiedBy)
-                    VALUES
-                    (@CompanyId,@RequestId,@EmployeeCode,
-                     @CreatedBy,@LastModifiedBy);",
-                    new
-                    {
-                        CompanyId,
-                        input.RequestId,
-                        EmployeeCode = _userId,
-                        CreatedBy = empCode,
-                        LastModifiedBy = empCode
-                    }, tx);
-                }
-            }
+            await InsertDistributionsAsync(CompanyId, input.RequestId,
+                input.DistributionList, input.UserIds,
+                empCode, tx);
 
 
             //-------------------------------------------------
@@ -964,6 +910,45 @@ public class DocumentRequestComponent
                         LastModifiedBy = empCode
                     }, tx);
                 }
+            }
+            
+            //-------------------------------------------------
+            // Auto-expand roles into specific users and insert them into UserDistributions
+            //-------------------------------------------------
+            if (roles?.Any() == true)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentRequestUserDistributions 
+                    (CompanyId, DocumentRequestId, EmployeeCode, CreatedBy, LastModifiedBy)
+                    SELECT DISTINCT 
+                        dr.CompanyId, 
+                        dr.DocumentRequestId, 
+                        TRIM(e.empcode), 
+                        @CreatedBy, 
+                        @LastModifiedBy
+                    FROM DocumentRequestRoleDistributions dr
+                    INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1
+                    INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE
+                    LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                    WHERE dr.DocumentRequestId = @RequestId
+                      AND dr.CompanyId = @CompanyId
+                      AND ejp.roleid = dr.RoleId
+                      AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
+                      AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
+                      AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
+                      AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM DocumentRequestUserDistributions u 
+                          WHERE u.DocumentRequestId = dr.DocumentRequestId 
+                            AND u.EmployeeCode = TRIM(e.empcode)
+                      );",
+                    new
+                    {
+                        CompanyId = companyId,
+                        RequestId = requestId,
+                        CreatedBy = empCode,
+                        LastModifiedBy = empCode
+                    }, tx);
             }
         }
         catch (Exception ex)
@@ -2464,14 +2449,13 @@ public class DocumentRequestComponent
                     CompanyId, DocumentId, EmployeeCode, CreatedBy
                 )
                 SELECT
-                    CompanyId, @DocumentId, @EmployeeCode, @CreatedBy
+                    CompanyId, @DocumentId, EmployeeCode, @CreatedBy
                 FROM DocumentRequestUserDistributions
                 WHERE DocumentRequestId = @RequestId;",
             new
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                EmployeeCode = empCode,
                 CreatedBy = empCode
             }, transaction);
 

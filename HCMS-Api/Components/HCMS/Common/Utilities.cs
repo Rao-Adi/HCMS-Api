@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+﻿﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.HCMS.Common.DataAccess;
 using HCMS_Api.Components.HCMS.Common.Models;
 using MailKit.Security;
@@ -1702,8 +1702,15 @@ namespace HCMS_Api.Components.HCMS.Common
 
             using (var smtp = new MailKit.Net.Smtp.SmtpClient())
             {
+                    // Bypass SSL certificate validation if the server uses a self-signed or untrusted certificate
+                    smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
+
                 int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
                 await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+
+                    // Force MailKit to use Basic Authentication (Login/Plain) instead of OAuth2
+                    smtp.AuthenticationMechanisms.Remove("XOAUTH2");
+
                 await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
                 await smtp.SendAsync(email);
                 await smtp.DisconnectAsync(true);

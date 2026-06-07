@@ -1708,6 +1708,9 @@ namespace HCMS_Api.Components.DMS.Common
 
                 using (var smtp = new MailKit.Net.Smtp.SmtpClient())
                 {
+                    // Bypass SSL certificate validation if the server uses a self-signed or untrusted certificate
+                    smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
+
                     int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
                     await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
                     await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
