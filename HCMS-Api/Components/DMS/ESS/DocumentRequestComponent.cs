@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -488,10 +488,22 @@ public class DocumentRequestComponent
             {
                 if (stepDef.userid != null)
                 {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers 
+                        WHERE EmployeeFrom = @EmpFrom 
+                        AND CompanyId = @CompanyId AND Status = 2 
+                        AND EffectiveDateFrom <= CURRENT_DATE 
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                        ORDER BY Id DESC LIMIT 1;", 
+                        new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
 
                     runningStepOrder++;
                     insertedSteps++;
@@ -514,10 +526,22 @@ public class DocumentRequestComponent
 
                     foreach (var emp in employees)
                     {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers 
+                            WHERE EmployeeFrom = @EmpFrom 
+                            AND CompanyId = @CompanyId AND Status = 2 
+                            AND EffectiveDateFrom <= CURRENT_DATE 
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                            ORDER BY Id DESC LIMIT 1;", 
+                            new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, transaction);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
                         runningStepOrder++;
                         insertedSteps++;
                     }
@@ -743,10 +767,22 @@ public class DocumentRequestComponent
             {
                 if (stepDef.userid != null)
                 {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers 
+                        WHERE EmployeeFrom = @EmpFrom 
+                        AND CompanyId = @CompanyId AND Status = 2 
+                        AND EffectiveDateFrom <= CURRENT_DATE 
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                        ORDER BY Id DESC LIMIT 1;", 
+                        new { EmpFrom = actualUserId, CompanyId }, tx);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, tx);
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
                     runningStepOrder++;
                     inserted++;
                 }
@@ -768,10 +804,22 @@ public class DocumentRequestComponent
 
                     foreach (var emp in employees)
                     {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers 
+                            WHERE EmployeeFrom = @EmpFrom 
+                            AND CompanyId = @CompanyId AND Status = 2 
+                            AND EffectiveDateFrom <= CURRENT_DATE 
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                            ORDER BY Id DESC LIMIT 1;", 
+                            new { EmpFrom = actualUserId, CompanyId }, tx);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, tx);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
                         runningStepOrder++;
                         inserted++;
                     }
@@ -2360,8 +2408,8 @@ public class DocumentRequestComponent
                 request.subdepartmentcode,
                 request.businessdomaincode,
                 DocumentUrl = request.draftfileurl,
-                CreatedBy = empCode,
-                LastModifiedBy = empCode
+                CreatedBy = request.createdby,
+                LastModifiedBy = request.createdby
             }, transaction);
 
             //-----------------------------------------
@@ -2381,8 +2429,8 @@ public class DocumentRequestComponent
                 companyId,
                 documentId,
                 Content = request.proposedcontent,
-                CreatedBy = empCode,
-                LastModifiedBy = empCode
+                CreatedBy = request.createdby,
+                LastModifiedBy = request.createdby
             }, transaction);
 
             //-----------------------------------------
@@ -2426,7 +2474,7 @@ public class DocumentRequestComponent
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                UserId = empCode
+                UserId = request.createdby
             }, transaction);
 
             //-----------------------------------------
@@ -2445,7 +2493,7 @@ public class DocumentRequestComponent
             {
                 DocumentId = documentId,
                 RequestId = requestId,
-                CreatedBy = empCode
+                CreatedBy = request.createdby
             }, transaction);
 
             //await transaction.CommitAsync();

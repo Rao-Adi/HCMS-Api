@@ -754,10 +754,22 @@ public class DocumentComponent
             {
                 if (stepDef.userid != null)
                 {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers 
+                        WHERE EmployeeFrom = @EmpFrom 
+                        AND CompanyId = @CompanyId AND Status = 2 
+                        AND EffectiveDateFrom <= CURRENT_DATE 
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                        ORDER BY Id DESC LIMIT 1;", 
+                        new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
                     runningStepOrder++;
                     inserted++;
                 }
@@ -779,10 +791,22 @@ public class DocumentComponent
 
                     foreach (var emp in employees)
                     {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers 
+                            WHERE EmployeeFrom = @EmpFrom 
+                            AND CompanyId = @CompanyId AND Status = 2 
+                            AND EffectiveDateFrom <= CURRENT_DATE 
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                            ORDER BY Id DESC LIMIT 1;", 
+                            new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, transaction);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
                         runningStepOrder++;
                         inserted++;
                     }
@@ -1512,7 +1536,7 @@ public class DocumentComponent
 
             // 1. Fetch document type and training policy rules
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT doc.DocumentTypeCode, tp.TrainingRequired, tp.MinimumScore
+                SELECT doc.DocumentTypeCode, doc.CreatedBy, tp.TrainingRequired, tp.MinimumScore
                 FROM Documents doc
                 LEFT JOIN TrainingPolicies tp 
                     ON tp.DocumentTypeCode = doc.DocumentTypeCode 
@@ -1544,7 +1568,7 @@ public class DocumentComponent
                     (CompanyId, DocumentId, TrainingMode,TrainingStatus,TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
                     (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
-                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+                    new { CompanyId = companyId, DocumentId = documentId, UserId = (string)docInfo.createdby }, tx);
 
 
                 // 4. Notify Users about assigned training (Those already saved during Document Submit)
@@ -2669,6 +2693,17 @@ public class DocumentComponent
                       ORDER BY dsh.ChangedAt DESC LIMIT 1
                   ) = 'EFFECTIVE'";
 
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
             // 1. Keyword Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -2677,11 +2712,27 @@ public class DocumentComponent
             }
 
             // 2. Date Range Filters
+            if (!string.IsNullOrWhiteSpace(input.ApprovedFromDate) && !string.IsNullOrWhiteSpace(input.ApprovedToDate))
+            {
+                whereClause += @" AND EXISTS (
+                        SELECT 1 FROM DocumentStateHistory dshDate 
+                        JOIN DocumentStates dsDate ON dsDate.Id = dshDate.ToStateId
+                        WHERE dshDate.DocumentId = doc.Id 
+                          AND dsDate.Code = 'EFFECTIVE'
+                          AND dshDate.ChangedAt::date >= @ApprovedFromDate::date AND dshDate.ChangedAt::date <= @ApprovedToDate::date
+                    )";
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.RequestCreatedFromDate) && !string.IsNullOrWhiteSpace(input.RequestCreatedToDate))
+            {
+                whereClause += " AND (doc.CreatedAt::date >= @RequestCreatedFromDate::date AND doc.CreatedAt::date <= @RequestCreatedToDate::date)";
+            }
+
             if (input.DateFrom.HasValue && input.DateTo.HasValue)
             {
                 if (!string.IsNullOrWhiteSpace(input.DateFilterType) && input.DateFilterType.Equals("CreationDate", StringComparison.OrdinalIgnoreCase))
                 {
-                    whereClause += " AND (doc.CreatedAt >= @DateFrom AND doc.CreatedAt <= @DateTo)";
+                    whereClause += " AND (doc.CreatedAt::date >= @DateFrom::date AND doc.CreatedAt::date <= @DateTo::date)";
                 }
                 else
                 {
@@ -2691,7 +2742,7 @@ public class DocumentComponent
                         JOIN DocumentStates dsDate ON dsDate.Id = dshDate.ToStateId
                         WHERE dshDate.DocumentId = doc.Id 
                           AND dsDate.Code = 'EFFECTIVE'
-                          AND dshDate.ChangedAt >= @DateFrom AND dshDate.ChangedAt <= @DateTo
+                          AND dshDate.ChangedAt::date >= @DateFrom::date AND dshDate.ChangedAt::date <= @DateTo::date
                     )";
                 }
             }
@@ -2735,7 +2786,16 @@ public class DocumentComponent
             {
                 CompanyId = CompanyId,
                 DateFrom = input.DateFrom,
-                DateTo = input.DateTo
+                DateTo = input.DateTo,
+                ApprovedFromDate = input.ApprovedFromDate,
+                ApprovedToDate = input.ApprovedToDate,
+                RequestCreatedFromDate = input.RequestCreatedFromDate,
+                RequestCreatedToDate = input.RequestCreatedToDate,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
             };
 
             var documents = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
@@ -3102,4 +3162,14 @@ public class GetApprovedDocumentsFilterDto : TableFiltersDto
     /// Accepts "ApprovalDate" or "CreationDate"
     /// </summary>
     public string? DateFilterType { get; set; }
+
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
+    public string? ApprovedFromDate { get; set; }
+    public string? ApprovedToDate { get; set; }
+    public string? RequestCreatedFromDate { get; set; }
+    public string? RequestCreatedToDate { get; set; }
 }
