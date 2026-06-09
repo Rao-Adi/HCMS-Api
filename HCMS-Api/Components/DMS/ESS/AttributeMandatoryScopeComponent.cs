@@ -38,7 +38,7 @@ public class AttributeMandatoryScopeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
 
     }
 
@@ -47,7 +47,7 @@ public class AttributeMandatoryScopeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -57,7 +57,7 @@ public class AttributeMandatoryScopeComponent
             SELECT COUNT(1)
             FROM AttributeMandatoryScopes
             WHERE (Id = '{input.DocumentAttributeId}'
-              AND IsDeleted = FALSE";
+              AND IsDeleted = FALSE AND CompanyId ={CompanyId}";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -117,7 +117,7 @@ public class AttributeMandatoryScopeComponent
                         ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
-            WHERE doc.Id = {newId}";
+            WHERE doc.Id = {newId} AND doc.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -165,7 +165,7 @@ public class AttributeMandatoryScopeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -175,7 +175,7 @@ public class AttributeMandatoryScopeComponent
                 SELECT COUNT(1)
                 FROM AttributeMandatoryScopes
                 WHERE DocumentAttributeId = {code}
-                  AND IsDeleted = False";
+                  AND IsDeleted = False AND CompanyId = {CompanyId}";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -202,10 +202,12 @@ public class AttributeMandatoryScopeComponent
     public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE doc.IsDeleted = False 
-                  AND doc.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE doc.IsDeleted = False AND doc.CompanyId = " + CompanyId + " AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -326,12 +328,14 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = @"
             SELECT DocumentAttributeId, DivisionCode
             FROM AttributeMandatoryScopes
             WHERE IsActive = True
-              AND IsDeleted = False
-            ORDER BY DivisionCode";
+              AND IsDeleted = False AND CompanyId = "+CompanyId +"ORDER BY DivisionCode";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -355,7 +359,9 @@ public class AttributeMandatoryScopeComponent
     public async Task<PaginationResult<AttributeMandatoryScopeReadDto>> GetByCodeAsync(int id)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
 
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
@@ -372,6 +378,7 @@ public class AttributeMandatoryScopeComponent
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
                 WHERE DocumentAttributeId = {id}
+                  AND doc.CompanyId = {CompanyId}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
 
@@ -379,7 +386,7 @@ public class AttributeMandatoryScopeComponent
 
             if (dt.Rows.Count == 0)
                 throw new CustomException("AttributeMandatoryScope not found", 200);
-             
+
 
             if (dt == null || dt.Rows.Count == 0)
             {
@@ -445,7 +452,9 @@ public class AttributeMandatoryScopeComponent
     {
         try
         {
-             
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT doc.*, div.Name AS DivisionName,
                         dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain, c.Id AS CompanyId, c.Name AS Company
@@ -461,6 +470,7 @@ public class AttributeMandatoryScopeComponent
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
                 WHERE DocumentAttributeId = {id}
+                  AND doc.CompanyId = {CompanyId}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
 
@@ -537,7 +547,7 @@ public class AttributeMandatoryScopeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -546,7 +556,7 @@ public class AttributeMandatoryScopeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM AttributeMandatoryScopes
-            WHERE DocumentAttributeId = '{input.DocumentAttributeId}'
+            WHERE DocumentAttributeId = '{input.DocumentAttributeId}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -565,7 +575,7 @@ public class AttributeMandatoryScopeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE DocumentAttributeId = '{input.DocumentAttributeId}'";
+            WHERE DocumentAttributeId = '{input.DocumentAttributeId}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -587,7 +597,7 @@ public class AttributeMandatoryScopeComponent
                         ON doc.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c 
                         ON doc.CompanyId = c.Id
-            WHERE id = {updated}";
+            WHERE doc.id = {updated} AND doc.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

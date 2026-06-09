@@ -1,4 +1,3 @@
-﻿﻿﻿﻿using HCMS_Api.Common;
 ﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -232,12 +231,13 @@ public class NotificationComponent
         };
     }
 
-     
+
     public async Task<NotificationReadDto> CreateAsync(NotificationCreateDto input)
     {
         try
-        {  
-
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Notifications
@@ -253,7 +253,7 @@ public class NotificationComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.EmployeeCode}',
                 '{input.Title}',
                 '{input.Message}',
@@ -271,7 +271,7 @@ public class NotificationComponent
             string selectQuery = $@"
              SELECT n.*, c.Name AS Company FROM Notifications n
              LEFT JOIN Companies c ON n.CompanyId = c.Id
-            WHERE n.Id = {newId}";
+            WHERE n.Id = {newId} AND n.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -307,12 +307,16 @@ public class NotificationComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(code);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Notifications
                 WHERE EmployeeCode = '{empDetail.empcode}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -324,7 +328,7 @@ public class NotificationComponent
             string deleteQuery = $@"
                 UPDATE Notifications
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -339,14 +343,16 @@ public class NotificationComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             JwtArray loginUser = await _common.GetJwtUser();
             // Optionally enforce that a user only queries their own notifications
             input.SearchText = string.IsNullOrWhiteSpace(input.SearchText)
                 ? loginUser.UserEmpID.ToString()
                 : input.SearchText;
 
-            var whereClause = @"
-                WHERE n.IsRead = " + (input.IsActive ? "True" : "False");
+            var whereClause = @"WHERE n.CompanyId = " + CompanyId + " AND  n.IsRead = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -393,7 +399,7 @@ public class NotificationComponent
                     TotalCount = 0
                 };
             }
-             
+
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new NotificationReadDto
                 {
@@ -436,10 +442,10 @@ public class NotificationComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
-            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()); 
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             string query = $@"
                  SELECT n.*,c.Name AS Company
@@ -454,7 +460,7 @@ public class NotificationComponent
 
             if (divisionsTable.Rows.Count == 0)
                 throw new CustomException("Notifications not found", 200);
-             
+
 
             var divisions = divisionsTable.AsEnumerable()
                .Select(row => new NotificationReadDto
@@ -475,7 +481,7 @@ public class NotificationComponent
                })
                .ToList();
 
-            return divisions; 
+            return divisions;
         }
         catch (Exception)
         {
@@ -487,7 +493,10 @@ public class NotificationComponent
     public async Task<NotificationReadDto> UpdateAsync(NotificationUpdateDto input)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -495,7 +504,8 @@ public class NotificationComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Notifications
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id}
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -510,7 +520,7 @@ public class NotificationComponent
                 EmployeeCode = '{input.EmployeeCode}', 
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{input.EmployeeCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -522,7 +532,7 @@ public class NotificationComponent
                 SELECT n.*,c.Name AS Company
                     FROM Notifications n
 	                LEFT JOIN Companies c ON n.CompanyId = c.Id
-            WHERE n.Id = '{input.Id}'";
+            WHERE n.Id = {input.Id} AND n.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -559,7 +569,7 @@ public class NotificationComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -567,7 +577,7 @@ public class NotificationComponent
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND CompanyID = {CompanyId} AND EmployeeCode = '{empCode}'";
+                WHERE Id = {notificationId} AND CompanyId = {CompanyId} AND EmployeeCode = '{empCode}'";
 
             return _common.ExecuteNonQuery(updateQuery);
         }
@@ -582,7 +592,7 @@ public class NotificationComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());

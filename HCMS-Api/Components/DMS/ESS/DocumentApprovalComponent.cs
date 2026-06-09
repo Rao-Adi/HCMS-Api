@@ -37,7 +37,7 @@ public class DocumentApprovalComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -46,7 +46,7 @@ public class DocumentApprovalComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -58,7 +58,7 @@ public class DocumentApprovalComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentApprovals
-            WHERE (Id = '{input.Id}' 
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -85,7 +85,7 @@ public class DocumentApprovalComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentVersionId}',
                 '{input.WorkflowStepId}',
                 '{input.ApproverUserId}',
@@ -109,7 +109,7 @@ public class DocumentApprovalComponent
                         FROM DocumentApprovals da 
                         LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
-            WHERE da.Id = {newId}";
+            WHERE da.Id = {newId} da.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -121,7 +121,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -149,7 +149,7 @@ public class DocumentApprovalComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -158,7 +158,7 @@ public class DocumentApprovalComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentApprovals
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -187,9 +187,11 @@ public class DocumentApprovalComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE da.IsDeleted = False 
-                  AND da.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE da.IsDeleted = False AND da.CompanyId = " + CompanyId + @" AND da.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -246,7 +248,7 @@ public class DocumentApprovalComponent
                 .Select(row => new DocumentApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentVersionId = row.Table.Columns.Contains("DocumentVersionId") ? row.Field<int>("DocumentVersionId") : 0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
@@ -288,11 +290,14 @@ public class DocumentApprovalComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Id, Name
             FROM DocumentApprovals
             WHERE IsActive = True
-              AND IsDeleted = False
+              AND IsDeleted = False AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -318,12 +323,15 @@ public class DocumentApprovalComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
                         LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
-                WHERE da.Id = {code}
+                WHERE da.Id = {code} AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
@@ -337,7 +345,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -364,12 +372,15 @@ public class DocumentApprovalComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                         SELECT da.*, c.Id AS CompanyId, c.Name AS Company,div.*
                         FROM DocumentApprovals da 
                         LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
-                WHERE da.Division = {dCode}
+                WHERE da.Division = {dCode} da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
@@ -383,7 +394,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -411,7 +422,7 @@ public class DocumentApprovalComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -423,7 +434,7 @@ public class DocumentApprovalComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentApprovals
-            WHERE Id = '{input.Id}'
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -444,7 +455,7 @@ public class DocumentApprovalComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -457,7 +468,7 @@ public class DocumentApprovalComponent
                         FROM DocumentApprovals da 
                         LEFT JOIN Companies c
                         ON da.CompanyId = c.Id
-            WHERE da.Id = '{input.Id}'";
+            WHERE da.Id = '{input.Id}' da.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -469,7 +480,7 @@ public class DocumentApprovalComponent
             return new DocumentApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentVersionId = row.Field<int>("DocumentVersionId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),

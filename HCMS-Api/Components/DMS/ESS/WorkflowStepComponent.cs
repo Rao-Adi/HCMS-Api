@@ -1,12 +1,12 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using Dapper;
+﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models; 
-using System.Data; 
+using HCMS_Api.Components.DMS.Common.Models;
+using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -38,9 +38,9 @@ public class WorkflowStepComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
-     
+
 
     public async Task<bool> DeleteAsync(string code)
     {
@@ -56,7 +56,7 @@ public class WorkflowStepComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM WorkflowStepDefinitions
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -70,7 +70,7 @@ public class WorkflowStepComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -85,8 +85,11 @@ public class WorkflowStepComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE ws.IsDeleted = False 
+                WHERE ws.IsDeleted = False AND ws.CompanyId = " + CompanyId + @"
                   AND ws.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -197,28 +200,8 @@ public class WorkflowStepComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = Convert.ToInt32(_CompanyId);
 
-            //string query = $@"
-            //    SELECT ws.*
-            //    FROM Vw_WorkflowStepDefinitions ws
-            //    JOIN WorkflowPolicies wp
-            //        ON wp.Id = ws.WorkflowPolicyId
-            //        AND wp.CompanyId = ws.CompanyId
-            //    WHERE wp.CompanyId = @CompanyId
-            //    AND wp.EntityType = @EntityType
-            //    AND wp.DocumentTypeCode = @DocumentTypeCode
-            //    -- Allow filtering by specific policy name or ID
-            //    AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-            //    AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-            //    AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-            //    AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-            //    AND ws.IsActive = TRUE
-            //    AND ws.IsDeleted = FALSE
-            //    ORDER BY ws.StepOrder, ws.employeecode ASC;";
             string query = $@"
                 SELECT 
                     wsd.Id AS id, 
@@ -333,7 +316,7 @@ public class WorkflowStepComponent
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
 
                     DocumentType = GetValue<string>(rowDict, "documenttype"),
-                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),                    
+                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),
 
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
@@ -350,7 +333,7 @@ public class WorkflowStepComponent
                 });
             }
 
-            return dtos; 
+            return dtos;
         }
         catch (Exception ex)
         {
@@ -363,9 +346,6 @@ public class WorkflowStepComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = Convert.ToInt32(_CompanyId);
 
             string query = $@"
@@ -504,6 +484,7 @@ public class WorkflowStepComponent
     {
         try
         {
+
             string query = @"
                 SELECT DISTINCT COALESCE(wes.AssignedUserId, TRIM(e.empcode)) AS ApproverId
                 FROM WorkflowExecutionSteps wes
@@ -535,7 +516,7 @@ public class WorkflowStepComponent
 
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp); 
+        var prefix = _utilities.GetPrefix(clientIp);
         //var userId = _utilities.GetUserid(prefix);
         int CompanyId = int.Parse(_CompanyId);
         var empId = _utilities.GetEmpid(clientIp);
@@ -602,9 +583,13 @@ public class WorkflowStepComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                   Select * from Vw_WorkflowStepDefinitions ws 
                 WHERE ws.DocumentTypeCode = '{code}' AND ws.WorkflowPolicyId = {policyId}
+                  AND ws.CompanyId = {CompanyId}
                   AND ws.IsActive = True
                   AND ws.IsDeleted = False";
 
@@ -676,8 +661,8 @@ public class WorkflowStepComponent
                 throw new CustomException("Invalid step ID.", 400);
 
             int exists = await _dapperService.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM WorkflowStepDefinitions WHERE Id = @Id AND IsDeleted = FALSE",
-                new { Id = input.Id });
+                "SELECT COUNT(1) FROM WorkflowStepDefinitions WHERE Id = @Id AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                new { Id = input.Id, CompanyId });
 
             if (exists == 0)
                 throw new CustomException("Workflow Step not found", 404);
@@ -694,7 +679,7 @@ public class WorkflowStepComponent
                     IsActive = @IsActive,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @ModifiedBy
-                WHERE Id = @Id";
+                WHERE Id = @Id AND CompanyId = @CompanyId";
 
             var updateParams = new
             {
@@ -706,7 +691,8 @@ public class WorkflowStepComponent
                 RequiresAllApprovals = input.IsParallelApproval,
                 IsActive = input.IsActive,
                 ModifiedBy = empCode,
-                Id = input.Id
+                Id = input.Id,
+                CompanyId = CompanyId
             };
 
             await _dapperService.ExecuteAsync(updateQuery, updateParams);
@@ -715,9 +701,9 @@ public class WorkflowStepComponent
             string selectQuery = @"
                 SELECT * 
                 FROM Vw_WorkflowStepDefinitions
-                WHERE Id = @Id";
+                WHERE Id = @Id AND CompanyId = @CompanyId";
 
-            var resultList = await _dapperService.QueryAsync<dynamic>(selectQuery, new { Id = input.Id });
+            var resultList = await _dapperService.QueryAsync<dynamic>(selectQuery, new { Id = input.Id, CompanyId });
             var rowDict = resultList.FirstOrDefault() as IDictionary<string, object>;
 
             if (rowDict == null)
@@ -752,7 +738,7 @@ public class WorkflowStepComponent
         {
             throw;
         }
-    } 
+    }
 
     public async Task<List<WorkflowStepDefiniationReadDto>> CreateWorkflowStepsByFilterAsync(WorkFlowStepsFilterDto filters)
     {
@@ -805,7 +791,7 @@ public class WorkflowStepComponent
             //-----------------------------------------
 
             if (policyId == null)
-            { 
+            {
                 policyId = await _dapperService.ExecuteAsync(@"
                     INSERT INTO WorkflowPolicies
                     (
@@ -820,7 +806,7 @@ public class WorkflowStepComponent
                     RETURNING Id;",
                 new
                 {
-                    CompanyId, 
+                    CompanyId,
                     EntityType = filters.EntityType,
                     DivisionCode = divCode,
                     DepartmentCode = depCode,
@@ -870,14 +856,15 @@ public class WorkflowStepComponent
             var nextOrder = await _dapperService.ExecuteScalarAsync<int>(@"
                 SELECT COALESCE(MAX(StepOrder),0) + 1
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new { VersionId = versionId });
+                WHERE WorkflowPolicyVersionId = @VersionId
+                  AND CompanyId = @CompanyId;",
+                new { VersionId = versionId, CompanyId });
 
             //-----------------------------------------
             // 6️⃣ Insert Step
             //-----------------------------------------
 
-            bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) || 
+            bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) ||
                                         (filters.DesignationCodes != null && filters.DesignationCodes.Any());
 
             if (hasRoleOrDesignation)
@@ -888,8 +875,8 @@ public class WorkflowStepComponent
                     {
                         var existingRoleStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
                             SELECT COUNT(1) FROM WorkflowStepDefinitions 
-                            WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND IsDeleted = FALSE;", 
-                            new { VersionId = versionId, RoleId = roleId });
+                            WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
+                            new { VersionId = versionId, RoleId = roleId, CompanyId });
 
                         if (existingRoleStepCount > 0)
                             throw new CustomException("A step for this Role already exists in this workflow.", 409);
@@ -912,8 +899,8 @@ public class WorkflowStepComponent
                         {
                             var existingDesigStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
                                 SELECT COUNT(1) FROM WorkflowStepDefinitions 
-                                WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND IsDeleted = FALSE;", 
-                                new { VersionId = versionId, DesignationId = designationId });
+                                WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
+                                new { VersionId = versionId, DesignationId = designationId, CompanyId });
 
                             if (existingDesigStepCount > 0)
                                 throw new CustomException("A step for this Designation already exists in this workflow.", 409);
@@ -941,8 +928,9 @@ public class WorkflowStepComponent
                         FROM WorkflowStepDefinitions
                         WHERE WorkflowPolicyVersionId = @VersionId
                         AND UserId = @UserId
+                        AND CompanyId = @CompanyId
                         AND IsDeleted = FALSE;",
-                        new { VersionId = versionId, UserId = user.EmployeeCode });
+                        new { VersionId = versionId, UserId = user.EmployeeCode, CompanyId });
 
                     if (existingStepCount > 0)
                     {
@@ -1046,7 +1034,7 @@ public class WorkflowStepComponent
                 BusinessDomainCode = bdCode
             };
 
-            var results = await _common.QueryAsync<dynamic>(query, queryParams); 
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
 
             var dtos = new List<WorkflowStepDefiniationReadDto>();
             foreach (var row in results)
@@ -1185,19 +1173,23 @@ public class WorkflowStepComponent
             SELECT COUNT(*)
             FROM WorkflowStepDefinitions
             WHERE WorkflowPolicyVersionId = @VersionId
+            AND CompanyId = @CompanyId
             AND IsDeleted = FALSE;",
-        new { VersionId = versionId });
+        new { VersionId = versionId, CompanyId = companyId });
 
         if (steps == 0)
             throw new Exception("Workflow steps not configured.");
 
         return versionId.Value;
     }
-     
+
     public async Task<UserReadDto> GetUsersByFiltersAsync(WorkFlowStepsFilterDto filters)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
@@ -1222,7 +1214,10 @@ public class WorkflowStepComponent
             ON u.Id = ur.UserId
 	            LEFT JOIN Roles r
 	            ON ur.RoleId = r.Id
-            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE";
+            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE AND u.CompanyId = @CompanyId";
+
+            whereConditions.Add("u.CompanyId = @CompanyId");
+            parameters.Add("@CompanyId", CompanyId);
 
             // Add conditions based on provided filters
             if (!string.IsNullOrEmpty(filters.DivisionCode))
@@ -1363,8 +1358,7 @@ public class WorkflowStepComponent
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
-            if (companyId > 0)
-                whereConditions.Add("e.CompanyId = @CompanyId");
+            whereConditions.Add("e.CompanyId = @CompanyId");
             parameters.Add("@CompanyId", companyId);
 
             // Production-ready query with Robust TRIM and Padding matching
@@ -1501,7 +1495,7 @@ public class WorkflowStepComponent
             throw;
         }
     }
-     
+
     public async Task<List<WorkflowStepDefiniationReadDto>> UpdateApprovalSequenceAsync(UpdateApprovalSequenceDto input)
     {
         try
@@ -1541,8 +1535,8 @@ public class WorkflowStepComponent
             // 2. Permanently delete existing steps for this version
             await _dapperService.ExecuteAsync(@"
                 DELETE FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new { VersionId = versionId });
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId;",
+                new { VersionId = versionId, CompanyId });
 
             // 3. Insert new steps based on frontend sequence
             if (input.Steps != null && input.Steps.Any())
@@ -1580,8 +1574,8 @@ public class WorkflowStepComponent
                 // Clean up the Workflow Policy Version if all steps are removed
                 await _dapperService.ExecuteAsync(@"
                     DELETE FROM WorkflowPolicyVersions
-                    WHERE Id = @VersionId;",
-                    new { VersionId = versionId });
+                    WHERE Id = @VersionId AND CompanyId = @CompanyId;",
+                    new { VersionId = versionId, CompanyId });
             }
 
             //-----------------------------------------
@@ -1644,7 +1638,7 @@ public class WorkflowStepComponent
                 PolicyId = input.WorkflowPolicyId
             };
 
-            var results = await _common.QueryAsync<dynamic>(query, queryParams); 
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
 
             var dtos = new List<WorkflowStepDefiniationReadDto>();
             foreach (var row in results)

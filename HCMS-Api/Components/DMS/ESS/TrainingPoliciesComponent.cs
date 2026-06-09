@@ -57,7 +57,7 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE DocumentTypeCode = '{input.DocumentTypeCode}'
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -102,7 +102,7 @@ public class TrainingPolicyComponent
             FROM TrainingPolicies t
             LEFT JOIN Companies c
             ON t.CompanyId = c.Id
-            WHERE Id = {newId}";
+            WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -148,7 +148,7 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM TrainingPolicies
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -163,7 +163,7 @@ public class TrainingPolicyComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -178,8 +178,11 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE t.IsDeleted = False 
+                WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @"
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -275,12 +278,15 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TrainingPolicies t
                     LEFT JOIN Companies c
                     ON t.CompanyId = c.Id
-                WHERE t.Id = {id}
+                WHERE t.Id = {id} AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -317,12 +323,15 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company
                     FROM TrainingPolicies t
                     LEFT JOIN Companies c
                     ON t.CompanyId = c.Id
-                WHERE t.DocumentTypeCode = '{dtCode}'
+                WHERE t.DocumentTypeCode = '{dtCode}' AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -373,7 +382,7 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -389,7 +398,7 @@ public class TrainingPolicyComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -402,7 +411,7 @@ public class TrainingPolicyComponent
             FROM TrainingPolicies t
             LEFT JOIN Companies c
             ON t.CompanyId = c.Id
-            WHERE Id = '{input.Id}'";
+            WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

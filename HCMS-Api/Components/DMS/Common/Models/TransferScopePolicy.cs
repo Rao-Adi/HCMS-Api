@@ -10,7 +10,7 @@ public class TransferScopePolicy : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!; 
 
     public string? DivisionCode { get; set; } 
@@ -29,7 +29,7 @@ public class TransferScopePolicyReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
 
@@ -52,9 +52,7 @@ public class TransferScopePolicyReadDto : AuditableEntity
 public class TransferScopePolicyCreateDto
 { 
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+     
      
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; } 
@@ -70,9 +68,7 @@ public class TransferScopePolicyCreateDto
 public class TransferScopePolicyUpdateDto
 { 
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+     
       
     public string? DivisionCode { get; set; } 
     public string? DepartmentCode { get; set; } 

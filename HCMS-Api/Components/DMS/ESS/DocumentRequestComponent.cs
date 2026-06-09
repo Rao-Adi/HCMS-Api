@@ -275,13 +275,13 @@ public class DocumentRequestComponent
             // Remove old distributions
             await _common.ExecuteAsync(@"
                 DELETE FROM DocumentRequestRoleDistributions
-                WHERE DocumentRequestId = @RequestId;",
-                new { dto.RequestId }, transaction);
+                WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;",
+                new { dto.RequestId, CompanyId }, transaction);
 
             await _common.ExecuteAsync(@"
                 DELETE FROM DocumentRequestUserDistributions
-                WHERE DocumentRequestId = @RequestId;",
-                new { dto.RequestId }, transaction);
+                WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;",
+                new { dto.RequestId, CompanyId }, transaction);
 
             // Insert new distributions
             await InsertDistributionsAsync(CompanyId, dto.RequestId,
@@ -478,8 +478,8 @@ public class DocumentRequestComponent
             var stepDefs = await _common.QueryAsync<dynamic>(@"
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId
-                ORDER BY StepOrder;", new { VersionId = versionId }, transaction);
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, transaction);
 
             int runningStepOrder = 1;
             int insertedSteps = 0;
@@ -530,9 +530,9 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutionSteps
                 SET IsActive = TRUE
-                WHERE WorkflowExecutionId = @ExecutionId
-                AND StepOrder = (SELECT MIN(StepOrder) FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId);",
-                new { ExecutionId = executionId }, transaction);
+                WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
+                AND StepOrder = (SELECT MIN(StepOrder) FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId);",
+                new { ExecutionId = executionId, CompanyId }, transaction);
 
             // 6. History
             await InsertHistoryAsync(CompanyId, requestId, DocumentRequestStatus.Submitted, empCode, "Request Created and Submitted", transaction);
@@ -546,8 +546,8 @@ public class DocumentRequestComponent
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 JOIN DocumentRequests dr ON dr.Id = we.EntityId
-                WHERE wes.WorkflowExecutionId = @ExecutionId
-                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId }, transaction);
+                WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.CompanyId = @CompanyId
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, transaction);
 
             List<string> approvers = new List<string>();
             string requestNumberStr = requestId.ToString();
@@ -621,9 +621,9 @@ public class DocumentRequestComponent
                     SELECT d.DocumentURL, dv.Content
                     FROM Documents d
                     LEFT JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
-                    WHERE d.Id = @DocumentId
+                    WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
                     ORDER BY dv.CreatedAt DESC LIMIT 1;",
-                    new { DocumentId = request.documentid }, tx);
+                    new { DocumentId = request.documentid, CompanyId }, tx);
 
                 if (originalDoc != null)
                 {
@@ -641,12 +641,11 @@ public class DocumentRequestComponent
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestRoleDistributions
-            WHERE DocumentRequestId = @RequestId;", new { input.RequestId }, tx);
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestUserDistributions
-            WHERE DocumentRequestId = @RequestId;", new { input.RequestId }, tx);
-
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
             //-------------------------------------------------
             // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
@@ -734,8 +733,8 @@ public class DocumentRequestComponent
             var stepDefs = await _common.QueryAsync<dynamic>(@"
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId
-                ORDER BY StepOrder;", new { VersionId = versionId }, tx);
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, tx);
 
             int runningStepOrder = 1;
             int inserted = 0;
@@ -789,14 +788,14 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutionSteps
                 SET IsActive = TRUE
-                WHERE WorkflowExecutionId = @ExecutionId
+                WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
                 AND StepOrder =
                 (
                     SELECT MIN(StepOrder)
                     FROM WorkflowExecutionSteps
-                    WHERE WorkflowExecutionId = @ExecutionId
+                    WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
                 );",
-                new { ExecutionId = executionId }, tx);
+                new { ExecutionId = executionId, CompanyId }, tx);
 
             //-------------------------------------------------
             // Update Request
@@ -808,12 +807,13 @@ public class DocumentRequestComponent
                     SubmittedAt = NOW(),
                     SubmittedBy = @UserId,
                     IsContentFinalized = TRUE
-                WHERE Id = @RequestId;",
+                WHERE Id = @RequestId AND CompanyId = @CompanyId;",
                 new
                 {
                     Status = DocumentRequestStatus.Submitted,
                     UserId = empCode,
-                    input.RequestId
+                    input.RequestId,
+                    CompanyId 
                 }, tx);
 
             // Prepare notification data
@@ -822,8 +822,8 @@ public class DocumentRequestComponent
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 JOIN DocumentRequests dr ON dr.Id = we.EntityId
-                WHERE wes.WorkflowExecutionId = @ExecutionId
-                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId }, tx);
+                WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.CompanyId = @CompanyId
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, tx);
 
             List<string> approvers = new List<string>();
             string requestNumber = input.RequestId.ToString();
@@ -1121,8 +1121,7 @@ public class DocumentRequestComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var prefix = _utilities.GetPrefix(clientIp); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1336,8 +1335,7 @@ public class DocumentRequestComponent
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var prefix = _utilities.GetPrefix(clientIp); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1384,7 +1382,8 @@ public class DocumentRequestComponent
             var requestInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT dr.Id, dr.RequestNumber, dr.CreatedBy
             FROM DocumentRequests dr
-            WHERE dr.Id = (SELECT EntityId FROM WorkflowExecutions WHERE Id = @ExecutionId)", new { ExecutionId = executionId }, tx);
+            WHERE dr.Id = (SELECT EntityId FROM WorkflowExecutions WHERE Id = @ExecutionId AND CompanyId = @CompanyId) 
+            AND dr.CompanyId = @CompanyId", new { ExecutionId = executionId, CompanyId }, tx);
 
             //var approverInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"SELECT EmployeeName FROM Users WHERE Id = @UserId", new { UserId = userId }, tx);
             string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
@@ -1411,12 +1410,14 @@ public class DocumentRequestComponent
                 SELECT COUNT(*)
                 FROM WorkflowExecutionSteps
                 WHERE WorkflowExecutionId = @ExecutionId
+                AND CompanyId = @CompanyId
                 AND StepOrder = @StepOrder
                 AND Decision IS NULL;",
                     new
                     {
                         ExecutionId = executionId,
-                        StepOrder = stepOrder
+                        StepOrder = stepOrder,
+                        CompanyId
                     }, tx);
 
             //-------------------------------------------------
@@ -1430,12 +1431,13 @@ public class DocumentRequestComponent
                     Observation = @Observation,
                     ActionAt = NOW(),
                     IsActive = CASE WHEN @Decision IS NULL THEN TRUE ELSE FALSE END
-                WHERE Id = @StepId;",
+                WHERE Id = @StepId AND CompanyId = @CompanyId;",
                 new
                 {
                     Decision = decision,
                     input.Observation,
-                    input.StepId
+                    input.StepId,
+                    CompanyId 
                 }, tx);
 
             //-------------------------------------------------
@@ -1456,19 +1458,19 @@ public class DocumentRequestComponent
                 await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
                 SET Status = 'Rejected'
-                WHERE Id = @ExecutionId;",
-                    new { ExecutionId = executionId }, tx);
+                WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                    new { ExecutionId = executionId, CompanyId }, tx);
 
                 await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
                 SET Status = @RejectedStatus
-                WHERE Id =
+                WHERE CompanyId = @CompanyId AND Id =
                 (
                     SELECT EntityId
                     FROM WorkflowExecutions
-                    WHERE Id = @ExecutionId
+                    WHERE Id = @ExecutionId AND CompanyId = @CompanyId
                 );",
-                    new { ExecutionId = executionId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
+                    new { ExecutionId = executionId, CompanyId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
 
                 await tx.CommitAsync();
 
@@ -1488,20 +1490,20 @@ public class DocumentRequestComponent
                 await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
                 SET Status = 'Reworked'
-                WHERE Id = @ExecutionId;",
-                    new { ExecutionId = executionId }, tx);
+                WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                    new { ExecutionId = executionId, CompanyId }, tx);
 
                 await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
                 SET Status = @DraftStatus,
                 IsContentFinalized = FALSE
-                WHERE Id =
+                WHERE CompanyId = @CompanyId AND Id =
                 (
                     SELECT EntityId
                     FROM WorkflowExecutions
-                    WHERE Id = @ExecutionId
+                    WHERE Id = @ExecutionId AND CompanyId = @CompanyId
                 );",
-                    new { ExecutionId = executionId, DraftStatus = DocumentRequestStatus.Draft }, tx);
+                    new { ExecutionId = executionId, CompanyId, DraftStatus = DocumentRequestStatus.Draft }, tx);
 
                 await tx.CommitAsync();
 
@@ -1527,12 +1529,13 @@ public class DocumentRequestComponent
                 var next = await _common.ExecuteScalarAsync<int?>(@"
                     SELECT MIN(StepOrder)
                     FROM WorkflowExecutionSteps
-                    WHERE WorkflowExecutionId = @ExecutionId
+                    WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
                     AND StepOrder > @Current;",
                         new
                         {
                             ExecutionId = executionId,
-                            Current = stepOrder
+                            Current = stepOrder,
+                            CompanyId
                         }, tx);
 
                 if (next.HasValue)
@@ -1544,12 +1547,13 @@ public class DocumentRequestComponent
                     var rows = await _common.ExecuteAsync(@"
                         UPDATE WorkflowExecutionSteps
                         SET IsActive = TRUE
-                        WHERE WorkflowExecutionId = @ExecutionId
+                        WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
                         AND StepOrder = @Next;",
                             new
                             {
                                 ExecutionId = executionId,
-                                Next = next.Value
+                                Next = next.Value,
+                                CompanyId = CompanyId
                             }, tx);
 
                     if (rows == 0)
@@ -1567,22 +1571,23 @@ public class DocumentRequestComponent
                     UPDATE WorkflowExecutions
                     SET Status = 'Completed',
                         CompletedAt = NOW()
-                    WHERE Id = @ExecutionId;",
-                        new { ExecutionId = executionId }, tx);
+                    WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                        new { ExecutionId = executionId, CompanyId }, tx);
 
                     await _common.ExecuteAsync(@"
                     UPDATE DocumentRequests
                     SET Status = @Approved
-                    WHERE Id =
+                    WHERE CompanyId = @CompanyId AND Id =
                     (
                         SELECT EntityId
                         FROM WorkflowExecutions
-                        WHERE Id = @ExecutionId
+                        WHERE Id = @ExecutionId AND CompanyId = @CompanyId
                     );",
                         new
                         {
                             ExecutionId = executionId,
-                            Approved = DocumentRequestStatus.Approved
+                            Approved = DocumentRequestStatus.Approved,
+                            CompanyId = CompanyId
                         }, tx);
 
 
@@ -1592,8 +1597,8 @@ public class DocumentRequestComponent
                     var requestId = await _common.ExecuteScalarAsync<int>(@"
                     SELECT EntityId
                     FROM WorkflowExecutions
-                    WHERE Id = @ExecutionId",
-                        new { ExecutionId = executionId }, tx);
+                    WHERE Id = @ExecutionId AND CompanyId = @CompanyId",
+                        new { ExecutionId = executionId, CompanyId }, tx);
 
                     await CreateDocumentFromApprovedRequestAsync(
                         CompanyId,
@@ -1899,13 +1904,7 @@ public class DocumentRequestComponent
                 Items = requests,
                 TotalCount = totalCount
             };
-
-
-            //return new PaginationResult<dynamic>
-            //{
-            //    Items = items,
-            //    TotalCount = totalCount
-            //};
+             
         }
         catch (Exception ex)
         {
@@ -1921,8 +1920,7 @@ public class DocumentRequestComponent
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            var prefix = _utilities.GetPrefix(clientIp); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -2194,12 +2192,7 @@ public class DocumentRequestComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            int CompanyId = int.Parse(_CompanyId);
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            //var empId = _utilities.GetEmpid(clientIp);
-            //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            int CompanyId = int.Parse(_CompanyId); 
 
             var sql = $@"
                 SELECT 
@@ -2323,11 +2316,7 @@ public class DocumentRequestComponent
         //await using var transaction = await _common.BeginTransactionAsync();
 
         try
-        {
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-
+        { 
 
             //-----------------------------------------
             // 1️⃣ Get Approved Request
@@ -2416,8 +2405,8 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
                 SET DocumentId = @DocumentId
-                WHERE Id = @RequestId
-                ", new { documentId, requestId }, transaction);
+                WHERE Id = @RequestId AND CompanyId = @CompanyId
+                ", new { documentId, requestId, CompanyId = companyId }, transaction);
 
             //-----------------------------------------
             // 6️⃣ Promote Role Distribution
@@ -2475,9 +2464,11 @@ public class DocumentRequestComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE d.IsDeleted = False 
-                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False AND d.CompanyId = " + CompanyId + @" AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -2597,13 +2588,16 @@ public class DocumentRequestComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT dr.Id, dr.RequestNumber
             FROM DocumentRequests dr
             JOIN WorkflowExecutions we
               ON we.EntityId = dr.Id
               AND we.CompanyId = dr.CompanyId
-            WHERE dr.IsActive = TRUE
+            WHERE dr.IsActive = TRUE AND dr.CompanyId = {CompanyId}
               AND dr.IsDeleted = FALSE
               AND we.Status = 'Completed'
             ORDER BY dr.Id;";
@@ -2631,9 +2625,12 @@ public class DocumentRequestComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT * FROM Vw_DocumentRequests d
-                WHERE d.Id = {id}
+                WHERE d.Id = {id} AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
@@ -2700,9 +2697,13 @@ public class DocumentRequestComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT * FROM Vw_DocumentRequests d
                 WHERE d.DivisionCode = {dCode}
+                  AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
@@ -2771,8 +2772,7 @@ public class DocumentRequestComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+            var prefix = _utilities.GetPrefix(clientIp); 
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -2784,7 +2784,7 @@ public class DocumentRequestComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentRequests
-            WHERE Id = '{input.Id}'
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -2809,7 +2809,7 @@ public class DocumentRequestComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -2819,7 +2819,7 @@ public class DocumentRequestComponent
             // Return updated record
             string selectQuery = $@"
                 SELECT * FROM Vw_DocumentRequests d
-            WHERE d.Id = '{input.Id}'";
+            WHERE d.Id = '{input.Id}' AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

@@ -58,8 +58,9 @@ public class TransferScopePolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TransferScopePolicies
-            WHERE (DivisionCode = '{input.DivisionCode!.Replace("'", "''")}' 
-              AND IsDeleted = FALSE";
+            WHERE DivisionCode = '{input.DivisionCode!.Replace("'", "''")}' 
+                AND CompanyId = {CompanyId}
+                AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -84,7 +85,7 @@ public class TransferScopePolicyComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
+                '{CompanyId}', 
                 '{input.DivisionCode.Replace("'", "''")}', 
                 '{input.DepartmentCode!.Replace("'", "''")}', 
                 '{input.SubDepartmentCode!.Replace("'", "''")}', 
@@ -115,7 +116,7 @@ public class TransferScopePolicyComponent
             ON d.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
             ON d.BusinessDomainCode = bd.Code
-            WHERE t.Id = {newId}";
+            WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -171,7 +172,7 @@ public class TransferScopePolicyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM TransferScopePolicies
-                WHERE DivisionCode = {code}
+                WHERE DivisionCode = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -185,7 +186,7 @@ public class TransferScopePolicyComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE DivisionCode = {code}";
+                WHERE DivisionCode = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -200,8 +201,11 @@ public class TransferScopePolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE t.IsDeleted = False 
+                WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @"
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -316,6 +320,9 @@ public class TransferScopePolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                     SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                     FROM TransferScopePolicies t
@@ -329,7 +336,7 @@ public class TransferScopePolicyComponent
                     ON d.CompanyId = c.Id
                     LEFT JOIN BusinessDomains bd
                     ON d.BusinessDomainCode = bd.Code
-                WHERE t.DivisionCode = {code}
+                WHERE t.DivisionCode = {code} AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
@@ -390,6 +397,7 @@ public class TransferScopePolicyComponent
             SELECT COUNT(1)
             FROM TransferScopePolicies
             WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -409,7 +417,7 @@ public class TransferScopePolicyComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -430,7 +438,7 @@ public class TransferScopePolicyComponent
             ON d.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
             ON d.BusinessDomainCode = bd.Code
-            WHERE t.DivisionCode = '{input.DivisionCode.Replace("'", "''")}'";
+            WHERE t.DivisionCode = '{input.DivisionCode.Replace("'", "''")}' AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

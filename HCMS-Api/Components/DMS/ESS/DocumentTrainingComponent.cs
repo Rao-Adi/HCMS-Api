@@ -59,7 +59,7 @@ public class DocumentTrainingComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentTraining
-            WHERE (Id = '{input.Id}' 
+            WHERE Id = '{input.Id}'  AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -86,7 +86,7 @@ public class DocumentTrainingComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentId}',
                 '{input.TrainingMode}',
                 '{input.TrainingProofURL}',
@@ -110,7 +110,7 @@ public class DocumentTrainingComponent
             FROM DocumentTraining dt
             LEFT JOIN Companies c
             ON dt.CompanyId = c.Id
-            WHERE dt.Id = {newId}";
+            WHERE dt.Id = {newId} AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -122,7 +122,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -159,7 +159,7 @@ public class DocumentTrainingComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentTraining
-                WHERE Id = {id}
+                WHERE Id = {id} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -170,8 +170,8 @@ public class DocumentTrainingComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentTraining
-                SET IsDeleted = False
-                WHERE Id = {id}";
+                SET IsDeleted = True, LastModifiedAt = NOW(), LastModifiedBy = '{empCode.Replace("'", "''")}'
+                WHERE Id = {id} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -186,9 +186,11 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE dt.IsDeleted = False 
-                  AND dt.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dt.IsDeleted = False AND dt.CompanyId = " + CompanyId + @" AND dt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -245,14 +247,14 @@ public class DocumentTrainingComponent
                 .Select(row => new DocumentTrainingReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     TrainingMode = row.Table.Columns.Contains("TrainingMode") ? row.Field<int>("TrainingMode") : 0,
                     TrainingProofURL = row.Table.Columns.Contains("TrainingProofURL") ? row.Field<string>("TrainingProofURL") : string.Empty,
                     AssessmentScore = row.Table.Columns.Contains("AssessmentScore") ? row.Field<decimal>("AssessmentScore") : 0,
                     ValidationStatus = row.Table.Columns.Contains("ValidationStatus") ? row.Field<int>("ValidationStatus") : 0,
-                    ReadyForAuthorization = row.Table.Columns.Contains("ReadyForAuthorization") ? row.Field<bool>("AssessmentScore") : false,
+                    ReadyForAuthorization = row.Table.Columns.Contains("ReadyForAuthorization") && row.Field<bool?>("ReadyForAuthorization") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -276,9 +278,9 @@ public class DocumentTrainingComponent
                 TotalCount = totalCount
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw;
+            throw ex;
         }
     }
 
@@ -287,11 +289,14 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = @"
             SELECT Id, Name
             FROM DocumentTraining
             WHERE IsActive = True
-              AND IsDeleted = False
+              AND IsDeleted = False AND CompanyId = " + CompanyId + @"
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -317,12 +322,15 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
-                WHERE dt.Id = {id}
+                WHERE dt.Id = {id} AND dt.CompanyId = {CompanyId}
                   AND dt.IsActive = True
                   AND dt.IsDeleted = False";
 
@@ -336,7 +344,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -398,7 +406,7 @@ public class DocumentTrainingComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -411,7 +419,7 @@ public class DocumentTrainingComponent
                     FROM DocumentTraining dt
                     LEFT JOIN Companies c
                     ON dt.CompanyId = c.Id
-            WHERE dt.Id = '{input.Id}'";
+            WHERE dt.Id = '{input.Id}' AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -423,7 +431,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -449,10 +457,8 @@ public class DocumentTrainingComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var empCode = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId); 
 
             string query = @"
                 SELECT 
@@ -494,7 +500,7 @@ public class DocumentTrainingComponent
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
 
-            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId) })).ToList();
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId })).ToList();
 
             var totalAssigned = userScores.Count;
             var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed

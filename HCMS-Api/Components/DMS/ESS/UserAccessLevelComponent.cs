@@ -106,7 +106,7 @@ public class UserAccessLevelComponent
                      ON u.CompanyId = c.Id
                      LEFT JOIN DocumentTypes dt
                      ON u.DocumentTypeCode = dt.Code
-                     WHERE u.Id = {newId}";
+                     WHERE u.Id = {newId} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -166,7 +166,7 @@ public class UserAccessLevelComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM UserAccessLevels
-                WHERE Id = {id}
+                WHERE Id = {id} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -181,7 +181,7 @@ public class UserAccessLevelComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {id}";
+                WHERE Id = {id} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -195,8 +195,11 @@ public class UserAccessLevelComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE u.IsDeleted = False 
+                WHERE u.IsDeleted = False AND CompanyId = " + CompanyId + @"
                   AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -329,6 +332,9 @@ public class UserAccessLevelComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                    SELECT u.*,div.Name as Division, dep.Name as Department,
                      sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
@@ -347,7 +353,8 @@ public class UserAccessLevelComponent
                      ON u.DocumentTypeCode = dt.Code
                 WHERE u.Id = {id}
                   AND u.IsActive = True
-                  AND u.IsDeleted = False";
+                  AND u.IsDeleted = False
+                  AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -396,6 +403,9 @@ public class UserAccessLevelComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                    SELECT u.*,div.Name as Division, dep.Name as Department,
                      sdep.Name SubDepartment, c.Name Company, dt.Name AS DocumentType, bd.Name AS BusinessDomain
@@ -413,6 +423,7 @@ public class UserAccessLevelComponent
                      LEFT JOIN DocumentTypes dt
                      ON u.DocumentTypeCode = dt.Code
                 WHERE u.EmployeeCode = '{employeeCode}'
+                    AND u.CompanyId = {CompanyId}   
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
 
@@ -481,7 +492,7 @@ public class UserAccessLevelComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE Id = {input.Id}
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -503,7 +514,7 @@ public class UserAccessLevelComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -527,7 +538,7 @@ public class UserAccessLevelComponent
                          ON u.CompanyId = c.Id
                          LEFT JOIN DocumentTypes dt
                          ON u.DocumentTypeCode = dt.Code
-            WHERE u.Id = '{input.Id}'";
+            WHERE u.Id = {input.Id} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

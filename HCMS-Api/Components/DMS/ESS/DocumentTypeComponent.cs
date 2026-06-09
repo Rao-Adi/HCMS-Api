@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -59,6 +59,7 @@ public class DocumentTypeComponent
                             SELECT COUNT(1)
                             FROM DocumentTypes
                             WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND CompanyId = {CompanyId}
                               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
@@ -67,10 +68,11 @@ public class DocumentTypeComponent
                 throw new CustomException("Document Type already exists", 409);
 
             // 🔢 Generate next Division Code
-            string getLastCodeQuery = @"
+            string getLastCodeQuery = $@"
                             SELECT Code
                             FROM DocumentTypes
                             WHERE Code IS NOT NULL
+                              AND CompanyId = {CompanyId}
                             ORDER BY Id DESC
                             LIMIT 1";
 
@@ -138,7 +140,7 @@ public class DocumentTypeComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
-                WHERE d.Id = {newId}";
+                WHERE d.Id = {newId} AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -190,6 +192,7 @@ public class DocumentTypeComponent
                 SELECT COUNT(1)
                 FROM DocumentTypes
                 WHERE Code = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -203,7 +206,7 @@ public class DocumentTypeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}'";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -218,8 +221,12 @@ public class DocumentTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE d.IsDeleted = False 
+                  AND d.CompanyId = " + CompanyId + @"
                   AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -329,11 +336,15 @@ public class DocumentTypeComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM DocumentTypes
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Code";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -359,6 +370,9 @@ public class DocumentTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"SELECT d.*, c.Name AS Company,
                 -- 🔹 Audit Fields
                  COALESCE(e.EmployeeName, d.CreatedBy::text) AS CreatedByName, 
@@ -376,6 +390,7 @@ public class DocumentTypeComponent
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
                 WHERE d.Code = '{code}'
+                  AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
@@ -429,6 +444,7 @@ public class DocumentTypeComponent
             SELECT COUNT(1)
             FROM DocumentTypes
             WHERE Code = '{input.Code.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -445,7 +461,7 @@ public class DocumentTypeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -469,7 +485,7 @@ public class DocumentTypeComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE d.Code = '{input.Code.Replace("'", "''")}' AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -507,10 +523,13 @@ public class DocumentTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM DocumentTypes 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

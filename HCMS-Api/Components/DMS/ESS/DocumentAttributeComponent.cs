@@ -37,7 +37,7 @@ public class DocumentAttributeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -46,7 +46,7 @@ public class DocumentAttributeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -56,14 +56,14 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE ControlLabel = '{input.ControlLabel}' 
+            WHERE ControlLabel = '{input.ControlLabel}' AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
                 throw new CustomException("DocumentAttribute already exists", 409);
- 
+
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentAttributes
@@ -110,7 +110,7 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-            WHERE da.Id = '{newId}'";
+            WHERE da.Id = '{newId}' AND da.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -153,7 +153,7 @@ public class DocumentAttributeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -162,7 +162,7 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentAttributes
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId ={CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -176,7 +176,7 @@ public class DocumentAttributeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -191,9 +191,11 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE da.IsDeleted = False 
-                  AND da.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE da.IsDeleted = False AND da.CompanyId = "+CompanyId + @" AND da.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -298,8 +300,8 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
-            int CompanyId = int.Parse(_CompanyId); 
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
 
 
             var query = $@"SELECT 
@@ -323,7 +325,7 @@ public class DocumentAttributeComponent
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];
-          
+
 
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentAttributeReadDto2
@@ -368,7 +370,10 @@ public class DocumentAttributeComponent
     public async Task<List<DocumentAttributeReadDto>> GetAllByDocumentTypeAsync(string documentTypeCode)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                         SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -379,12 +384,12 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                         WHERE da.DocumentTypeCode = '{documentTypeCode}'
+                         WHERE da.DocumentTypeCode = '{documentTypeCode}' AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
-            DataTable divisionsTable = ds.Tables[0];  
+            DataTable divisionsTable = ds.Tables[0];
 
             var documentAttributes = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentAttributeReadDto
@@ -424,11 +429,15 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Id, DocumentTypeCode
             FROM DocumentAttributes
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY DocumentTypeCode";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -454,6 +463,9 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -464,7 +476,7 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                WHERE da.Id = {id}
+                WHERE da.Id = {id} AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
@@ -508,6 +520,9 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -518,7 +533,7 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                WHERE DocumentTypeCode = '{dCode}'
+                WHERE DocumentTypeCode = '{dCode}' AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
@@ -563,7 +578,7 @@ public class DocumentAttributeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -572,7 +587,7 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE Id = '{input.Id}'
+            WHERE Id = '{input.Id}' AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -591,7 +606,7 @@ public class DocumentAttributeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -609,7 +624,7 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-            WHERE da.Id = '{input.Id}'";
+            WHERE da.Id = '{input.Id}' AND da.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

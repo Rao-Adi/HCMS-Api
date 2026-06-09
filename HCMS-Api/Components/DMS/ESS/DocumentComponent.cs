@@ -1,4 +1,4 @@
-﻿﻿using Dapper;
+﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -2154,6 +2154,18 @@ public class DocumentComponent
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
                   )";
 
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+
             // FSD UC-30 Extension: Filter View for SOP vs Other Documents
             if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             {
@@ -2213,7 +2225,14 @@ public class DocumentComponent
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId };
+            var queryParams = new { 
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2267,7 +2286,7 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT 
+                SELECT DISTINCT
                     doc.*,
                     dv.Version,
                     (SELECT ds.Name 
@@ -2433,6 +2452,19 @@ public class DocumentComponent
                         AND dsh.ChangedBy = @UserId
                   )";
 
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
                 var search = input.SearchText.Replace("'", "''").ToUpper();
@@ -2479,7 +2511,15 @@ public class DocumentComponent
                 FROM Documents doc 
                 {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId, UserId = input.UserId };
+            var queryParams = new { 
+                CompanyId = CompanyId, 
+                UserId = input.UserId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -3025,11 +3065,21 @@ public class GetPendingAuthorization : TableFiltersDto
 {
     public string? DocumentCategoryFilter { get; set; }
     public bool IsAuthorized { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }
 
 public class GetAuthorizedDocumentsDto : TableFiltersDto
 {
     public string UserId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }
 
 public class GetDocumentsPendingTrainingDto : TableFiltersDto

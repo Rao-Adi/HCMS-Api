@@ -60,7 +60,7 @@ public class UserComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE EmployeeCode = '{input.EmployeeCode}' 
+            WHERE EmployeeCode = '{input.EmployeeCode}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -72,14 +72,14 @@ public class UserComponent
             // Get Employee Name from Code
             string empQuery = $@"SELECT EmployeeName 
                             FROM Users
-                            WHERE EmployeeCode ='{input.ReportingTo}'";
+                            WHERE EmployeeCode ='{input.ReportingTo}' AND CompanyId = {CompanyId}";
             var employeeName = _common.ExecuteScalarQuery(empQuery);
 
             // 🔢 Generate next Division Code
             string getLastCodeQuery = @"
                             SELECT EmployeeCode
                             FROM users
-                            WHERE EmployeeCode IS NOT NULL
+                            WHERE EmployeeCode IS NOT NULL AND CompanyId = " + CompanyId + @"
                             ORDER BY Id DESC
                             LIMIT 1";
 
@@ -149,7 +149,7 @@ public class UserComponent
             // Fetch inserted record
             string selectQuery = $@"
              Select * from VW_Users u
-                        WHERE u.Id = {newId}";
+                        WHERE u.Id = {newId} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -214,7 +214,7 @@ public class UserComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Users
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -229,7 +229,7 @@ public class UserComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -244,10 +244,13 @@ public class UserComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = @"
             SELECT EmployeeCode,EmployeeName
                 FROM Users
-            WHERE IsActive = True
+            WHERE IsActive = True AND CompanyId = " + CompanyId + @"
               AND IsDeleted = False
             ORDER BY Id";
 
@@ -274,8 +277,11 @@ public class UserComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE u.IsDeleted = False 
+                WHERE u.IsDeleted = False AND u.CompanyId = " + CompanyId + @"
                   AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -409,9 +415,12 @@ public class UserComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                    Select * from VW_Users u
-                WHERE u.Id = {id}
+                WHERE u.Id = {id} AND u.CompanyId = {CompanyId}
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
 
@@ -481,7 +490,7 @@ public class UserComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Users
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -507,7 +516,7 @@ public class UserComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -516,8 +525,8 @@ public class UserComponent
 
             // Return updated record
             string selectQuery = $@"
-                       Select * from VW_Users u
-            WHERE u.Id = '{input.Id}'";
+                    Select * from VW_Users u
+                    WHERE u.Id = {input.Id} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -572,6 +581,9 @@ public class UserComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
@@ -596,7 +608,11 @@ public class UserComponent
             ON u.Id = ur.UserId
 	            LEFT JOIN Roles r
 	            ON ur.RoleId = r.Id
-            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE";
+            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE ";
+
+            whereConditions.Add("u.CompanyId = @CompanyId");
+            parameters.Add("@CompanyId", filters.CompanyId);
+
 
             // Add conditions based on provided filters
             if (!string.IsNullOrEmpty(filters.DivisionCode))

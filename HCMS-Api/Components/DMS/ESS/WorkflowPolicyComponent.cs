@@ -94,7 +94,7 @@ public class WorkflowPolicyComponent
             // Fetch inserted record
             string selectQuery = $@" 
             SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = {newId}";
+            WHERE w.Id = {newId} AND w.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -156,6 +156,7 @@ public class WorkflowPolicyComponent
                 SELECT COUNT(1)
                 FROM WorkflowPolicies
                 WHERE Id = {id}
+                  AND CompanyId ={CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -170,7 +171,7 @@ public class WorkflowPolicyComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {id}";
+                WHERE Id = {id} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -185,8 +186,12 @@ public class WorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = $@"
                 WHERE w.IsDeleted = False 
+                  AND w.CompanyId = {CompanyId}
                   AND w.EntityType ='{input.EntityType}'
                   AND w.IsActive = " + (input.IsActive ? "True" : "False");
 
@@ -334,9 +339,13 @@ public class WorkflowPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT * FROM vw_WorkflowPolicy w
                 WHERE w.Id = {id}
+                  AND w.CompanyId = {CompanyId}
                   AND w.IsActive = True
                   AND w.IsDeleted = False";
 
@@ -401,7 +410,7 @@ public class WorkflowPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM WorkflowPolicies
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -422,7 +431,7 @@ public class WorkflowPolicyComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -432,7 +441,7 @@ public class WorkflowPolicyComponent
             // Return updated record
             string selectQuery = $@"
             SELECT * FROM vw_WorkflowPolicy w
-            WHERE w.Id = '{input.Id}'";
+            WHERE w.Id = {input.Id} AND w.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

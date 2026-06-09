@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -61,7 +61,8 @@ public class DesignationComponent
             SELECT COUNT(1)
             FROM Designations
             WHERE (Code = '{input.Code.Replace("'", "''")}'
-                   OR Name = '{input.Name.Replace("'", "''")}')
+                   OR Name = '{input.Name.Replace("'", "''")}') 
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -85,7 +86,7 @@ public class DesignationComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                {CompanyId},
                 '{input.Code.Replace("'", "''")}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
@@ -105,7 +106,7 @@ public class DesignationComponent
             FROM Designations d
             LEFT JOIN Companies c 
             ON d.CompanyId = c.Id
-            WHERE d.Id = {newId}";
+            WHERE d.Id = {newId} AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -150,6 +151,7 @@ public class DesignationComponent
                 SELECT COUNT(1)
                 FROM Designations
                 WHERE Code = {code}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -163,7 +165,7 @@ public class DesignationComponent
                 SET IsDeleted = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = {code}";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -178,12 +180,12 @@ public class DesignationComponent
     {
         try
         {
-            Console.WriteLine($"PageNo={input.PageNumber}, PageSize={input.PageSize}");
-
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId);
+             
 
             var whereClause = @"
-                WHERE d.IsDeleted = False 
-                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE d.IsDeleted = False AND d.CompanyId = " + CompanyId + @" AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -277,11 +279,15 @@ public class DesignationComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM Designations
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -307,12 +313,16 @@ public class DesignationComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT d.*,c.Id AS CompanyId, c.Name AS Company
                     FROM Designations d
                     LEFT JOIN Companies c 
                     ON d.CompanyId = c.Id
-                WHERE d.Code = {code}
+                WHERE d.Code = '{code}'
+                  AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
@@ -362,6 +372,7 @@ public class DesignationComponent
                     SELECT COUNT(1)
                     FROM Designations
             WHERE Code = '{input.Code.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -377,7 +388,7 @@ public class DesignationComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -390,7 +401,7 @@ public class DesignationComponent
             FROM Designations d
             LEFT JOIN Companies c 
             ON d.CompanyId = c.Id
-            WHERE d.Code = '{input.Code.Replace("'", "''")}'";
+            WHERE d.Code = '{input.Code.Replace("'", "''")}' AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

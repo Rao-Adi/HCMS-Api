@@ -11,7 +11,7 @@ public class DocumentVersion
 
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public int DocumentId { get; set; }
@@ -39,7 +39,7 @@ public class DocumentVersionReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int DocumentId { get; set; }
@@ -59,9 +59,7 @@ public class DocumentVersionCreateDto
 {
     public int Id { get; set; }
 
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+     
 
     public int DocumentId { get; set; }
 
@@ -83,9 +81,7 @@ public class DocumentVersionCreateDto
 public class DocumentVersionUpdateDto
 {
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+     
 
     public int DocumentId { get; set; }
 

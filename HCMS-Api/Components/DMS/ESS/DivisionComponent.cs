@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -60,6 +60,7 @@ public class DivisionComponent
                             SELECT COUNT(1)
                             FROM Divisions
                             WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND CompanyId = {CompanyId}
                               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
@@ -68,10 +69,11 @@ public class DivisionComponent
                 throw new CustomException("Division already exists", 409);
 
              // 🔢 Generate next Division Code
-            string getLastCodeQuery = @"
+            string getLastCodeQuery = $@"
                             SELECT Code
                             FROM Divisions
                             WHERE Code IS NOT NULL
+                              AND CompanyId = {CompanyId}
                             ORDER BY Id DESC
                             LIMIT 1";
 
@@ -105,7 +107,7 @@ public class DivisionComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                {CompanyId},
                 '{generatedCode}',
                 '{input.Name.Replace("'", "''")}',
                 TRUE,
@@ -138,7 +140,7 @@ public class DivisionComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
-            WHERE d.Id = {newId}";
+            WHERE d.Id = {newId} AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -186,6 +188,7 @@ public class DivisionComponent
                 SELECT COUNT(1)
                 FROM Divisions
                 WHERE Code = {code}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -199,7 +202,7 @@ public class DivisionComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = {code}";
+                WHERE Code = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -214,9 +217,12 @@ public class DivisionComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
 
             var whereClause = @"
                 WHERE d.IsDeleted = False 
+                  AND d.CompanyId = " + CompanyId + @"
                   AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -327,11 +333,15 @@ public class DivisionComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM Divisions
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -357,6 +367,9 @@ public class DivisionComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT d.*,c.Name As Company,
                     -- 🔹 Audit Fields
@@ -376,6 +389,7 @@ public class DivisionComponent
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
                 WHERE d.Code = {code}
+                  AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
@@ -431,6 +445,7 @@ public class DivisionComponent
                     SELECT COUNT(1)
                     FROM Divisions
                     WHERE Code = '{input.Code.Replace("'", "''")}'
+                      AND CompanyId = {CompanyId}
                       AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
@@ -444,6 +459,7 @@ public class DivisionComponent
                         FROM Divisions
                         WHERE Name = '{input.Name.Replace("'", "''")}'
                           AND Code <> '{input.Code.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int duplicate = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateNameQuery));
@@ -459,7 +475,7 @@ public class DivisionComponent
                             IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                             LastModifiedAt = NOW(),
                             LastModifiedBy = '{empCode.Replace("'", "''")}'
-                        WHERE Code = '{input.Code.Replace("'", "''")}'";
+                        WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -485,7 +501,7 @@ public class DivisionComponent
                         -- 🔹 Last Modified By Employee
                         LEFT JOIN Vw_EmployeeNames m 
                             ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
-                        WHERE d.Code = '{input.Code.Replace("'", "''")}'";
+                        WHERE d.Code = '{input.Code.Replace("'", "''")}' AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -521,10 +537,13 @@ public class DivisionComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM Divisions 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

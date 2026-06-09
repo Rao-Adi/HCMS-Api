@@ -10,7 +10,7 @@ public class DocumentApproval : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
     public int DocumentVersionId { get; set; }
@@ -32,7 +32,7 @@ public class DocumentApprovalReadDto : AuditableEntity
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; }
+    public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
     public int DocumentVersionId { get; set; }
@@ -51,7 +51,7 @@ public class DocumentApprovalCreateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     public int DocumentVersionId { get; set; }
     public int WorkflowStepId { get; set; }
@@ -69,7 +69,7 @@ public class DocumentApprovalUpdateDto
     public int Id { get; set; }
 
     // 🔑 Tenant
-    public Int64 CompanyId { get; set; } 
+    public int CompanyId { get; set; } 
 
     public int DocumentVersionId { get; set; }
     public int WorkflowStepId { get; set; }

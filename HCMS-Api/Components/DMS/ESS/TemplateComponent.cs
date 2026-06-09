@@ -37,7 +37,7 @@ public class TemplateComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -56,7 +56,7 @@ public class TemplateComponent
                 string checkDefaultQuery = $@"
                 SELECT COUNT(1)
                 FROM Templates
-                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
                   AND IsDefault = TRUE
                   AND IsDeleted = FALSE";
 
@@ -76,7 +76,8 @@ public class TemplateComponent
                   AND COALESCE(SubDepartmentCode,'') = COALESCE('{input.SubDepartmentCode}','')
                   AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
                   AND IsDefault = FALSE
-                  AND IsDeleted = FALSE";
+                  AND IsDeleted = FALSE
+                  AND CompanyId = {CompanyId}";
 
                 int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -156,12 +157,12 @@ public class TemplateComponent
                         RETURNING Id;
                     ";
 
-                                // Assuming _common.ExecuteScalarQuery accepts command + parameters
-                                // (if not → change your helper or use NpgsqlCommand directly)
+            // Assuming _common.ExecuteScalarQuery accepts command + parameters
+            // (if not → change your helper or use NpgsqlCommand directly)
 
-                    var parameters = new Dictionary<string, object>
+            var parameters = new Dictionary<string, object>
                     {
-                        { "@CompanyId",           input.CompanyId},
+                        { "@CompanyId",           CompanyId},
                         { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
                         { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
                         { "@TemplateFileUrl",     templateFileUrl           },
@@ -192,7 +193,7 @@ public class TemplateComponent
             ON t.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
             ON t.BusinessDomainCode = bd.Code
-            WHERE t.Id = {newId}";
+            WHERE t.Id = {newId} AND t.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -254,7 +255,7 @@ public class TemplateComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Templates
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -269,7 +270,7 @@ public class TemplateComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -284,9 +285,11 @@ public class TemplateComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE t.IsDeleted = False 
-                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @" AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -405,6 +408,9 @@ public class TemplateComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
                     FROM Templates t
@@ -418,7 +424,7 @@ public class TemplateComponent
                     ON t.CompanyId = c.Id
                     LEFT JOIN BusinessDomains bd
                     ON t.BusinessDomainCode = bd.Code
-                WHERE t.DocumentTypeCode = '{code}'
+                WHERE t.DocumentTypeCode = '{code}' AND t.CompanyId = {CompanyId}
                   AND t.IsDefault = True
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
@@ -468,7 +474,7 @@ public class TemplateComponent
         }
     }
 
-     
+
     public async Task<TemplateReadDto> UpdateAsync(TemplateUpdateDto input)
     {
         try
@@ -486,7 +492,7 @@ public class TemplateComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Templates
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -502,6 +508,7 @@ public class TemplateComponent
                 WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
                   AND IsDefault = TRUE
                   AND Id != {input.Id}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = FALSE";
 
                 int defaultExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkDefaultQuery));
@@ -521,6 +528,7 @@ public class TemplateComponent
                   AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
                   AND IsDefault = FALSE
                   AND Id != {input.Id}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = FALSE";
 
                 int scopeExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkScopeQuery));
@@ -568,11 +576,11 @@ public class TemplateComponent
                 SubDepartmentCode = '{input.SubDepartmentCode}',
                 BusinessDomainCode = '{input.BusinessDomainCode}',
                 TemplateContent = '{input.TemplateContent}',
-                IsDefault = '{input.IsDefault}',
+                IsDefault = {input.IsDefault},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId ={CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -593,7 +601,7 @@ public class TemplateComponent
             ON d.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
             ON d.BusinessDomainCode = bd.Code
-            WHERE t.Id = '{input.Id}'";
+            WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

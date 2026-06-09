@@ -42,17 +42,11 @@ public class CompanyComponent
         _dataservice.BeginProcess(connectionString);
 
     }
-
-
-
-
+     
     public async Task<CompanyReadDto> CreateAsync(CompanyCreateDto input)
     {
         try
-        {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+        { 
 
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Company name is required.", 400);
@@ -149,11 +143,7 @@ public class CompanyComponent
     public async Task<bool> DeleteAsync(string code)
     {
         try
-        {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-
+        { 
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)

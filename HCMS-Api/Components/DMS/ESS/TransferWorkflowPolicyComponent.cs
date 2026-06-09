@@ -63,6 +63,7 @@ public class TransferWorkflowPolicyComponent
             SELECT COUNT(1)
             FROM TransferWorkflowPolicies
             WHERE DivisionCode = '{input.DivisionCode?.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -137,7 +138,7 @@ public class TransferWorkflowPolicyComponent
                         e.datejoin ASC
                     LIMIT 1
                 ) head ON TRUE
-                WHERE t.Id = {newId}";
+                WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -189,6 +190,7 @@ public class TransferWorkflowPolicyComponent
                 SELECT COUNT(1)
                 FROM TransferWorkflowPolicies
                 WHERE DivisionCode = '{code?.Replace("'", "''")}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -202,7 +204,7 @@ public class TransferWorkflowPolicyComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE DivisionCode = '{code?.Replace("'", "''")}'";
+                WHERE DivisionCode = '{code?.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -216,9 +218,12 @@ public class TransferWorkflowPolicyComponent
     public async Task<PaginationResult<TransferWorkflowPolicyReadDto>> GetAllAsync(TableFiltersDto input)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE t.IsDeleted = False 
+                WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @"
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -441,7 +446,7 @@ public class TransferWorkflowPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TransferWorkflowPolicies
-            WHERE Id = {input.Id}
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -455,7 +460,8 @@ public class TransferWorkflowPolicyComponent
             FROM TransferWorkflowPolicies
             WHERE DivisionCode = '{input.DivisionCode?.Replace("'", "''")}'
               AND Id != {input.Id}
-              AND IsDeleted = FALSE";
+              AND IsDeleted = FALSE
+              AND CompanyId = {CompanyId}";
 
             int dupExists = Convert.ToInt32(_common.ExecuteScalarQuery(dupQuery));
 
@@ -511,7 +517,7 @@ public class TransferWorkflowPolicyComponent
                     e.datejoin ASC
                 LIMIT 1
             ) head ON TRUE
-            WHERE t.Id = {input.Id}";
+            WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -597,9 +603,9 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
-                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -607,8 +613,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
@@ -674,9 +680,9 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
-                LEFT JOIN tblEmployee uc ON rt.CreatedBy = uc.empcode AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -684,8 +690,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
@@ -724,8 +730,8 @@ public class TransferWorkflowPolicyComponent
             };
 
             var transfer = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT EmployeeFrom, EmployeeTo, Status, EffectiveDateFrom, EffectiveDateTo FROM ResponsibilityTransfers WHERE Id = @Id FOR UPDATE;", 
-                new { Id = input.TransferId }, tx);
+                SELECT EmployeeFrom, EmployeeTo, Status, EffectiveDateFrom, EffectiveDateTo FROM ResponsibilityTransfers WHERE Id = @Id AND CompanyId = @CompanyId FOR UPDATE;", 
+                new { Id = input.TransferId, CompanyId = CompanyId }, tx);
 
             if (transfer == null) throw new CustomException("Transfer request not found.", 404);
             if (transfer.status != 1) throw new CustomException("This request has already been processed.", 400);
@@ -737,8 +743,8 @@ public class TransferWorkflowPolicyComponent
                     ActionDate = NOW(),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @empCode
-                WHERE Id = @Id;", 
-                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId }, tx);
+                WHERE Id = @Id AND CompanyId = @CompanyId;", 
+                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId, CompanyId = CompanyId }, tx);
 
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
@@ -747,8 +753,9 @@ public class TransferWorkflowPolicyComponent
                     UPDATE WorkflowExecutionSteps
                     SET AssignedUserId = @EmpToCode
                     WHERE AssignedUserId = @EmpFromCode
-                    AND Decision IS NULL;",
-                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom }, tx);
+                    AND Decision IS NULL
+                    AND CompanyId = @CompanyId;",
+                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom, CompanyId = CompanyId }, tx);
 
                 // Send notifications to both parties
                 var placeholders = new Dictionary<string, string> {

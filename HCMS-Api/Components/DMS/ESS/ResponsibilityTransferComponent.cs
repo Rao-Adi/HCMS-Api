@@ -139,7 +139,7 @@ public class ResponsibilityTransferComponent
             var policy = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT ApprovalUserId, ApprovalRoleId 
                 FROM TransferWorkflowPolicies 
-                WHERE DivisionCode::Integer = @DivCode AND IsActive = TRUE", new { DivCode = empFromDetails.divisionid });
+                WHERE DivisionCode::Integer = @DivCode AND IsActive = TRUE AND CompanyId = @CompanyId", new { DivCode = empFromDetails.divisionid, CompanyId = CompanyId });
 
             string approverId = policy?.approvaluserid ?? string.Empty;
             string approvalRoleId = policy?.approvalroleid ?? string.Empty;
@@ -152,8 +152,8 @@ public class ResponsibilityTransferComponent
                     FROM public.tblEmployee e
                     INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
                     INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 LIMIT 1",
-                    new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId });
+                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId LIMIT 1",
+                    new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId, CompanyId = CompanyId });
             }
 
             if (approverId == string.Empty)
@@ -176,7 +176,7 @@ public class ResponsibilityTransferComponent
                         dsg.name AS Designation
                     FROM public.tblemployee e
                     JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                    WHERE e.divid = @DivCode 
+                    WHERE e.divid = @DivCode AND e.CompanyId = @CompanyId
                     ORDER BY 
                         CASE 
                             WHEN dsg.name LIKE '%Sr. Director%' THEN 1
@@ -186,7 +186,7 @@ public class ResponsibilityTransferComponent
                             ELSE 5 
                         END ASC
                     LIMIT 1",
-                    new { DivCode = empFromDetails.divisionid });
+                    new { DivCode = empFromDetails.divisionid, CompanyId = CompanyId });
                 approverId = defaultDivHead.empcode;
 
                 if (approverId == string.Empty)
@@ -318,7 +318,7 @@ public class ResponsibilityTransferComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM ResponsibilityTransfers
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -333,7 +333,7 @@ public class ResponsibilityTransferComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -348,9 +348,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE rt.IsDeleted = False 
-                  AND rt.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE rt.IsDeleted = False AND rt.CompanyId = " + CompanyId + @" AND rt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Add status filter
             whereClause += $" AND rt.Status = {input.StatusId}";
@@ -468,12 +470,15 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                  SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM ResponsibilityTransfers rt
                     LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
-                WHERE rt.Id = {code}
+                WHERE rt.Id = {code} AND rt.CompanyId = {CompanyId}
                   AND rt.IsActive = True
                   AND rt.IsDeleted = False";
 
@@ -537,7 +542,7 @@ public class ResponsibilityTransferComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM ResponsibilityTransfers
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -560,13 +565,14 @@ public class ResponsibilityTransferComponent
                 IsActive = @IsActive,
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = @Id";
+            WHERE Id = @Id AND CompanyId = @CompanyId";
 
             var updateParams = new
             {
                 input.EmployeeFrom, input.EmployeeTo, input.ReasonForTransfer, input.EffectiveDateFrom,
                 input.EffectiveDateTo, input.PermanentTransfer, input.Attachment, input.Remarks,
-                IsActive = input.IsActive, Id = input.Id
+                IsActive = input.IsActive, Id = input.Id,
+                CompanyId
             };
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -580,7 +586,7 @@ public class ResponsibilityTransferComponent
                     FROM ResponsibilityTransfers rt
                     LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
-            WHERE rt.Id = '{input.Id}'";
+            WHERE rt.Id = {input.Id} AND rt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -638,7 +644,7 @@ public class ResponsibilityTransferComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"
-                WHERE rt.IsDeleted = FALSE 
+                WHERE rt.IsDeleted = FALSE AND rt.CompanyId = " + CompanyId + @"
                   AND rt.ApproverId = @ApproverId 
                   AND rt.Status = @Status";
 
@@ -681,7 +687,7 @@ public class ResponsibilityTransferComponent
                 FROM ResponsibilityTransfers rt
                 {whereClause};";
 
-            var queryParams = new { ApproverId = empCode, Status = input.Status };
+            var queryParams = new { ApproverId = empCode, Status = input.Status, CompanyId = CompanyId };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -734,8 +740,8 @@ public class ResponsibilityTransferComponent
                     ActionDate = NOW(),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
-                WHERE Id = @Id;", 
-                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId }, tx);
+                WHERE Id = @Id AND CompanyId = @CompanyId;", 
+                new { Status = newStatus, input.Observation, UserId = empCode, Id = input.TransferId, CompanyId = CompanyId }, tx);
 
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
@@ -744,8 +750,9 @@ public class ResponsibilityTransferComponent
                     UPDATE WorkflowExecutionSteps
                     SET AssignedUserId = @EmpToCode
                     WHERE AssignedUserId = @EmpFromCode
-                    AND Decision IS NULL;",
-                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom }, tx);
+                    AND Decision IS NULL
+                    AND CompanyId = @CompanyId;",
+                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom, CompanyId = CompanyId }, tx);
 
                 // Send notifications to both parties
                 var placeholders = new Dictionary<string, string> {

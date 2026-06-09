@@ -60,7 +60,7 @@ public class ESignatureComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM ESignatures
-            WHERE (Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -85,7 +85,7 @@ public class ESignatureComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.UserId}',
                 '{input.SignatureData}',
                 '{input.SignatureType}',
@@ -106,8 +106,8 @@ public class ESignatureComponent
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
                 LEFT JOIN Companies c
-                ON d.CompanyId = c.Id
-            WHERE es.Id = {newId}";
+                ON es.CompanyId = c.Id
+            WHERE es.Id = {newId} AND es.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -119,7 +119,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
@@ -154,7 +154,7 @@ public class ESignatureComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM ESignatures
-                WHERE Id = {id}
+                WHERE Id = {id} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -168,7 +168,7 @@ public class ESignatureComponent
                 SET IsDeleted = True, 
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {id}";
+                WHERE Id = {id} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -183,9 +183,11 @@ public class ESignatureComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE es.IsDeleted = False 
-                  AND es.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE es.IsDeleted = False AND es.CompanyId = " + CompanyId + @" AND es.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -215,7 +217,7 @@ public class ESignatureComponent
                         SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM ESignatures es
                         LEFT JOIN Companies c
-                        ON d.CompanyId = c.Id
+                        ON es.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -242,7 +244,7 @@ public class ESignatureComponent
                 .Select(row => new ESignatureReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     UserId = row.Table.Columns.Contains("UserId") ? row.Field<int>("UserId") : 0,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -278,12 +280,15 @@ public class ESignatureComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
                 LEFT JOIN Companies c
-                ON d.CompanyId = c.Id
-                WHERE es.Id = {id}
+                ON es.CompanyId = c.Id
+                WHERE es.Id = {id} AND es.CompanyId = {CompanyId}
                   AND es.IsActive = True
                   AND es.IsDeleted = False";
 
@@ -297,7 +302,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),
@@ -335,7 +340,7 @@ public class ESignatureComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM ESignatures
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -351,7 +356,7 @@ public class ESignatureComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -363,8 +368,8 @@ public class ESignatureComponent
             SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                 FROM ESignatures es
                 LEFT JOIN Companies c
-                ON d.CompanyId = c.Id
-            WHERE es.Id = '{input.Id}'";
+                ON es.CompanyId = c.Id
+            WHERE es.Id = {input.Id} AND es.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -376,7 +381,7 @@ public class ESignatureComponent
             return new ESignatureReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 UserId = row.Field<int>("UserId"),
                 SignatureData = row.Field<byte[]>("SignatureData"),

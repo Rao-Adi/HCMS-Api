@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -59,7 +59,8 @@ public class UserRoleComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM UserRoles
-            WHERE (UserId = '{input.UserId}' 
+            WHERE UserId = {input.UserId}
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -84,7 +85,7 @@ public class UserRoleComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
+                {CompanyId}, 
                 '{input.UserId}', 
                 '{input.RoleId}',
                 '{input.AssignedAt}',
@@ -105,8 +106,8 @@ public class UserRoleComponent
             SELECT u.*, c.Id AS CompanyId, c.Name AS Company
             FROM UserRoles u
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
-            WHERE u.Id = {newId}";
+            ON u.CompanyId = c.Id
+            WHERE u.Id = {newId} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -154,6 +155,7 @@ public class UserRoleComponent
                 SELECT COUNT(1)
                 FROM UserRoles
                 WHERE UserId = {code}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -168,7 +170,7 @@ public class UserRoleComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE UserId = '{code}'";
+                WHERE UserId = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -183,8 +185,12 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE u.IsDeleted = False 
+                  AND u.CompanyId = " + CompanyId + @"
                   AND u.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -215,7 +221,7 @@ public class UserRoleComponent
                         SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                         FROM UserRoles u
                         LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+                        ON u.CompanyId = c.Id
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -281,12 +287,16 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                     FROM UserRoles u
                     LEFT JOIN Companies c
-                    ON r.CompanyId = c.Id
+                    ON u.CompanyId = c.Id
                 WHERE u.UserId = {code}
+                  AND u.CompanyId = {CompanyId}
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
 
@@ -325,12 +335,16 @@ public class UserRoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT u.*, c.Id AS CompanyId, c.Name AS Company
                         FROM UserRoles u
                         LEFT JOIN Companies c
-                        ON r.CompanyId = c.Id
+                        ON u.CompanyId = c.Id
                 WHERE u.UserId = {dUserId}
+                  AND u.CompanyId = {CompanyId}
                   AND u.IsActive = True
                   AND u.IsDeleted = False";
 
@@ -382,7 +396,8 @@ public class UserRoleComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM UserRoles
-            WHERE UserId = '{input.UserId}'
+            WHERE UserId = {input.UserId}
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -399,7 +414,7 @@ public class UserRoleComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE UserId = '{input.UserId}'";
+            WHERE UserId = {input.UserId} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -411,8 +426,8 @@ public class UserRoleComponent
             SELECT u.*, c.Id AS CompanyId, c.Name AS Company
             FROM UserRoles u
             LEFT JOIN Companies c
-            ON r.CompanyId = c.Id
-            WHERE UserId = '{input.UserId}'";
+            ON u.CompanyId = c.Id
+            WHERE u.UserId = {input.UserId} AND u.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

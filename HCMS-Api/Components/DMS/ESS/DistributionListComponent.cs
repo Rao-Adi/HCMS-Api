@@ -37,7 +37,7 @@ public class DistributionListComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -46,7 +46,7 @@ public class DistributionListComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -57,7 +57,7 @@ public class DistributionListComponent
             FROM DistributionLists
             WHERE (DocumentRequestId = '{input.DocumentRequestId}'
                    OR DivisionCode = '{input.DivisionCode!.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+              AND IsDeleted = FALSE AND CompanyId = {CompanyId}";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -84,7 +84,7 @@ public class DistributionListComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentRequestId}',
                 '{input.DivisionCode!.Replace("'", "''")}',
                 '{input.DepartmentCode!.Replace("'", "''")}',
@@ -105,7 +105,7 @@ public class DistributionListComponent
 
             // Fetch inserted record
             string selectQuery = $@"SELECT * FROM Vw_DistributionLists dl
-                    WHERE dl.Id = {newId}";
+                    WHERE dl.Id = {newId} AND dl.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -120,7 +120,7 @@ public class DistributionListComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
-                DocumentRequestId = row.Field<int>("DocumentRequestId"), 
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -136,7 +136,7 @@ public class DistributionListComponent
 
                 Role = row.Field<string>("RoleName"),
                 RoleId = row.Field<int>("RoleId"),
-                 
+
                 DistributionTypeId = row.Field<int>("DistributionTypeId"),
                 DistributionType = row.Field<string>("DistributionType"),
 
@@ -160,7 +160,7 @@ public class DistributionListComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -169,7 +169,7 @@ public class DistributionListComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DistributionLists
-                WHERE Id = {id}
+                WHERE Id = {id} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -183,7 +183,7 @@ public class DistributionListComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {id}";
+                WHERE Id = {id} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -198,9 +198,11 @@ public class DistributionListComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE dl.IsDeleted = False 
-                  AND dl.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dl.IsDeleted = False AND dl.CompanyId = " + CompanyId + @" AND dl.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -256,7 +258,7 @@ public class DistributionListComponent
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
 
-                    DocumentRequestId = row.Field<int>("DocumentRequestId"), 
+                    DocumentRequestId = row.Field<int>("DocumentRequestId"),
 
                     Division = row.Field<string>("DivisionName"),
                     DivisionCode = row.Field<string>("DivisionCode"),
@@ -303,14 +305,18 @@ public class DistributionListComponent
         }
     }
 
-     
+
     public async Task<DistributionListReadDto> GetByCodeAsync(int id)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT * FROM Vw_DistributionLists dl
                 WHERE dl.Id = {id}
+                  AND dl.CompanyId = {CompanyId}
                   AND dl.IsActive = True
                   AND dl.IsDeleted = False";
 
@@ -327,7 +333,7 @@ public class DistributionListComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
-                DocumentRequestId = row.Field<int>("DocumentRequestId"), 
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),
@@ -361,26 +367,26 @@ public class DistributionListComponent
         }
     }
 
- 
+
 
     public async Task<DistributionListReadDto> UpdateAsync(DistributionListUpdateDto input)
     {
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            if (input.Id <0)
+            if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
             // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DistributionLists
-            WHERE Id = '{input.Id}'
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -396,7 +402,7 @@ public class DistributionListComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -406,7 +412,7 @@ public class DistributionListComponent
             // Return updated record
             string selectQuery = $@"
             SELECT * FROM Vw_DistributionLists dl
-            WHERE dl.Id = '{input.Id}'";
+            WHERE dl.Id = '{input.Id}' AND dl.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -422,7 +428,7 @@ public class DistributionListComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
 
-                DocumentRequestId = row.Field<int>("DocumentRequestId"), 
+                DocumentRequestId = row.Field<int>("DocumentRequestId"),
 
                 Division = row.Field<string>("DivisionName"),
                 DivisionCode = row.Field<string>("DivisionCode"),

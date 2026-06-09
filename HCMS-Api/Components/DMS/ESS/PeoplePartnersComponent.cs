@@ -500,6 +500,7 @@ public class PeoplePartnersComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
+            input.CompanyId = CompanyId;
 
             string insertQuery = $@"
                 INSERT INTO tblEmployee
