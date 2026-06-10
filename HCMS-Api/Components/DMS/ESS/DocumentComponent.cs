@@ -2569,10 +2569,12 @@ public class DocumentComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            int TrainingMode = input.Requeststatus == "Online" ? 2 : 1;
 
             var whereClause = @"
                 WHERE doc.CompanyId = @CompanyId 
                   --AND doc.CreatedBy = @UserId
+                  AND tr.TrainingMode = @TrainingMode
                   AND tr.ReadyForAuthorization = FALSE
                   AND doc.IsDeleted = FALSE
                   AND (
@@ -2656,7 +2658,8 @@ public class DocumentComponent
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
                 BusinessDomainCode = input.BusinessDomainCode,
-                DocumentTypeCode = input.DocumentTypeCode
+                DocumentTypeCode = input.DocumentTypeCode,
+                TrainingMode = TrainingMode
             };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
@@ -3151,6 +3154,7 @@ public class GetDocumentsPendingTrainingDto : TableFiltersDto
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
+    public string? Requeststatus { get; set; }
 }
 
 public class GetApprovedDocumentsFilterDto : TableFiltersDto

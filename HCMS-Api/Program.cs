@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.BackgroundJobs;
@@ -263,6 +263,8 @@ builder.Services.AddScoped<DocumentRequestTypeComponent>();
 builder.Services.AddScoped<ControlTypeComponent>();  
 builder.Services.AddScoped<UserAccessLevelComponent>();
 builder.Services.AddScoped<DashboardComponent>();
+builder.Services.AddScoped<DocumentTrainingAuthorizationComponent>();
+builder.Services.AddScoped<DocumentReviewPolicyComponent>();
 
 
 builder.Services.AddHostedService<DataSyncService>();

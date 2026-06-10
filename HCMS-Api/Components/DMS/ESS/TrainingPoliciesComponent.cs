@@ -395,7 +395,8 @@ public class TrainingPolicyComponent
             UPDATE TrainingPolicies
             SET 
                 DocumentTypeCode = '{input.DocumentTypeCode}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                MinimumScore = '{input.MinimumScore}',
+                TrainingRequired = {(input.TrainingRequired ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
