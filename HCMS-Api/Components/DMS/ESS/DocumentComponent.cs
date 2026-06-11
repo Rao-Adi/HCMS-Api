@@ -1,4 +1,4 @@
-﻿﻿﻿using Dapper;
+﻿﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -874,16 +874,16 @@ public class DocumentComponent
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)firstStepInfo.steporder, transaction);
             }
 
-            await transaction.CommitAsync();
-
             if (approvers.Any())
             {
                 var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle }, { "V#", docVersion } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders, transaction);
                 }
             }
+
+            await transaction.CommitAsync();
 
             return true;
         }
@@ -1250,15 +1250,15 @@ public class DocumentComponent
                 await HandlePostApprovalAsync(CompanyId, input.DocumentId, empCode, transaction);
             }
 
-            await transaction.CommitAsync();
-
             if (nextStepApprovers.Any() && docInfo != null)
             {
                 foreach (var approver in nextStepApprovers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders, transaction);
                 }
             }
+
+            await transaction.CommitAsync();
 
             return true;
         }
@@ -1372,7 +1372,7 @@ public class DocumentComponent
             if (initiatorId != string.Empty)
             {
                 var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("yyyy-MM-dd") } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders, transaction);
             }
 
             return true;
@@ -1414,46 +1414,19 @@ public class DocumentComponent
 
         foreach (var user in users)
         {
-            //-----------------------------------------
-            // 1️⃣ INSERT PORTAL NOTIFICATION
-            //-----------------------------------------
+            var placeholders = new Dictionary<string, string> 
+            { 
+                { "Doc Name", (string)user.title }, 
+                { "V#", "Latest" } 
+            };
 
-            await _common.ExecuteAsync(@"
-                INSERT INTO Notifications
-                (
-                    CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId
-                )
-                VALUES
-                (
-                    @CompanyId, @UserId, @Title, @Message, @Type, 'Document', @DocumentId
-                );",
-            new
-            {
-                CompanyId = companyId,
-                UserId = Convert.ToString(user.employeecode),
-                Title = "New SOP Training Assigned",
-                Message = $"Training is required for Document: {user.title}",
-                Type = 2, // e.g. Training Notification
-                DocumentId = documentId
-            }, tx);
-
-            //-----------------------------------------
-            // 2️⃣ SEND EMAIL
-            //-----------------------------------------
-
-            //await _emailService.SendAsync(
-            //    user.Email,
-            //    "New SOP Training Assigned",
-            //    $@"
-            //A new effective document requires your training.
-
-            //Document: {user.Title}
-
-            //Please login to DMS portal and complete the required training.
-
-            //Regards,
-            //DMS Team
-            //");
+            // Utilize the central notification engine to broadcast SignalR, save to DB, and send Email
+            await _notificationComponent.TriggerNotificationAsync(
+                NotificationScenario.TrainingProofRequired, 
+                companyId, 
+                documentId, 
+                Convert.ToString(user.employeecode), 
+                placeholders, tx);
         }
     }
 
@@ -2422,8 +2395,6 @@ public class DocumentComponent
                        @empCode, @Observation, NOW();",
                 new { CompanyId, input.DocumentId, empCode, input.Observation }, transaction);
 
-            await transaction.CommitAsync();
-
             // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
             var dcaUsers = await _common.QueryAsync<string>(@"
                 SELECT TRIM(e.empcode) 
@@ -2434,15 +2405,17 @@ public class DocumentComponent
                   AND sd.smsid = 189 
                   AND e.CompanyId = @CompanyId 
                   AND COALESCE(e.Active, 1) = 1 
-                  AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId });
+                  AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId }, transaction);
 
-            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
+            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
             var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
 
             foreach (var dcaUser in dcaUsers)
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
             }
+
+            await transaction.CommitAsync();
 
             return true;
         }

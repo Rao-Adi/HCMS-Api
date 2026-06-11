@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -52,7 +52,7 @@ public class NotificationComponent
     /// <summary>
     /// Triggers a system notification aligned with the predefined Notification Matrix.
     /// </summary>
-    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders)
+    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders, IDbTransaction transaction = null)
     {
         try
         {
@@ -60,36 +60,24 @@ public class NotificationComponent
 
             var (title, message, relatedEntityType, redirectionUrl) = GetNotificationDetails(scenario, placeholders);
 
-            string insertQuery = $@"
+            string insertQuery = @"
             INSERT INTO Notifications
-            (   CompanyId,
-                EmployeeCode,
-                Title,
-                Message,
-                NotificationType,
-                RelatedEntityType,
-                RelatedEntityId,
-                RedirectionUrl,
-                IsRead, 
-                CreatedAt
-            )
+            (CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId, RedirectionUrl, IsRead, CreatedAt)
             VALUES
-            (
-                {companyId},
-                '{targetUserId}',
-                '{title.Replace("'", "''")}',
-                '{message.Replace("'", "''")}',
-                {(int)scenario},
-                '{relatedEntityType}',
-                {relatedEntityId},
-                '{redirectionUrl}',
-                FALSE,
-                NOW()
-            )
+            (@CompanyId, @EmployeeCode, @Title, @Message, @NotificationType, @RelatedEntityType, @RelatedEntityId, @RedirectionUrl, FALSE, NOW())
             RETURNING Id;";
 
-            var newIdObj = _common.ExecuteScalarQuery(insertQuery);
-            int newId = newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
+            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
+            {
+                CompanyId = companyId,
+                EmployeeCode = targetUserId,
+                Title = title,
+                Message = message,
+                NotificationType = (int)scenario,
+                RelatedEntityType = relatedEntityType,
+                RelatedEntityId = relatedEntityId,
+                RedirectionUrl = redirectionUrl
+            }, transaction);
 
             // Dispatch real-time event to specific User and Group (Secure Targeting)
             var payload = new
@@ -98,18 +86,21 @@ public class NotificationComponent
                 recipientUserId = targetUserId,
                 title = title,
                 message = message,
-                type = (int)scenario,
+                type = "info", // Set to string so frontend toastr UI renders it correctly like SendTestNotification
+                notificationType = (int)scenario,
                 relatedEntityType = relatedEntityType,
                 relatedEntityId = relatedEntityId,
                 redirectionUrl = redirectionUrl,
-                createdAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow // Match SendTestNotification casing
             };
 
-            await _hubContext.Clients.User(targetUserId).SendAsync("ReceiveNotification", payload);
-            await _hubContext.Clients.Group(targetUserId).SendAsync("ReceiveNotification", payload);
+            // Broadcast to ALL connected clients to guarantee real-time delivery, mirroring SendTestNotification.
+            // IMPORTANT: Ensure your frontend Angular code filters incoming messages by checking:
+            // if (notification.recipientUserId === currentUser.employeeCode) { showToastr(); }
+            await _hubContext.Clients.All.SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, transaction);
 
             return true;
         }
@@ -121,7 +112,7 @@ public class NotificationComponent
 
     private (string Title, string Message, string RelatedEntityType, string RedirectionUrl) GetNotificationDetails(NotificationScenario scenario, Dictionary<string, string> p)
     {
-        string Get(string key) => p.TryGetValue(key, out var val) ? val : $"[{key}]";
+        string Get(string key) => p != null && p.TryGetValue(key, out var val) ? val : $"[{key}]";
 
         return scenario switch
         {
@@ -628,12 +619,12 @@ public class NotificationComponent
     }
 
 
-    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl)
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, IDbTransaction transaction = null)
     {
         try
         {
-            string emailQuery = "SELECT Email FROM tblEmployee WHERE TRIM(empCode) = @EmpCode AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
-            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId.Trim(), CompanyId = companyId });
+            string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
+            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId, CompanyId = companyId }, transaction);
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {

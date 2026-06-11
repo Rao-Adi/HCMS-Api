@@ -179,7 +179,7 @@ public class DocumentTrainingAuthorizationComponent
 
             string query = $@"
                 SELECT a.*, c.Id AS CompanyId, c.Name AS Company, dt.Name AS DocumentType, 
-                       LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS AuthorizingUser
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS AuthorizingUser
                 FROM DocumentTrainingAuthorizations a
                 LEFT JOIN Companies c ON a.CompanyId = c.Id
                 LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code 

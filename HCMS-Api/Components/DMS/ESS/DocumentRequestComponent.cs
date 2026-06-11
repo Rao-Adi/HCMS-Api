@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -581,17 +581,17 @@ public class DocumentRequestComponent
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, transaction);
             }
 
-            // 8. Commit
-            await transaction.CommitAsync();
-
             if (approvers.Any())
             {
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
                 }
             }
+
+            // 8. Commit
+            await transaction.CommitAsync();
 
             return requestId;
         }
@@ -881,16 +881,16 @@ public class DocumentRequestComponent
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, tx);
             }
 
-            await tx.CommitAsync();
-
             if (approvers.Any())
             {
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders, tx);
                 }
             }
+
+            await tx.CommitAsync();
 
             return true;
         }
@@ -1520,12 +1520,12 @@ public class DocumentRequestComponent
                 );",
                     new { ExecutionId = executionId, CompanyId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
 
-                await tx.CommitAsync();
-
                 if (initiatorId != string.Empty)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
                 }
+
+                await tx.CommitAsync();
 
                 return true;
             }
@@ -1553,12 +1553,12 @@ public class DocumentRequestComponent
                 );",
                     new { ExecutionId = executionId, CompanyId, DraftStatus = DocumentRequestStatus.Draft }, tx);
 
-                await tx.CommitAsync();
-
                 if (initiatorId != string.Empty)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
                 }
+
+                await tx.CommitAsync();
 
                 return true;
             }
@@ -1658,20 +1658,20 @@ public class DocumentRequestComponent
                 }
             }
 
-            await tx.CommitAsync();
-
             if (nextStepApprovers.Any() && requestInfo != null)
             {
                 foreach(var approver in nextStepApprovers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, approver, notifyPlaceholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, approver, notifyPlaceholders, tx);
                 }
             }
-            else
+            else if (requestInfo != null && !string.IsNullOrEmpty(initiatorId))
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, "", notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, initiatorId, notifyPlaceholders, tx);
             }
-                return true;
+
+            await tx.CommitAsync();
+            return true;
         }
         catch (Exception ex)
         {

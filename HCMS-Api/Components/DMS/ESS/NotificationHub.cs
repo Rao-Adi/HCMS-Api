@@ -26,6 +26,7 @@ public class NotificationHub : Hub
         if (!string.IsNullOrWhiteSpace(empCode))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, empCode.Trim());
+            await Groups.AddToGroupAsync(Context.ConnectionId, empCode.Trim().TrimStart('0'));
         }
     }
 
