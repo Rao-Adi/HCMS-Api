@@ -108,6 +108,10 @@ public class WorkflowStepComponent
             {
                 "ID" => "ws.ID",
                 "ISACTIVE" => "ws.IsActive",
+                "CREATEDAT" => "ws.CreatedAt",
+                "CREATEDBY" => "ws.CreatedBy",
+                "LASTMODIFIEDAT" => "ws.LastModifiedAt",
+                "LASTMODIFIEDBY" => "ws.LastModifiedBy",
                 _ => "ws.Id"
             };
 
@@ -878,8 +882,8 @@ public class WorkflowStepComponent
                             WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
                             new { VersionId = versionId, RoleId = roleId, CompanyId });
 
-                        if (existingRoleStepCount > 0)
-                            throw new CustomException("A step for this Role already exists in this workflow.", 409);
+                        //if (existingRoleStepCount > 0)
+                        //    throw new CustomException("A step for this Role already exists in this workflow.", 409);
 
                         await _dapperService.ExecuteAsync(@"
                             INSERT INTO WorkflowStepDefinitions
@@ -902,8 +906,8 @@ public class WorkflowStepComponent
                                 WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
                                 new { VersionId = versionId, DesignationId = designationId, CompanyId });
 
-                            if (existingDesigStepCount > 0)
-                                throw new CustomException("A step for this Designation already exists in this workflow.", 409);
+                            //if (existingDesigStepCount > 0)
+                            //    throw new CustomException("A step for this Designation already exists in this workflow.", 409);
 
                             await _dapperService.ExecuteAsync(@"
                                 INSERT INTO WorkflowStepDefinitions
@@ -932,10 +936,10 @@ public class WorkflowStepComponent
                         AND IsDeleted = FALSE;",
                         new { VersionId = versionId, UserId = user.EmployeeCode, CompanyId });
 
-                    if (existingStepCount > 0)
-                    {
-                        throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
-                    }
+                    //if (existingStepCount > 0)
+                    //{
+                    //    throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
+                    //}
 
                     await _dapperService.ExecuteAsync(@"
                         INSERT INTO WorkflowStepDefinitions

@@ -182,7 +182,11 @@ public class AuditLogComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "Action" => "Action",
-                "EmployeeCode" => "EmployeeCode", 
+                "EmployeeCode" => "EmployeeCode",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "Action"
             };
 

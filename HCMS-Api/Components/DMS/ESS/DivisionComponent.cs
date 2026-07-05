@@ -241,6 +241,10 @@ public class DivisionComponent
             {
                 "NAME" => "d.Name",
                 "CODE" => "d.Code",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 "ISACTIVE" => "d.IsActive",
                 _ => "d.Name"
             };

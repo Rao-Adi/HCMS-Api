@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+﻿﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
@@ -1713,6 +1713,39 @@ namespace HCMS_Api.Components.DMS.Common
 
                     int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
                     await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+                    await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
+                    await smtp.SendAsync(email);
+                    await smtp.DisconnectAsync(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        public async Task SendEmailAsync(List<string> to, List<string> cc, List<string> bcc, string subject, string body)
+        {
+            try
+            {
+                var email = new MimeMessage();
+                email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
+
+                if (to != null) foreach (var recipient in to.Distinct()) email.To.Add(MailboxAddress.Parse(recipient));
+                if (cc != null) foreach (var recipient in cc.Distinct()) email.Cc.Add(MailboxAddress.Parse(recipient));
+                if (bcc != null) foreach (var recipient in bcc.Distinct()) email.Bcc.Add(MailboxAddress.Parse(recipient));
+
+                email.Subject = subject;
+                var builder = new BodyBuilder();
+                builder.HtmlBody = body;
+                email.Body = builder.ToMessageBody();
+
+                using (var smtp = new MailKit.Net.Smtp.SmtpClient())
+                {
+                    smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
+                    int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
+                    await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+                    smtp.AuthenticationMechanisms.Remove("XOAUTH2");
                     await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
                     await smtp.SendAsync(email);
                     await smtp.DisconnectAsync(true);

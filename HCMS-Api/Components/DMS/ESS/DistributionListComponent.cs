@@ -219,7 +219,11 @@ public class DistributionListComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "dl.DivisionCode",
-                "DepartmentCode" => "dl.DepartmentCode",
+                "DEPARTMENTCODE" => "dl.DepartmentCode",
+                "CREATEDAT" => "dl.CreatedAt",
+                "CREATEDBY" => "dl.CreatedBy",
+                "LASTMODIFIEDAT" => "dl.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dl.LastModifiedBy",
                 "ISACTIVE" => "dl.IsActive",
                 _ => "dl.DivisionCode"
             };

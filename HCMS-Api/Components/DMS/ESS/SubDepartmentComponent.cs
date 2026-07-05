@@ -273,6 +273,10 @@ public class SubDepartmentComponent
                 "NAME" => "subd.Name",
                 "CODE" => "subd.Code",
                 "ISACTIVE" => "subd.IsActive",
+                "CREATEDAT" => "subd.CreatedAt",
+                "CREATEDBY" => "subd.CreatedBy",
+                "LASTMODIFIEDAT" => "subd.LastModifiedAt",
+                "LASTMODIFIEDBY" => "subd.LastModifiedBy",
                 _ => "subd.Name"
             };
 

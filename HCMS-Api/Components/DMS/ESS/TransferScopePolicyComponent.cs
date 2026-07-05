@@ -225,6 +225,10 @@ public class TransferScopePolicyComponent
                 "NAME" => "t.DivisionCode",
                 "DESCRIPTION" => "t.ReportingToLevel",
                 "ISACTIVE" => "t.IsActive",
+                "CREATEDAT" => "t.CreatedAt",
+                "CREATEDBY" => "t.CreatedBy",
+                "LASTMODIFIEDAT" => "t.LastModifiedAt",
+                "LASTMODIFIEDBY" => "t.LastModifiedBy",
                 _ => "t.DivisionCode"
             };
 

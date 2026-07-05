@@ -243,6 +243,10 @@ public class TransferWorkflowPolicyComponent
                 "NAME" => "div_setup.Name",
                 "DESCRIPTION" => "t.ApprovalRoleId",
                 "ISACTIVE" => "t.IsActive",
+                "CREATEDAT" => "t.CreatedAt",
+                "CREATEDBY" => "t.CreatedBy",
+                "LASTMODIFIEDAT" => "t.LastModifiedAt",
+                "LASTMODIFIEDBY" => "t.LastModifiedBy",
                 _ => "t.DivisionCode"
             };
 

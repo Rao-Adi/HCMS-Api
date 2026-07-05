@@ -210,6 +210,10 @@ public class UserRoleComponent
                 "NAME" => "u.UserId",
                 "ROLEID" => "u.RoleId",
                 "ISACTIVE" => "u.IsActive",
+                "CREATEDAT" => "u.CreatedAt",
+                "CREATEDBY" => "u.CreatedBy",
+                "LASTMODIFIEDAT" => "u.LastModifiedAt",
+                "LASTMODIFIEDBY" => "u.LastModifiedBy",
                 _ => "u.UserId"
             };
 

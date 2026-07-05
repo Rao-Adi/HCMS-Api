@@ -269,6 +269,10 @@ public class DepartmentComponent
             {
                 "NAME" => "dep.Name",
                 "CODE" => "dep.Code",
+                "CREATEDAT" => "dep.CreatedAt",
+                "CREATEDBY" => "dep.CreatedBy",
+                "LASTMODIFIEDAT" => "dep.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dep.LastModifiedBy",
                 "ISACTIVE" => "dep.IsActive",
                 _ => "dep.Name"
             };

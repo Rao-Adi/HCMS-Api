@@ -1068,6 +1068,9 @@ public class DocumentRequestComponent
                 "DOCUMENTNAME" => "DocumentName",
                 "REQUESTNUMBER" => "RequestNumber",
                 "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "CreatedAt"
             };
 
@@ -1195,6 +1198,9 @@ public class DocumentRequestComponent
                 "DOCUMENTNAME" => "dr.DocumentName",
                 "REQUESTNUMBER" => "dr.RequestNumber",
                 "CREATEDAT" => "dr.CreatedAt",
+                "CREATEDBY" => "dr.CreatedBy",
+                "LASTMODIFIEDAT" => "dr.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dr.LastModifiedBy",
                 _ => "dr.Id"
             };
 
@@ -1783,6 +1789,10 @@ public class DocumentRequestComponent
                 "DOCUMENTNUMBER" => "d.DocumentNumber",
                 "DOCUMENTNAME" => "d.Title",
                 "TITLE" => "d.Title",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 _ => "d.Id"
             };
 
@@ -1994,6 +2004,10 @@ public class DocumentRequestComponent
                 "REQUESTNUMBER" => "dr.RequestNumber",
                 "SUBMITTEDAT" => "dr.SubmittedAt",
                 "STATUS" => "dr.Status",
+                "CREATEDAT" => "dr.CreatedAt",
+                "CREATEDBY" => "dr.CreatedBy",
+                "LASTMODIFIEDAT" => "dr.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dr.LastModifiedBy",
                 _ => "dr.SubmittedAt"
             };
 
@@ -2534,6 +2548,10 @@ public class DocumentRequestComponent
             {
                 "CODE" => "d.Id",
                 "ISACTIVE" => "d.IsActive",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 _ => "d.ID"
             };
 

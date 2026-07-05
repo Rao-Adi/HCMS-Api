@@ -246,6 +246,10 @@ public class DocumentTypeComponent
                 "NAME" => "d.Name",
                 "CODE" => "d.Code",
                 "ISACTIVE" => "d.IsActive",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 _ => "d.Name"
             };
 

@@ -191,7 +191,11 @@ public class CompanyComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "Name",
-                "CODE" => "Code", 
+                "CODE" => "Code",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "Name"
             };
 

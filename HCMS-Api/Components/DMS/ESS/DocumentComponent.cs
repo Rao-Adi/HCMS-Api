@@ -260,6 +260,10 @@ public class DocumentComponent
                 "SubDepartmentCode" => "doc.SubDepartmentCode",
                 "BusinessDomainCode" => "doc.BusinessDomainCode",
                 "Title" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 "ISACTIVE" => "doc.IsActive",
                 _ => "doc.DocumentNumber"
             };
@@ -1970,6 +1974,9 @@ public class DocumentComponent
                 "TITLE" => "Title",
                 "DOCUMENTNUMBER" => "DocumentNumber",
                 "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy", 
                 _ => "CreatedAt"
             };
 
@@ -2187,6 +2194,9 @@ public class DocumentComponent
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
                 "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "doc.CreatedAt"
             };
 
@@ -2276,6 +2286,9 @@ public class DocumentComponent
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
                 "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "doc.CreatedAt"
             };
 
@@ -2472,8 +2485,12 @@ public class DocumentComponent
             {
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
-                "DATEOFAUTHORIZATION" => "DateOfAuthorization",
+                "DATEOFAUTHORIZATION" => "doc.DateOfAuthorization",
                 "VERSION" => "dv.Version",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "DateOfAuthorization"
             };
 
@@ -2593,6 +2610,9 @@ public class DocumentComponent
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
                 "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "doc.CreatedAt"
             };
 
@@ -2728,8 +2748,12 @@ public class DocumentComponent
             {
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
-                "DATEOFAUTHORIZATION" => "DateOfAuthorization",
+                "DATEOFAUTHORIZATION" => "doc.DateOfAuthorization",
                 "VERSION" => "dv.Version",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "DateOfAuthorization"
             };
 

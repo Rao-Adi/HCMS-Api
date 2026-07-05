@@ -230,6 +230,10 @@ public class DistributionTypeComponent
             {
                 "NAME" => "dt.Name",
                 "DESCRIPTION" => "dt.Description",
+                "CREATEDAT" => "dt.CreatedAt",
+                "CREATEDBY" => "dt.CreatedBy",
+                "LASTMODIFIEDAT" => "dt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dt.LastModifiedBy",
                 "ISACTIVE" => "dt.IsActive",
                 _ => "dt.Name"
             };

@@ -170,6 +170,10 @@ public class DocumentTrainingAuthorizationComponent
                 "DOCUMENTTYPE" => "dt.Name",
                 "ID" => "a.Id",
                 "ISACTIVE" => "a.IsActive",
+                "CREATEDAT" => "a.CreatedAt",
+                "CREATEDBY" => "a.CreatedBy",
+                "LASTMODIFIEDAT" => "a.LastModifiedAt",
+                "LASTMODIFIEDBY" => "a.LastModifiedBy",
                 _ => "a.Id"
             };
 

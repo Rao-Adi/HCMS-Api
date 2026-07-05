@@ -195,6 +195,10 @@ public class CabinetStructureTabsConfigComponent
             {
                 "NAME" => "cst.Name",
                 "CODE" => "cst.ID",
+                "CREATEDAT" => "cst.CreatedAt",
+                "CREATEDBY" => "cst.CreatedBy",
+                "LASTMODIFIEDAT" => "cst.LastModifiedAt",
+                "LASTMODIFIEDBY" => "cst.LastModifiedBy",
                 "ISACTIVE" => "cst.IsActive",
                 _ => "cst.ID"
             };

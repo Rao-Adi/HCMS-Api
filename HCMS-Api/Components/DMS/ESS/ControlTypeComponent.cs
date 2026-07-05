@@ -187,6 +187,10 @@ public class ControlTypeComponent
             {
                 "NAME" => "d.Name",
                 "CODE" => "d.Id",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 "ISACTIVE" => "d.IsActive",
                 _ => "d.Name"
             };

@@ -234,6 +234,10 @@ public class RoleComponent
                 "NAME" => "r.Name",
                 "DESCRIPTION" => "r.Description",
                 "ISACTIVE" => "r.IsActive",
+                "CREATEDAT" => "r.CreatedAt",
+                "CREATEDBY" => "r.CreatedBy",
+                "LASTMODIFIEDAT" => "r.LastModifiedAt",
+                "LASTMODIFIEDBY" => "r.LastModifiedBy",
                 _ => "r.Name"
             };
 

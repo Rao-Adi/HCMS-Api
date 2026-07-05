@@ -217,6 +217,10 @@ public class WorkflowPolicyComponent
                 "ENTITYTYPE" => "w.EntityType",
                 "ID" => "w.Id",
                 "ISACTIVE" => "w.IsActive",
+                "CREATEDAT" => "w.CreatedAt",
+                "CREATEDBY" => "w.CreatedBy",
+                "LASTMODIFIEDAT" => "w.LastModifiedAt",
+                "LASTMODIFIEDBY" => "w.LastModifiedBy",
                 _ => "w.Name"
             };
 

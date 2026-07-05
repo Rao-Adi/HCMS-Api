@@ -231,6 +231,10 @@ public class UserAccessLevelComponent
                 "level4Id" => "u.BusinessDomainCode",
                 "DocumentTypeCode" => "u.DocumentTypeCode",
                 "ISACTIVE" => "u.IsActive",
+                "CREATEDAT" => "u.CreatedAt",
+                "CREATEDBY" => "u.CreatedBy",
+                "LASTMODIFIEDAT" => "u.LastModifiedAt",
+                "LASTMODIFIEDBY" => "u.LastModifiedBy",
                 _ => "u.Id"
             };
 

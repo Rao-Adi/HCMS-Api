@@ -255,6 +255,10 @@ public class BusinessDomainComponent
             {
                 "NAME" => "bd.Name",
                 "CODE" => "bd.Code",
+                "CREATEDAT" => "bd.CreatedAt",
+                "CREATEDBY" => "bd.CreatedBy",
+                "LASTMODIFIEDAT" => "bd.LastModifiedAt",
+                "LASTMODIFIEDBY" => "bd.LastModifiedBy",
                 "ISACTIVE" => "bd.IsActive",
                 _ => "bd.Name"
             };

@@ -209,6 +209,10 @@ public class DocumentApprovalComponent
             {
                 "NAME" => "da.Name",
                 "CODE" => "da.Id",
+                "CREATEDAT" => "da.CreatedAt",
+                "CREATEDBY" => "da.CreatedBy",
+                "LASTMODIFIEDAT" => "da.LastModifiedAt",
+                "LASTMODIFIEDBY" => "da.LastModifiedBy",
                 "ISACTIVE" => "da.IsActive",
                 _ => "da.Name"
             };

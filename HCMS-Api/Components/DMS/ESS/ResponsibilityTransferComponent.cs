@@ -378,6 +378,10 @@ public class ResponsibilityTransferComponent
                 "EFFECTIVEDATETO" => "rt.EffectiveDateTo",
                 "REMARKS" => "rt.Remarks", 
                 "ISACTIVE" => "rt.IsActive",
+                "CREATEDAT" => "rt.CreatedAt",
+                "CREATEDBY" => "rt.CreatedBy",
+                "LASTMODIFIEDAT" => "rt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "rt.LastModifiedBy",
                 _ => "rt.EMPLOYEEFROM"
             };
 

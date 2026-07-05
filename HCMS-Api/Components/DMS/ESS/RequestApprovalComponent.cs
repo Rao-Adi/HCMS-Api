@@ -196,6 +196,10 @@ public class RequestApprovalComponent
                 "NAME" => "ra.DocumentRequestId",
                 "CODE" => "ra.Id",
                 "ISACTIVE" => "ra.IsActive",
+                "CREATEDAT" => "ra.CreatedAt",
+                "CREATEDBY" => "ra.CreatedBy",
+                "LASTMODIFIEDAT" => "ra.LastModifiedAt",
+                "LASTMODIFIEDBY" => "ra.LastModifiedBy",
                 _ => "ra.DocumentRequestId"
             };
 

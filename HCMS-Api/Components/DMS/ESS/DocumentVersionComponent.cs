@@ -200,6 +200,10 @@ public class DocumentVersionComponent
             {
                 "NAME" => "Version",
                 "CODE" => "DocumentId",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 "ISACTIVE" => "IsActive",
                 _ => "Version"
             };

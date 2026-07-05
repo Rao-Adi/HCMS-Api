@@ -202,6 +202,10 @@ public class TrainingPolicyComponent
                 "DocumentTypeCode" => "t.DocumentTypeCode",
                 "Id" => "t.Id",
                 "ISACTIVE" => "t.IsActive",
+                "CREATEDAT" => "t.CreatedAt",
+                "CREATEDBY" => "t.CreatedBy",
+                "LASTMODIFIEDAT" => "t.LastModifiedAt",
+                "LASTMODIFIEDBY" => "t.LastModifiedBy",
                 _ => "t.Id"
             };
 

@@ -213,6 +213,10 @@ public class DocumentAttributeComponent
             {
                 "NAME" => "da.DocumentTypeCode",
                 "CODE" => "da.Id",
+                "CREATEDAT" => "da.CreatedAt",
+                "CREATEDBY" => "da.CreatedBy",
+                "LASTMODIFIEDAT" => "da.LastModifiedAt",
+                "LASTMODIFIEDBY" => "da.LastModifiedBy",
                 "ISACTIVE" => "da.IsActive",
                 _ => "da.DocumentTypeCode"
             };

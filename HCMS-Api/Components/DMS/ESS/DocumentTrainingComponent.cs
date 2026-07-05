@@ -209,6 +209,10 @@ public class DocumentTrainingComponent
                 "ID" => "dt.Id",
                 "CODE" => "dt.Id",
                 "ISACTIVE" => "dt.IsActive",
+                "CREATEDAT" => "dt.CreatedAt",
+                "CREATEDBY" => "dt.CreatedBy",
+                "LASTMODIFIEDAT" => "dt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dt.LastModifiedBy",
                 _ => "dt.Id"
             };
 

@@ -360,6 +360,10 @@ public class NotificationComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "TITLE" => "n.Title",
+                "CREATEDAT" => "n.CreatedAt",
+                "CREATEDBY" => "n.CreatedBy",
+                "LASTMODIFIEDAT" => "n.LastModifiedAt",
+                "LASTMODIFIEDBY" => "n.LastModifiedBy",
                 _ => "n.EmployeeCode"
             };
 
