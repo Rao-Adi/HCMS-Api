@@ -49,7 +49,7 @@ public class DashboardDataDto
     public List<DocumentTypeDistributionDto> DocumentTypeDistribution { get; set; }
     public List<DashboardPendingTaskDto> ImmediatePendingTasks { get; set; }
     public List<RecentActivityDto> RecentActivities { get; set; }
-    
+    public List<DashboardDocumentReviewDto> DocumentsApproachingReview { get; set; } 
     public DashboardDataDto()
     {
         Summary = new DashboardSummaryDto();
@@ -57,4 +57,13 @@ public class DashboardDataDto
         ImmediatePendingTasks = new List<DashboardPendingTaskDto>();
         RecentActivities = new List<RecentActivityDto>();
     }
+}
+
+public class DashboardDocumentReviewDto
+{
+    public int DocumentId { get; set; }
+    public string DocumentNumber { get; set; }
+    public string Title { get; set; }
+    public DateTime NextReviewDate { get; set; }
+    public int DaysUntilReview { get; set; }
 }

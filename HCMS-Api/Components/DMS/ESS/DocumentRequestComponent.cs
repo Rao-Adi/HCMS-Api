@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -2395,20 +2395,37 @@ public class DocumentRequestComponent
             if (request == null)
                 throw new Exception("Approved request not found");
 
+            // 🔹 Get Review Period from Policy
+            var reviewYears = await _common.QueryFirstOrDefaultAsync<int?>(@"
+                SELECT ReviewPeriodYears
+                FROM DocumentReviewPolicies
+                WHERE DocumentTypeCode = @DocumentTypeCode
+                  AND CompanyId = @CompanyId
+                  AND IsActive = TRUE AND IsDeleted = FALSE
+                LIMIT 1;",
+            new { DocumentTypeCode = request.documenttypecode, companyId }, transaction);
+
+            // 🔹 Calculate Next Review Date
+            DateTime? nextReviewDate = null;
+            if (reviewYears.HasValue && reviewYears.Value > 0)
+            {
+                nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
+            }
+
             //-----------------------------------------
             // 2️⃣ Create Document
             //-----------------------------------------
             var documentId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
-                (
-                    CompanyId, DocumentNumber, RequestId, DocumentTypeCode, Title, DivisionCode, DepartmentCode,
+                ( 
+                    CompanyId, DocumentNumber, RequestId, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
                     SubDepartmentCode, BusinessDomainCode, DocumentURL, CreatedBy, LastModifiedBy
                 )
                 VALUES
                 (
                     @CompanyId,
-                    'DOC-' || nextval('document_seq'),
-                    @RequestId, @DocumentTypeCode, @Title, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @CreatedBy, @LastModifiedBy
+                    'DOC-' || nextval('document_seq'), 
+                    @RequestId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @CreatedBy, @LastModifiedBy
                 )
                 RETURNING Id
                 ", new
@@ -2417,6 +2434,7 @@ public class DocumentRequestComponent
                 requestId,
                 DocumentTypeCode = request.documenttypecode,
                 Title = request.documentname,
+                NextReviewDate = nextReviewDate,
                 request.divisioncode,
                 request.departmentcode,
                 request.subdepartmentcode,
@@ -2649,6 +2667,95 @@ public class DocumentRequestComponent
         }
     }
 
+    public async Task<object> GetMyRequestCountsAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // Query 1: Counts for requests CREATED BY the current user
+            var myRequestsQuery = @"
+                SELECT 
+                    COUNT(1) FILTER (WHERE Status IN (1, 2)) AS Pending,
+                    COUNT(1) FILTER (WHERE Status = 3) AS Approved,
+                    COUNT(1) FILTER (WHERE Status IN (0, 4, 5)) AS RejectedOrReverted
+                FROM DocumentRequests
+                WHERE CompanyId = @CompanyId
+                  AND CreatedBy = @empCode
+                  AND IsDeleted = FALSE;";
+
+            var myRequestsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myRequestsQuery, new { CompanyId, empCode });
+
+            // Query 2: Counts for requests in the current user's INBOX (for action)
+            var myInboxQuery = @"
+            SELECT
+                COUNT(1) FILTER (WHERE wes.Decision IS NULL AND wes.IsActive = TRUE AND we.Status = 'Running') AS Pending,
+                COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
+                COUNT(1) FILTER (WHERE wes.Decision IN ('Rejected', 'Reworked')) AS RejectedOrReverted
+            FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+            WHERE wes.CompanyId = @CompanyId
+              AND we.EntityType = 'Request'
+              AND (
+                wes.AssignedUserId = @empCode
+                OR 
+                wes.AssignedRoleId IN (
+                    SELECT ejp.roleid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+                OR 
+                wes.AssignedDesignationId IN (
+                    SELECT ejp.dsgid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+              );";
+
+            var myInboxCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
+
+            // Safely extract counts, defaulting to 0 if null
+            var myRequestsResult = (IDictionary<string, object>)myRequestsCounts ?? new Dictionary<string, object>
+            {
+                { "pending", 0L }, { "approved", 0L }, { "rejectedorreverted", 0L }
+            };
+
+            var myInboxResult = (IDictionary<string, object>)myInboxCounts ?? new Dictionary<string, object>
+            {
+                { "pending", 0L }, { "approved", 0L }, { "rejectedorreverted", 0L }
+            };
+
+            return new
+            {
+                MyRequests = new
+                {
+                    Pending = (long)myRequestsResult["pending"],
+                    Approved = (long)myRequestsResult["approved"],
+                    RejectedOrReverted = (long)myRequestsResult["rejectedorreverted"]
+                },
+                MyInbox = new
+                {
+                    Pending = (long)myInboxResult["pending"],
+                    Approved = (long)myInboxResult["approved"],
+                    RejectedOrReverted = (long)myInboxResult["rejectedorreverted"]
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
 
     public async Task<IQueryable<SelectList2Dto>> GetAllSelectList()
     {

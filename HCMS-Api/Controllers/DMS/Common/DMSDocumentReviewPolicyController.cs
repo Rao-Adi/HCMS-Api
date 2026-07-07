@@ -53,4 +53,13 @@ public class DMSDocumentReviewPolicyController : Controller
             return NotFound();
         return Ok(result);
     }
+
+    [HttpGet("get-document-review-policy-by-documenttypecode")]
+    public async Task<IActionResult> GetByDocumentTypeCode(string documentTypeCode)
+    {
+        var result = await _component.GetByDocumentTypeAsync(documentTypeCode);
+        if (result == null)
+            return NotFound();
+        return Ok(result);
+    }
 }

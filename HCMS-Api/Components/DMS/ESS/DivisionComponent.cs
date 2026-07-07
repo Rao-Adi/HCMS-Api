@@ -222,8 +222,7 @@ public class DivisionComponent
 
             var whereClause = @"
                 WHERE d.IsDeleted = False 
-                  AND d.CompanyId = " + CompanyId + @"
-                  AND d.IsActive = " + (input.IsActive ? "True" : "False");
+                  AND d.CompanyId = " + CompanyId;
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))

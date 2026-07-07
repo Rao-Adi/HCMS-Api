@@ -286,6 +286,52 @@ public class DocumentReviewPolicyComponent
         }
     }
 
+
+    public async Task<DocumentReviewPolicyReadDto> GetByDocumentTypeAsync(string DocTypeCode)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
+                SELECT a.*, c.Id AS CompanyId, c.Name AS Company, dt.Name AS DocumentType
+                FROM DocumentReviewPolicies a
+                LEFT JOIN Companies c ON a.CompanyId = c.Id
+                LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code
+                WHERE a.DocumentTypeCode = '{DocTypeCode}' AND a.CompanyId = {CompanyId}
+                  AND a.IsActive = True
+                  AND a.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("DocumentReviewPolicy not found", 404);
+
+            DataRow row = dt.Rows[0];
+
+            return new DocumentReviewPolicyReadDto
+            {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentType = row.Field<string>("DocumentType"),
+                ReviewPeriodYears = row.Field<int>("ReviewPeriodYears"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                CreatedBy = row.Field<string>("CreatedBy"),
+                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
+                LastModifiedBy = row.Field<string>("LastModifiedBy")
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
     public async Task<DocumentReviewPolicyReadDto> UpdateAsync(DocumentReviewPolicyUpdateDto input)
     {
         try
