@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -60,6 +60,32 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpGet("get-my-document-counts")]
+    public async Task<IActionResult> GetMyDocumentCounts()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<dynamic>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyDocumentCountsAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
 
     [HttpGet("get-all-document-list")]
     public async Task<IActionResult> GetAllSelectList()
