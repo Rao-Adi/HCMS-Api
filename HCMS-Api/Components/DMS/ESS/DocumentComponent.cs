@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿using Dapper;
+﻿﻿﻿﻿﻿﻿﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -3111,6 +3111,93 @@ public class DocumentComponent
         }
 
         return results;
+    }
+
+    public async Task<object> GetMyDocumentCountsAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // Query 1: Counts for documents CREATED BY the current user
+            var myDocumentsQuery = @"
+                WITH LatestStates AS (
+                    SELECT 
+                        dsh.DocumentId,
+                        dsh.ToStateId,
+                        ROW_NUMBER() OVER(PARTITION BY dsh.DocumentId ORDER BY dsh.ChangedAt DESC) as rn
+                    FROM DocumentStateHistory dsh
+                    WHERE dsh.CompanyId = @CompanyId
+                )
+                SELECT 
+                    COUNT(1) FILTER (WHERE ls.ToStateId = 1) AS Draft,
+                    COUNT(1) FILTER (WHERE ls.ToStateId = 2) AS InReview,
+                    COUNT(1) FILTER (WHERE ls.ToStateId IN (3, 4, 6)) AS Approved,
+                    COUNT(1) FILTER (WHERE ls.ToStateId = 5) AS Rejected
+                FROM Documents d
+                JOIN LatestStates ls ON d.Id = ls.DocumentId AND ls.rn = 1
+                WHERE d.CompanyId = @CompanyId
+                  AND d.CreatedBy = @empCode
+                  AND d.IsDeleted = FALSE;";
+
+            var myDocumentsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myDocumentsQuery, new { CompanyId, empCode });
+
+            // Query 2: Counts for documents in the current user's INBOX (for approval)
+            var myInboxQuery = @"
+            SELECT
+                COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
+                COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
+                COUNT(1) FILTER (WHERE we.Status = 'Rejected' AND wes.Decision = 'Rejected') AS Rejected,
+                COUNT(1) FILTER (WHERE we.Status = 'Reworked' AND wes.Decision = 'Reworked') AS Reworked
+            FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+            JOIN Vw_Documents d ON d.Id = we.EntityId AND d.CompanyId = we.CompanyId
+            -- 👇 This JOIN is the final piece of the puzzle to match the function's logic
+            LEFT JOIN DocumentRequests dr ON d.RequestId = dr.Id
+            WHERE wes.CompanyId = @CompanyId 
+              AND we.EntityType = 'Document'
+              AND (
+                wes.AssignedUserId = @empCode
+                OR 
+                wes.AssignedRoleId IN (
+                    SELECT ejp.roleid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+                OR 
+                wes.AssignedDesignationId IN (
+                    SELECT ejp.dsgid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+              );";
+
+            var myInboxCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
+
+            return new
+            {
+                MyDocuments = myDocumentsCounts,
+                MyInbox = new {
+                    pending = myInboxCounts?.pending ?? 0,
+                    approved = myInboxCounts?.approved ?? 0,
+                    rejectedorreverted = (myInboxCounts?.rejected ?? 0) + (myInboxCounts?.reworked ?? 0)
+                }
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
 }

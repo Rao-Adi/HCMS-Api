@@ -2693,12 +2693,12 @@ public class DocumentRequestComponent
             // Query 2: Counts for requests in the current user's INBOX (for action)
             var myInboxQuery = @"
             SELECT
-                COUNT(1) FILTER (WHERE wes.Decision IS NULL AND wes.IsActive = TRUE AND we.Status = 'Running') AS Pending,
-                COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
-                COUNT(1) FILTER (WHERE wes.Decision IN ('Rejected', 'Reworked')) AS RejectedOrReverted
+                COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
+                COUNT(1) FILTER (WHERE we.Status = 'Completed' AND wes.Decision = 'Approved') AS Approved,
+                COUNT(1) FILTER (WHERE we.Status IN ('Rejected', 'Reworked') AND wes.Decision IN ('Rejected', 'Reworked')) AS RejectedOrReverted
             FROM WorkflowExecutionSteps wes
-            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
-            WHERE wes.CompanyId = @CompanyId
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+            WHERE wes.CompanyId = @CompanyId 
               AND we.EntityType = 'Request'
               AND (
                 wes.AssignedUserId = @empCode
