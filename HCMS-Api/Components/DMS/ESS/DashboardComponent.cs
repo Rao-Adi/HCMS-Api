@@ -53,10 +53,14 @@ public class DashboardComponent
                     (SELECT COUNT(1) FROM DocumentRequests WHERE CompanyId = @CompanyId AND CreatedBy = @UserId AND Status = 4 AND IsDeleted = FALSE) AS MyRejectedRequests,
                     (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId 
                         WHERE we.CompanyId = @CompanyId AND wes.AssignedUserId = @EmployeeCode AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS PendingApprovals,
-                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId 
-                        WHERE we.CompanyId = @CompanyId AND wes.AssignedUserId = @EmployeeCode AND wes.Decision = 'Approved') AS ApprovedByMe,
-                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId 
-                        WHERE we.CompanyId = @CompanyId AND wes.AssignedUserId = @EmployeeCode AND wes.Decision IN ('Rejected', 'Rework')) AS RejectedByMe,
+                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes
+                        JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                        WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request' AND wes.AssignedUserId = @EmployeeCode 
+                        AND we.Status = 'Completed' AND wes.Decision = 'Approved') AS ApprovedByMe,
+                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes
+                        JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                        WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request' AND wes.AssignedUserId = @EmployeeCode 
+                        AND we.Status IN ('Rejected', 'Reworked') AND wes.Decision IN ('Rejected', 'Reworked')) AS RejectedByMe,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.CompanyId = @CompanyId AND dut.EmployeeCode = @EmployeeCode AND dut.TrainingStatus = 0 AND dut.IsDeleted = FALSE) AS PendingTrainings,
                     (SELECT COUNT(1) FROM DocumentTraining tr JOIN Documents doc ON tr.DocumentId = doc.Id 
                         WHERE doc.CompanyId = @CompanyId AND tr.ReadyForAuthorization = TRUE AND tr.IsActive = TRUE) AS PendingAuthorizations;";

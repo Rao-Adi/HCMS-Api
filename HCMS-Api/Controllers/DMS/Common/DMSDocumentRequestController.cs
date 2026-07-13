@@ -91,6 +91,40 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    [HttpPost("export-my-pending-document-request")]
+    public async Task<IActionResult> ExportMyInboxRequestsAsync(GetPendingRequestDto input)
+    {
+        try
+        {
+            var fileBytes = await _documentRequestComponent.ExportMyInboxRequestsAsync(input);
+
+            if (fileBytes == null || fileBytes.Length == 0)
+            {
+                return NotFound(new HttpApiResponse<object>
+                {
+                    Success = false,
+                    Message = "No data available to export.",
+                    Code = 404
+                });
+            }
+
+            string fileName = $"Pending_Requests_{DateTime.Now:yyyyMMddHHmmss}.csv";
+            return File(fileBytes, "text/csv", fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-my-request-counts")]
     public async Task<IActionResult> GetMyRequestCounts()
     {

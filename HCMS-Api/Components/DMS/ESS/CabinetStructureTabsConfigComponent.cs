@@ -177,7 +177,7 @@ public class CabinetStructureTabsConfigComponent
             int CompanyId = int.Parse(_CompanyId);
 
             var whereClause = @"
-                WHERE cst.IsDeleted = False AND cst.CompanyId = " + CompanyId + " AND cst.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE cst.IsDeleted = False AND cst.CompanyId = " + CompanyId;
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))

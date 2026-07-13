@@ -1139,6 +1139,7 @@ public class DocumentRequestComponent
                     StartedAt = GetValue<string>(dict, "startedat"),
                     RowVersion = GetValue<string>(dict, "rowversion"),
                     ProposedContent = GetValue<string>(dict, "proposedcontent"),
+                    ExecutionStatus = GetValue<string>(dict, "executionstatus"),
                     DraftFileUrl = GetValue<string>(dict, "draftfileurl"),
                     IsContentFinalized = GetValue<bool>(dict, "iscontentfinalized"),
                     DraftContentLastModifiedAt = GetValue<DateTime?>(dict, "draftcontentlastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
@@ -1166,6 +1167,110 @@ public class DocumentRequestComponent
         }
     }
 
+
+    public async Task<byte[]> ExportMyInboxRequestsAsync(GetPendingRequestDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND DocumentTypeCode = @DocumentTypeCode";
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "DocumentName",
+                "REQUESTNUMBER" => "RequestNumber",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
+                _ => "CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_requests(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                UserId = empCode,
+                input.RequestStatus,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+            var requests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+
+            if (!requests.Any())
+            {
+                return Array.Empty<byte>();
+            }
+
+            var sb = new System.Text.StringBuilder();
+            // Add header row
+            var headers = ((IDictionary<string, object>)requests.First()).Keys;
+            sb.AppendLine(string.Join(",", headers));
+
+            // Add data rows
+            foreach (var row in requests)
+            {
+                var dict = row as IDictionary<string, object>;
+                var values = new List<string>();
+                foreach (var header in headers)
+                {
+                    var value = dict[header]?.ToString() ?? "";
+                    // Escape commas and quotes
+                    var escapedValue = $"\"{value.Replace("\"", "\"\"")}\"";
+                    values.Add(escapedValue);
+                }
+                sb.AppendLine(string.Join(",", values));
+            }
+
+            return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            // In a real application, you'd log this exception
+            throw new CustomException("Failed to export data.", 500);
+        }
+    }
     public async Task<PaginationResult<DocumentRequestReadDto>> GetDraftDocumentRequestAsync(GetDocumentDto input)
     {
         try

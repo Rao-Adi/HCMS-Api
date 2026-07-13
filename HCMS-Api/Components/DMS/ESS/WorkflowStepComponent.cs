@@ -811,6 +811,7 @@ public class WorkflowStepComponent
                 new
                 {
                     CompanyId,
+                    PolicyName = "System Generated",
                     EntityType = filters.EntityType,
                     DivisionCode = divCode,
                     DepartmentCode = depCode,

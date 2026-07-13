@@ -92,6 +92,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public int StepId { get; set; }
     public int StepOrder { get; set; }
     public string StartedAt { get; set; }
+    public string ExecutionStatus { get; set; }
 
 
     // 🟩 UC-22
