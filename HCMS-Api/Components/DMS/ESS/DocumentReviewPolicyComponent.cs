@@ -306,7 +306,7 @@ public class DocumentReviewPolicyComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentReviewPolicy not found", 404);
+                throw new CustomException("DocumentReviewPolicy not found", 200);
 
             DataRow row = dt.Rows[0];
 

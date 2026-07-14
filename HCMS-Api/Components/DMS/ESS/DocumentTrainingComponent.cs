@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -551,15 +551,17 @@ public class DocumentTrainingComponent
             
             await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
 
-            // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
+            // 2. Log Action and transition state to AUTHORIZATION_PENDING (ID=7)
             string stateQuery = @"
                 INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
                 SELECT @CompanyId, @DocumentId, 
                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                       (SELECT Id FROM DocumentStates WHERE Code = 'AUTHORIZATION_PENDING'),
                        @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
             
             await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            // TODO: Add notification logic here to inform the final authorizer(s) that a document is ready for their action.
 
             await tx.CommitAsync();
             return true;
@@ -570,6 +572,7 @@ public class DocumentTrainingComponent
             throw;
         }
     }
+
 }
 
 public class TrainingAssessmentResultDto

@@ -2225,6 +2225,58 @@ public class DocumentRequestComponent
         }
     }
 
+    public async Task<dynamic> GetMyRequestsPendingApprovalCountAsync()
+    {
+        try
+        {
+
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            var prefix = _utilities.GetPrefix(clientIp);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            
+
+            var countSql = $@"SELECT COUNT(1)                
+                    FROM Vw_DocumentRequests dr
+                    LEFT JOIN WorkflowExecutions we
+                        ON we.CompanyId = dr.CompanyId
+                        AND we.EntityId = dr.Id
+                        AND we.EntityType = 'Request'
+                        AND we.Id = (
+                            SELECT MAX(Id)
+                            FROM WorkflowExecutions we2
+                            WHERE we2.CompanyId = dr.CompanyId
+                              AND we2.EntityId = dr.Id
+                              AND we2.EntityType = 'Request'
+                        )
+                    LEFT JOIN WorkflowExecutionSteps wes
+                        ON wes.CompanyId = we.CompanyId
+                        AND wes.WorkflowExecutionId = we.Id
+                        AND wes.IsActive = TRUE
+                    LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text
+                    --LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
+                    LEFT JOIN WorkflowStepDefinitions wsd 
+                        ON wsd.CompanyId = wes.CompanyId
+                        AND wsd.Id = wes.StepDefinitionId
+                
+                    WHERE dr.CompanyId = @CompanyId
+                      AND dr.SubmittedBy = @empCode
+                      AND dr.IsDeleted = FALSE
+                      AND dr.Status IN (1, 2) -- 1 = Submitted, 2 = In Approval
+                      --AND (@Status IS NULL OR dr.Status = @Status)
+                        ;";
+
+            var myDocumentsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(countSql, new { CompanyId, empCode });
+            return myDocumentsCounts;
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
     // This mehod is doing the same jo as GetWorkflowDetailsAsync. 
     public async Task<IEnumerable<DocumentRequestDetailsDto>> GetDocumentObservationDetailsAsync(int documentId, string entityType)
     {
@@ -3152,6 +3204,35 @@ public class DocumentRequestComponent
             };
         }
         catch
+        {
+            throw;
+        }
+    }
+
+
+
+    public async Task<dynamic> GetDraftDocumentCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // Query 2: Counts for documents in the current user's INBOX (for approval)
+            var myInboxQuery = @"
+            SELECT COUNT(1) FROM Vw_DocumentRequests dr WHERE dr.CompanyId = @CompanyId
+                AND dr.Status = 0 -- Draft
+                AND dr.CompanyId = @CompanyId
+                AND dr.CreatedBy = @empCode;";
+
+            var draftCount = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
+
+            return draftCount;
+        }
+        catch (Exception)
         {
             throw;
         }

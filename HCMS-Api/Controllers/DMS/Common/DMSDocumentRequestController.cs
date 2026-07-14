@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -182,6 +182,35 @@ public class DMSDocumentRequestController : Controller
     }
 
 
+    [HttpGet("get-my-document-requests-for-approval-count")]
+    public async Task<IActionResult> GetMyRequestsPendingApprovalCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<dynamic>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetMyRequestsPendingApprovalCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+
     [HttpGet("get-document-observation-details")]
     public async Task<IActionResult> GetDocumentObservationDetails(int requestId, string entityType)
     {
@@ -362,7 +391,7 @@ public class DMSDocumentRequestController : Controller
             var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
             if (!provider.TryGetContentType(filePath, out var contentType))
             {
-                contentType = "application/octet-stream"; 
+                contentType = "application/octet-stream";
             }
 
             var fileName = Path.GetFileName(filePath);
@@ -667,6 +696,33 @@ public class DMSDocumentRequestController : Controller
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-draft-documents-count")]
+    public async Task<IActionResult> GetDraftDocumentCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<dynamic>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetDraftDocumentCountAsync(),
                 Message = "Success",
                 Code = 200
             });

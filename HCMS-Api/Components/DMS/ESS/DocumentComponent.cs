@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿using Dapper;
+﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -765,7 +765,7 @@ public class DocumentComponent
                         AND CompanyId = @CompanyId AND Status = 2 
                         AND EffectiveDateFrom <= CURRENT_DATE 
                         AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                        ORDER BY Id DESC LIMIT 1;", 
+                        ORDER BY Id DESC LIMIT 1;",
                         new { EmpFrom = actualUserId, CompanyId }, transaction);
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -802,7 +802,7 @@ public class DocumentComponent
                             AND CompanyId = @CompanyId AND Status = 2 
                             AND EffectiveDateFrom <= CURRENT_DATE 
                             AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                            ORDER BY Id DESC LIMIT 1;", 
+                            ORDER BY Id DESC LIMIT 1;",
                             new { EmpFrom = actualUserId, CompanyId }, transaction);
 
                         if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -1022,9 +1022,9 @@ public class DocumentComponent
             FROM TrainingPolicies 
             WHERE CompanyId = @CompanyId 
               AND DocumentTypeCode = @DocTypeCode 
-              AND IsActive = TRUE;", 
+              AND IsActive = TRUE;",
             new { CompanyId = companyId, DocTypeCode = (string)documentInfo.documenttypecode }, transaction);
-            
+
         bool requiresTraining = tp != null && tp.trainingrequired == true;
 
         if (requiresTraining)
@@ -1038,7 +1038,7 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 DELETE FROM DocumentUserTraining 
                 WHERE DocumentId = @DocumentId 
-                  AND CompanyId = @CompanyId;", 
+                  AND CompanyId = @CompanyId;",
                 new { DocumentId = input.DocumentId, CompanyId = companyId }, transaction);
 
             // Insert new explicitly attached training users
@@ -1418,18 +1418,18 @@ public class DocumentComponent
 
         foreach (var user in users)
         {
-            var placeholders = new Dictionary<string, string> 
-            { 
-                { "Doc Name", (string)user.title }, 
-                { "V#", "Latest" } 
+            var placeholders = new Dictionary<string, string>
+            {
+                { "Doc Name", (string)user.title },
+                { "V#", "Latest" }
             };
 
             // Utilize the central notification engine to broadcast SignalR, save to DB, and send Email
             await _notificationComponent.TriggerNotificationAsync(
-                NotificationScenario.TrainingProofRequired, 
-                companyId, 
-                documentId, 
-                Convert.ToString(user.employeecode), 
+                NotificationScenario.TrainingProofRequired,
+                companyId,
+                documentId,
+                Convert.ToString(user.employeecode),
                 placeholders, tx);
         }
     }
@@ -1976,7 +1976,7 @@ public class DocumentComponent
                 "CREATEDAT" => "CreatedAt",
                 "CREATEDBY" => "CreatedBy",
                 "LASTMODIFIEDAT" => "LastModifiedAt",
-                "LASTMODIFIEDBY" => "LastModifiedBy", 
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "CreatedAt"
             };
 
@@ -2139,9 +2139,15 @@ public class DocumentComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
-
-            string stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
-
+            string stateFilter = "";
+            if (input.ActionType.ToUpper() == "REJECTED")
+            {
+                stateFilter = "IN ('REJECTED')";
+            }
+            else
+            {
+                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
+            }
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
             var whereClause = $@"
@@ -2173,13 +2179,13 @@ public class DocumentComponent
             // FSD UC-30 Extension: Filter View for SOP vs Other Documents
             if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             {
-                if (input.DocumentCategoryFilter.ToUpper() == "SOP")
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP" || input.DocumentCategoryFilter.ToUpper() == "1")
                 {
-                    whereClause += " AND UPPER(dt.Code) = 'SOP'";
+                    whereClause += " AND UPPER(doc.DocumentType) = 'SOP'";
                 }
-                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "2")
                 {
-                    whereClause += " AND UPPER(dt.Code) != 'SOP'";
+                    whereClause += " AND UPPER(doc.DocumentType) != 'SOP'";
                 }
             }
 
@@ -2228,11 +2234,12 @@ public class DocumentComponent
 
             string countSql = $@"
                 SELECT COUNT(1) 
-                FROM Documents doc 
+                FROM VW_Documents doc 
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new { 
+            var queryParams = new
+            {
                 CompanyId = CompanyId,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
@@ -2364,73 +2371,154 @@ public class DocumentComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            if (string.IsNullOrWhiteSpace(input.Action))
+                throw new CustomException("An action (Approve/Reject) is required.", 400);
 
-            if (string.IsNullOrWhiteSpace(input.Observation))
-                throw new Exception("Observation comment is mandatory for final authorization.");
+            // Get current state for history
+            var fromStateId = await _common.ExecuteScalarAsync<int>(
+                "SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1",
+                new { input.DocumentId }, transaction);
 
-            // 1. Update Document Effective Date
-            // Depending on policy, you might set a future effective date here, 
-            // but for immediate enforcement, NOW() is used.
-            //await _common.ExecuteAsync(@"
-            //    UPDATE Documents 
-            //    SET 
-            //        EffectiveDate = NOW(), 
-            //        LastModifiedAt = NOW(), 
-            //        LastModifiedBy = @empCode 
-            //    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-            //    new { input.DocumentId, CompanyId, empCode }, transaction);
-
-            // 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
-            await _common.ExecuteAsync(@"
-                UPDATE DocumentVersions 
-                SET VersionType = 3, 
-                    IsActive = FALSE 
-                WHERE DocumentId = @DocumentId 
-                  AND VersionType = 2 
-                  AND CompanyId = @CompanyId;",
-                new { input.DocumentId, CompanyId }, transaction);
-
-            // 3. Mark the current pending version as Effective
-            await _common.ExecuteAsync(@"
-                UPDATE DocumentVersions 
-                SET VersionType = 2 
-                WHERE DocumentId = @DocumentId 
-                  AND VersionType = 1 
-                  AND CompanyId = @CompanyId;",
-                new { input.DocumentId, CompanyId }, transaction);
-
-            // 4. Update Document State History to 'EFFECTIVE'
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
-                SELECT @CompanyId, @DocumentId, 
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
-                       @empCode, @Observation, NOW();",
-                new { CompanyId, input.DocumentId, empCode, input.Observation }, transaction);
-
-            // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
-            var dcaUsers = await _common.QueryAsync<string>(@"
-                SELECT TRIM(e.empcode) 
-                FROM public.tblempjobprofile ejp 
-                INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
-                INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
-                WHERE sd.Name = 'DCA' 
-                  AND sd.smsid = 189 
-                  AND e.CompanyId = @CompanyId 
-                  AND COALESCE(e.Active, 1) = 1 
-                  AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId }, transaction);
-
-            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
-            var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
-
-            foreach (var dcaUser in dcaUsers)
+            if (input.Action.Equals("APPROVED", StringComparison.OrdinalIgnoreCase))
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+                // 1. Archive previous effective versions
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE 
+                    WHERE DocumentId = @DocumentId AND VersionType = 2 AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                // 2. Mark the current pending version as Effective
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentVersions SET VersionType = 2 
+                    WHERE DocumentId = @DocumentId AND VersionType = 1 AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                // 3. Update Document State History to 'EFFECTIVE'
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), @empCode, @Observation, NOW());",
+                    new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
+
+                // 4. Trigger DCA Notification for physical copy retrieval
+                var dcaUsers = await _common.QueryAsync<string>(@"
+                    SELECT TRIM(e.empcode) FROM public.tblempjobprofile ejp 
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
+                    INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
+                    WHERE sd.Name = 'DCA' AND sd.smsid = 189 AND e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE",
+                    new { CompanyId }, transaction);
+
+                var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
+                var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+
+                foreach (var dcaUser in dcaUsers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+                }
+            }
+            else if (input.Action.Equals("REJECTED", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. Update Document State History to 'REJECTED'
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'REJECTED'), @empCode, @Observation, NOW());",
+                    new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
+
+                // 2. Notify the document creator about the rejection
+                var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT d.Title, d.CreatedBy, dv.Version 
+                    FROM Documents d 
+                    JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
+                    WHERE d.Id = @DocumentId ORDER BY dv.CreatedAt DESC LIMIT 1",
+                    new { input.DocumentId }, transaction);
+
+                if (docInfo != null && !string.IsNullOrEmpty(docInfo.createdby))
+                {
+                    var placeholders = new Dictionary<string, string>
+                    {
+                        { "Doc Name", (string)docInfo!.title ?? "Document" },
+                        { "V#", (string)docInfo.version ?? "Latest" },
+                        { "Approver", empCode },
+                        { "Observation", input.Observation }
+                    };
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, docInfo.createdby, placeholders, transaction);
+                }
+            }
+            else
+            {
+                throw new CustomException("Invalid action specified. Must be 'APPROVE' or 'REJECTE'.", 400);
             }
 
             await transaction.CommitAsync();
 
             return true;
+
+
+            //if (string.IsNullOrWhiteSpace(input.Observation))
+            //    throw new Exception("Observation comment is mandatory for final authorization.");
+
+            //// 1. Update Document Effective Date
+            //// Depending on policy, you might set a future effective date here, 
+            //// but for immediate enforcement, NOW() is used.
+            ////await _common.ExecuteAsync(@"
+            ////    UPDATE Documents 
+            ////    SET 
+            ////        EffectiveDate = NOW(), 
+            ////        LastModifiedAt = NOW(), 
+            ////        LastModifiedBy = @empCode 
+            ////    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            ////    new { input.DocumentId, CompanyId, empCode }, transaction);
+
+            //// 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
+            //await _common.ExecuteAsync(@"
+            //    UPDATE DocumentVersions 
+            //    SET VersionType = 3, 
+            //        IsActive = FALSE 
+            //    WHERE DocumentId = @DocumentId 
+            //      AND VersionType = 2 
+            //      AND CompanyId = @CompanyId;",
+            //    new { input.DocumentId, CompanyId }, transaction);
+
+            //// 3. Mark the current pending version as Effective
+            //await _common.ExecuteAsync(@"
+            //    UPDATE DocumentVersions 
+            //    SET VersionType = 2 
+            //    WHERE DocumentId = @DocumentId 
+            //      AND VersionType = 1 
+            //      AND CompanyId = @CompanyId;",
+            //    new { input.DocumentId, CompanyId }, transaction);
+
+            //// 4. Update Document State History to 'EFFECTIVE'
+            //await _common.ExecuteAsync(@"
+            //    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+            //    SELECT @CompanyId, @DocumentId, 
+            //           (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+            //           (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
+            //           @empCode, @Observation, NOW();",
+            //    new { CompanyId, input.DocumentId, empCode, input.Observation }, transaction);
+
+            //// 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
+            //var dcaUsers = await _common.QueryAsync<string>(@"
+            //    SELECT TRIM(e.empcode) 
+            //    FROM public.tblempjobprofile ejp 
+            //    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
+            //    INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
+            //    WHERE sd.Name = 'DCA' 
+            //      AND sd.smsid = 189 
+            //      AND e.CompanyId = @CompanyId 
+            //      AND COALESCE(e.Active, 1) = 1 
+            //      AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId }, transaction);
+
+            //var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
+            //var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+
+            //foreach (var dcaUser in dcaUsers)
+            //{
+            //    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+            //}
+
+            //await transaction.CommitAsync();
+
+            //return true;
         }
         catch
         {
@@ -2445,19 +2533,17 @@ public class DocumentComponent
         {
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // UC-31: Fetch historical documents where the *current user* was the one 
             // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'
             var whereClause = @"
                 WHERE doc.CompanyId = @CompanyId 
                   AND doc.IsDeleted = FALSE
-                  AND EXISTS (
-                      SELECT 1 
-                      FROM DocumentStateHistory dsh 
+                  AND EXISTS (SELECT 1 FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
+                      WHERE dsh.DocumentId = doc.Id
                         AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED')
                         AND dsh.ChangedBy = @UserId
                   )";
@@ -2525,9 +2611,10 @@ public class DocumentComponent
                 FROM Documents doc 
                 {whereClause};";
 
-            var queryParams = new { 
-                CompanyId = CompanyId, 
-                UserId = input.UserId,
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                UserId = empCode,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
@@ -2559,13 +2646,9 @@ public class DocumentComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-            int TrainingMode = input.Requeststatus == "Online" ? 2 : 1;
 
             var whereClause = @"
                 WHERE doc.CompanyId = @CompanyId 
-                  --AND doc.CreatedBy = @UserId
-                  AND tr.TrainingMode = @TrainingMode
-                  AND tr.ReadyForAuthorization = FALSE
                   AND doc.IsDeleted = FALSE
                   AND (
                       SELECT ds.Code 
@@ -2573,8 +2656,7 @@ public class DocumentComponent
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
                       ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
-                  AND tr.ReadyForAuthorization = FALSE";
+                  ) = 'AUTHORIZATION_PENDING'";
 
             //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             //{
@@ -2632,7 +2714,7 @@ public class DocumentComponent
                 FROM Vw_Documents doc  
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                {whereClause}
+                {whereClause} 
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
@@ -2640,7 +2722,7 @@ public class DocumentComponent
                 SELECT COUNT(1) 
                 FROM Documents doc 
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
-                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE 
                 {whereClause};";
 
             var queryParams = new
@@ -2651,8 +2733,7 @@ public class DocumentComponent
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
                 BusinessDomainCode = input.BusinessDomainCode,
-                DocumentTypeCode = input.DocumentTypeCode,
-                TrainingMode = TrainingMode
+                DocumentTypeCode = input.DocumentTypeCode
             };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
@@ -3187,7 +3268,8 @@ public class DocumentComponent
             return new
             {
                 MyDocuments = myDocumentsCounts,
-                MyInbox = new {
+                MyInbox = new
+                {
                     pending = myInboxCounts?.pending ?? 0,
                     approved = myInboxCounts?.approved ?? 0,
                     rejectedorreverted = (myInboxCounts?.rejected ?? 0) + (myInboxCounts?.reworked ?? 0)
@@ -3206,6 +3288,7 @@ public class AuthorizeDocumentDto
 {
     public int DocumentId { get; set; }
     public string Observation { get; set; }
+    public string Action { get; set; } // "APPROVE" or "REJECT"
 }
 
 public class GetPendingAuthorization : TableFiltersDto
@@ -3217,6 +3300,7 @@ public class GetPendingAuthorization : TableFiltersDto
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
+    public string? ActionType { get; set; }
 }
 
 public class GetAuthorizedDocumentsDto : TableFiltersDto
