@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -7,6 +7,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
+using OfficeOpenXml;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -49,6 +50,11 @@ public class DocumentComponent
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
         _workflowStepComponent = workflowStepComponent;
+    }
+    static DocumentComponent()
+    {
+        // Required for EPPlus in non-Windows environments or when running in certain contexts.
+        ExcelPackage.License.SetNonCommercialPersonal("DMS");
     }
 
 
@@ -237,6 +243,7 @@ public class DocumentComponent
         {
             var whereClause = @"
                 WHERE doc.IsDeleted = False 
+                  AND doc.RequestId IS NULL
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -273,22 +280,8 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+                        SELECT doc.*
+                        FROM VW_Documents doc 
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -321,16 +314,16 @@ public class DocumentComponent
 
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
 
-                    //DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
 
-                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
+                    Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
 
-                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
+                    Department = row.Table.Columns.Contains("Department") ? row.Field<string>("Department") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
 
-                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
+                    SubDepartment = row.Table.Columns.Contains("SubDepartment") ? row.Field<string>("SubDepartment") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
 
                     BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
@@ -3045,128 +3038,291 @@ public class DocumentComponent
         }
     }
 
-
-    public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile csvFile)
+    private class ParsedRow
     {
-        var results = new List<string>();
-        if (csvFile == null || csvFile.Length == 0)
-        {
-            results.Add("No file provided.");
-            return results;
-        }
+        public int RowNumber { get; set; }
+        public string[] Columns { get; set; } = Array.Empty<string>();
+    }
 
+    public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile excelFile)
+    {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int CompanyId = int.Parse(_CompanyId);
         var clientIp = _clientContextService.GetClientIP();
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-        using var reader = new StreamReader(csvFile.OpenReadStream());
-        var header = await reader.ReadLineAsync();
-
-        if (string.IsNullOrWhiteSpace(header))
+        var results = new List<string>();
+        if (excelFile == null || excelFile.Length == 0)
         {
-            results.Add("Empty or invalid CSV.");
+            results.Add("Error: No file provided.");
+            return results;
+        } 
+
+        var parsedRows = new List<ParsedRow>();
+        var fileExtension = Path.GetExtension(excelFile.FileName).ToLower();
+
+        if (fileExtension == ".xlsx" || fileExtension == ".xls")
+        {
+            try
+            {
+                using var stream = excelFile.OpenReadStream();
+                using var package = new ExcelPackage(stream);
+                var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null || worksheet.Dimension == null)
+                {
+                    results.Add("Error: Excel worksheet is empty or invalid.");
+                    return results;
+                }
+
+                int totalRows = worksheet.Dimension.End.Row;
+                int totalCols = worksheet.Dimension.End.Column;
+
+                if (totalRows < 1)
+                {
+                    results.Add("Error: Excel file has no rows.");
+                    return results;
+                }
+
+                // Row 1 is header, data starts from Row 2
+                for (int row = 2; row <= totalRows; row++)
+                {
+                    bool isRowBlank = true;
+                    int maxCol = Math.Max(11, totalCols);
+                    var cols = new string[maxCol];
+                    for (int col = 1; col <= maxCol; col++)
+                    {
+                        var cellValue = worksheet.Cells[row, col].Text?.Trim() ?? worksheet.Cells[row, col].Value?.ToString()?.Trim() ?? "";
+                        cols[col - 1] = cellValue;
+                        if (!string.IsNullOrWhiteSpace(cellValue))
+                        {
+                            isRowBlank = false;
+                        }
+                    }
+
+                    if (!isRowBlank)
+                    {
+                        parsedRows.Add(new ParsedRow { RowNumber = row, Columns = cols });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                results.Add($"Error reading Excel file: {ex.Message}");
+                return results;
+            }
+        }
+        else if (fileExtension == ".csv")
+        {
+            try
+            {
+                using var reader = new StreamReader(excelFile.OpenReadStream());
+                var header = await reader.ReadLineAsync();
+
+                if (string.IsNullOrWhiteSpace(header))
+                {
+                    results.Add("Error: CSV file is empty or has an invalid header.");
+                    return results;
+                }
+
+                int rowCount = 1;
+                while (!reader.EndOfStream)
+                {
+                    rowCount++;
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    var cols = System.Text.RegularExpressions.Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
+                                                                   .Select(x => x.Trim('"', ' ')).ToArray();
+                    parsedRows.Add(new ParsedRow { RowNumber = rowCount, Columns = cols });
+                }
+            }
+            catch (Exception ex)
+            {
+                results.Add($"Error reading CSV file: {ex.Message}");
+                return results;
+            }
+        }
+        else
+        {
+            results.Add("Error: Invalid file format. Please upload an .xlsx, .xls or .csv file.");
             return results;
         }
 
-        int rowCount = 1;
-        while (!reader.EndOfStream)
+        foreach (var parsedRow in parsedRows)
         {
-            rowCount++;
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            // Safe CSV split supporting commas inside quotes
-            var cols = System.Text.RegularExpressions.Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
-                                                           .Select(x => x.Trim('"', ' ')).ToArray();
-
-            // Expected CSV Order: DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Title, NextReviewDate, Version, DocumentFileName
-            if (cols.Length < 10)
-            {
-                results.Add($"Row {rowCount}: Insufficient columns.");
-                continue;
-            }
-
-            var docNum = cols[0].Trim();
-            var docType = cols[1].Trim();
-            var divCode = cols[2].Trim();
-            var deptCode = cols[3].Trim();
-            var subDeptCode = cols[4].Trim();
-            var bizDomain = cols[5].Trim();
-            var title = cols[6].Trim();
-            var nextReviewDateStr = cols[7].Trim();
-            var version = string.IsNullOrWhiteSpace(cols[8]) ? "1.0" : cols[8].Trim();
-            var expectedFileName = cols[9].Trim();
-
-            if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
-            {
-                results.Add($"Row {rowCount}: Invalid NextReviewDate.");
-                continue;
-            }
+            int row = parsedRow.RowNumber;
+            var cols = parsedRow.Columns;
 
             await using var tx = await _common.BeginTransactionAsync();
             try
             {
-                int exists = await _common.ExecuteScalarAsync<int>(@"
-                    SELECT COUNT(1) FROM Documents 
-                    WHERE (Title = @Title OR DocumentNumber = @DocumentNumber) 
-                      AND CompanyId = @CompanyId AND IsDeleted = FALSE",
-                    new { Title = title, DocumentNumber = docNum, CompanyId }, tx);
-
-                if (exists > 0)
+                if (cols.Length < 11)
                 {
-                    results.Add($"Row {rowCount}: Document Title or Number already exists.");
+                    results.Add($"Row {row}: Skipped. Insufficient columns (expected 11, found {cols.Length}).");
                     await tx.RollbackAsync();
                     continue;
                 }
 
-                int newId = await _common.ExecuteScalarAsync<int>(@"
-                    INSERT INTO Documents
-                    (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
-                        SubDepartmentCode, BusinessDomainCode, Title, NextReviewdate, DocumentURL, EffectiveDate,
-                        IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
-                    )
-                    VALUES
-                    (
-                        @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
-                        @SubDepartmentCode, @BusinessDomainCode, @Title, @NextReviewDate, @ExpectedFileName, NOW(),
-                        TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
-                    )
-                    RETURNING Id;", new
+                // New Column Order Mapping
+                var docNum = cols[1].Trim();
+                var title = cols[2].Trim();
+                var initiatorName = cols[3].Trim();
+                var version = string.IsNullOrWhiteSpace(cols[4]) ? "1.0" : cols[4].Trim();
+                var docTypeName = cols[5].Trim();
+                var divName = cols[6].Trim();
+                var deptName = cols[7].Trim();
+                var subDeptName = cols[8].Trim();
+                var nextReviewDateStr = cols[9].Trim();
+                var expectedFileName = cols[10].Trim();
+
+                if (string.IsNullOrWhiteSpace(docNum) && string.IsNullOrWhiteSpace(title))
                 {
-                    CompanyId,
-                    DocumentNumber = docNum,
-                    DocumentTypeCode = docType,
-                    DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
-                    DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
-                    SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
-                    BusinessDomainCode = string.IsNullOrEmpty(bizDomain) ? null : bizDomain,
-                    Title = title,
-                    NextReviewDate = nextReviewDate,
-                    ExpectedFileName = expectedFileName, // Temporarily bind actual filename here for later matching
-                    UserId = empCode
-                }, tx);
+                    await tx.RollbackAsync();
+                    continue;
+                }
 
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentVersions
-                    (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
-                    VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());",
-                    new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
+                // --- Data Validation and Lookups ---
 
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentStateHistory
-                    (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
-                    VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded via Bulk Import', NOW());",
-                    new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
+                if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
+                {
+                    results.Add($"Row {row}: Skipped. Invalid Next Review Date '{nextReviewDateStr}'.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
 
-                await tx.CommitAsync();
-                results.Add($"Row {rowCount}: Successfully imported metadata for '{docNum}'.");
+                //var initiatorCode = await _common.ExecuteScalarAsync<string>("SELECT empcode FROM tblEmployee WHERE CompanyId = @CompanyId AND (firstname || ' ' || lastname) = @Name LIMIT 1", new { CompanyId, Name = initiatorName }, tx);
+                //if (string.IsNullOrEmpty(initiatorCode))
+                //{
+                //    results.Add($"Row {row}: Skipped. Initiator '{initiatorName}' not found.");
+                //    await tx.RollbackAsync();
+                //    continue;
+                //}
+
+                var docTypeCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM DocumentTypes WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = docTypeName }, tx);
+                if (string.IsNullOrEmpty(docTypeCode))
+                {
+                    results.Add($"Row {row}: Skipped. Document Type '{docTypeName}' not found.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                var divCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Divisions WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = divName }, tx);
+                if (string.IsNullOrEmpty(divCode))
+                {
+                    results.Add($"Row {row}: Skipped. Division '{divName}' not found.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                var deptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Departments WHERE CompanyId = @CompanyId AND Name = @Name AND DivisionCode = @DivCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = deptName, DivCode = divCode }, tx);
+                if (string.IsNullOrEmpty(deptCode))
+                {
+                    results.Add($"Row {row}: Skipped. Department '{deptName}' not found in Division '{divName}'.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                var subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
+                if (string.IsNullOrEmpty(subDeptCode))
+                {
+                    results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                // --- Database Insertion / Update ---
+                
+                var existingDoc = await _common.QuerySingleAsync<dynamic>(
+                    "SELECT Id, DocumentNumber FROM Documents WHERE Title = @Title AND CompanyId = @CompanyId AND IsDeleted = FALSE LIMIT 1",
+                    new { Title = title, CompanyId }, tx);
+
+                if (existingDoc != null)
+                {
+                    var docDict = (IDictionary<string, object>)existingDoc;
+                    int existingId = Convert.ToInt32(docDict["id"]);
+                    string existingDocNum = docDict["documentnumber"]?.ToString() ?? "";
+
+                    await _common.ExecuteAsync(@"
+                        UPDATE Documents
+                        SET DocumentTypeCode = @DocumentTypeCode,
+                            DivisionCode = @DivisionCode,
+                            DepartmentCode = @DepartmentCode,
+                            SubDepartmentCode = @SubDepartmentCode,
+                            NextReviewdate = @NextReviewDate,
+                            DocumentURL = @ExpectedFileName,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE Id = @Id AND CompanyId = @CompanyId;", new
+                    {
+                        CompanyId,
+                        Id = existingId,
+                        DocumentTypeCode = docTypeCode,
+                        DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
+                        DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
+                        SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
+                        NextReviewDate = nextReviewDate,
+                        ExpectedFileName = expectedFileName,
+                        UserId = empCode
+                    }, tx);
+
+                    int versionExists = await _common.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM DocumentVersions WHERE DocumentId = @DocumentId AND Version = @Version AND CompanyId = @CompanyId AND IsActive = TRUE",
+                        new { DocumentId = existingId, Version = version, CompanyId }, tx);
+
+                    if (versionExists == 0)
+                    {
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO DocumentVersions
+                            (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
+                            VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
+                            new { CompanyId, DocumentId = existingId, Version = version, UserId = empCode }, tx);
+                    }
+
+                    await tx.CommitAsync();
+                    results.Add($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
+                }
+                else
+                {
+                    int newId = await _common.ExecuteScalarAsync<int>(@"
+                        INSERT INTO Documents
+                        (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                            SubDepartmentCode, Title, NextReviewdate, DocumentURL,
+                            IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                        )
+                        VALUES
+                        (
+                            @CompanyId, 'DOC-' || nextval('document_seq'), @DocumentTypeCode, @DivisionCode, @DepartmentCode,
+                            @SubDepartmentCode, @Title, @NextReviewDate, @ExpectedFileName,
+                            TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                        )
+                        RETURNING Id;", new
+                    {
+                        CompanyId,
+                        DocumentTypeCode = docTypeCode,
+                        DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
+                        DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
+                        SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
+                        Title = title,
+                        NextReviewDate = nextReviewDate,
+                        ExpectedFileName = expectedFileName,
+                        UserId = empCode
+                    }, tx);
+
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO DocumentVersions
+                        (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt,LastModifiedBy, LastModifiedAt)
+                        VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
+                        new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
+
+                    await tx.CommitAsync();
+                    results.Add($"Row {row}: Successfully imported metadata for '{docNum}'.");
+                }
             }
             catch (Exception ex)
             {
                 await tx.RollbackAsync();
-                results.Add($"Row {rowCount}: Error - {ex.Message}");
+                results.Add($"Row {row}: Skipped. An unexpected error occurred: {ex.Message}");
             }
         }
 
@@ -3278,7 +3434,7 @@ public class DocumentComponent
                         continue;
                     }
 
-                    var newFileName = $"{Guid.NewGuid()}{fileExtension}";
+                    var newFileName = $"{file.FileName}{fileExtension}";
                     var filePath = Path.Combine(uploadsRoot, newFileName);
 
                     using (var stream = new FileStream(filePath, FileMode.Create))
@@ -3295,6 +3451,7 @@ public class DocumentComponent
                             LastModifiedBy = @UserId
                         WHERE Id = @DocumentId;",
                         new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = documentId });
+
 
                     results.Add($"File {safeFileName}: Successfully attached to Document ID {documentId}.");
                 }
