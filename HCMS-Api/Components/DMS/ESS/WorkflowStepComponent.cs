@@ -206,63 +206,129 @@ public class WorkflowStepComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = Convert.ToInt32(_CompanyId);
 
+            //string query = $@"
+            //    SELECT 
+            //        wsd.Id AS id, 
+            //        wsd.CompanyId AS companyid, 
+            //        c.Name AS company,
+            //        wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+            //        wp.Id AS workflowpolicyid, 
+            //        wp.Name AS workflowpolicyname,
+            //        wsd.StepOrder AS steporder, 
+            //        wsd.StepGroup AS stepgroup, 
+            //        wsd.StepType AS steptype,
+            //        wsd.RoleId AS roleid, 
+            //        wsd.DesignationId AS designationid, 
+            //        wsd.UserId AS userid, 
+            //        --wsd.ApprovalLevel AS approvallevel, 
+            //        wsd.RequiresAllApprovals AS requiresallapprovals,
+            //        wsd.RequiresAllApprovals AS isparallelapproval,
+            //        FALSE AS canedit,
+            //        FALSE AS requirecrossfunctionalhead,
+            //        e.empcode AS employeecode, 
+            //        e.firstname, e.midname, e.lastname,
+            //        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
+            //        COALESCE(r_step.name, r_emp.name) AS role, 
+            //        COALESCE(r_step.name, r_emp.name) AS userrole, 
+            //        COALESCE(des_step.name, des_fallback.name) AS designation,
+            //        COALESCE(des_step.code, des_fallback.code) AS designationcode,
+            //        wp.DocumentTypeCode AS documenttypecode, 
+            //        dt.Name AS documenttype,
+            //        wsd.IsActive AS isactive, 
+            //        wsd.IsDeleted AS isdeleted, 
+            //        wsd.CreatedAt AS createdat, 
+            //        wsd.CreatedBy AS createdby, 
+            //        wsd.LastModifiedAt AS lastmodifiedat, 
+            //        wsd.LastModifiedBy AS lastmodifiedby
+            //    FROM WorkflowStepDefinitions wsd
+            //    JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+            //    JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+            //    LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+            //    LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+            //    LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
+            //    LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+            //    LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
+            //    LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
+            //    LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
+            //    LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+            //    WHERE wp.CompanyId = @CompanyId
+            //    AND wp.EntityType = @EntityType
+            //    AND wp.DocumentTypeCode = @DocumentTypeCode
+            //    -- Allow filtering by specific policy name or ID
+            //    AND (@DivisionCode IS NULL OR @DivisionCode = '' OR wp.DivisionCode = @DivisionCode)
+            //    AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode)
+            //    AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode)
+            //    AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode)
+            //    AND wsd.IsActive = TRUE
+            //    AND wsd.IsDeleted = FALSE
+            //    ORDER BY wsd.StepOrder, e.empcode ASC;
+            //    ";
+
             string query = $@"
-                SELECT 
-                    wsd.Id AS id, 
-                    wsd.CompanyId AS companyid, 
-                    c.Name AS company,
-                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
-                    wp.Id AS workflowpolicyid, 
-                    wp.Name AS workflowpolicyname,
-                    wsd.StepOrder AS steporder, 
-                    wsd.StepGroup AS stepgroup, 
-                    wsd.StepType AS steptype,
-                    wsd.RoleId AS roleid, 
-                    wsd.DesignationId AS designationid, 
-                    wsd.UserId AS userid, 
-                    --wsd.ApprovalLevel AS approvallevel, 
-                    wsd.RequiresAllApprovals AS requiresallapprovals,
-                    wsd.RequiresAllApprovals AS isparallelapproval,
-                    FALSE AS canedit,
-                    FALSE AS requirecrossfunctionalhead,
-                    e.empcode AS employeecode, 
-                    e.firstname, e.midname, e.lastname,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
-                    COALESCE(r_step.name, r_emp.name) AS role, 
-                    COALESCE(r_step.name, r_emp.name) AS userrole, 
-                    COALESCE(des_step.name, des_fallback.name) AS designation,
-                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
-                    wp.DocumentTypeCode AS documenttypecode, 
-                    dt.Name AS documenttype,
-                    wsd.IsActive AS isactive, 
-                    wsd.IsDeleted AS isdeleted, 
-                    wsd.CreatedAt AS createdat, 
-                    wsd.CreatedBy AS createdby, 
-                    wsd.LastModifiedAt AS lastmodifiedat, 
-                    wsd.LastModifiedBy AS lastmodifiedby
-                FROM WorkflowStepDefinitions wsd
-                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
-                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
-                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
-                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
-                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
-                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
-                WHERE wp.CompanyId = @CompanyId
-                AND wp.EntityType = @EntityType
-                AND wp.DocumentTypeCode = @DocumentTypeCode
-                -- Allow filtering by specific policy name or ID
-                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
-                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
-                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
-                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
-                AND wsd.IsActive = TRUE
-                AND wsd.IsDeleted = FALSE
-                ORDER BY wsd.StepOrder, e.empcode ASC;
-                ";
+                    WITH SetupsLookup AS (
+                        SELECT sdlid, name, code 
+                        FROM tblsetupsdetail
+                    )
+                    SELECT DISTINCT
+                        wsd.Id AS id, 
+                        wsd.CompanyId AS companyid, 
+                        c.Name AS company,
+                        wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                        wp.Id AS workflowpolicyid, 
+                        wp.Name AS workflowpolicyname,
+                        wsd.StepOrder AS steporder, 
+                        wsd.StepGroup AS stepgroup, 
+                        wsd.StepType AS steptype,
+                        wsd.RoleId AS roleid, 
+                        wsd.DesignationId AS designationid, 
+                        wsd.UserId AS userid, 
+                        wsd.RequiresAllApprovals AS requiresallapprovals,
+                        wsd.RequiresAllApprovals AS isparallelapproval,
+                        FALSE AS canedit,
+                        FALSE AS requirecrossfunctionalhead,
+                        e.empcode AS employeecode, 
+                        e.firstname, e.midname, e.lastname,
+                        TRIM(CONCAT(e.firstname, ' ', e.midname, ' ', e.lastname)) AS employeename,
+                        COALESCE(r_step.name, r_emp.name) AS role, 
+                        COALESCE(r_step.name, r_emp.name) AS userrole, 
+                        COALESCE(des_step.name, des_fallback.name) AS designation,
+                        COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                        wp.DocumentTypeCode AS documenttypecode, 
+                        wp.DivisionCode,
+                        wp.DepartmentCode,
+                        wp.SubDepartmentCode,
+                        wp.BusinessDomainCode,
+                        dt.Name AS documenttype,
+                        wsd.IsActive AS isactive, 
+                        wsd.IsDeleted AS isdeleted, 
+                        wsd.CreatedAt AS createdat, 
+                        wsd.CreatedBy AS createdby, 
+                        wsd.LastModifiedAt AS lastmodifiedat, 
+                        wsd.LastModifiedBy AS lastmodifiedby
+                    FROM WorkflowStepDefinitions wsd
+                    JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                    JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                    LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                    LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+                    LEFT JOIN tblEmployee e ON e.empcode::bigint = wsd.UserId::bigint
+                    LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND ejp.active IS NOT FALSE
+                    LEFT JOIN SetupsLookup r_step ON r_step.sdlid = wsd.RoleId
+                    LEFT JOIN SetupsLookup r_emp ON r_emp.sdlid = ejp.roleid
+                    LEFT JOIN SetupsLookup des_step ON des_step.sdlid = wsd.DesignationId
+                    LEFT JOIN SetupsLookup des_fallback ON des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+                    WHERE wp.CompanyId = @CompanyId
+                    AND wp.EntityType = @EntityType
+                    AND wp.DocumentTypeCode = @DocumentTypeCode
+
+                    -- Exact match filters: Treats NULL and empty string '' as identical values, without acting as wildcards
+                    AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode, '')
+                    AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode, '')
+                    AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode, '')
+                    AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode, '')
+
+                    AND wsd.IsActive = TRUE
+                    AND wsd.IsDeleted = FALSE
+                    ORDER BY wsd.StepOrder, e.empcode ASC;";
 
             string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
@@ -362,10 +428,10 @@ public class WorkflowStepComponent
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
                 -- Allow filtering by specific policy name or ID
-                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
-                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
-                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
-                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR wp.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode)
                 AND ws.IsActive = TRUE
                 AND ws.IsDeleted = FALSE
                 ORDER BY ws.StepOrder, ws.employeecode ASC;";
@@ -969,64 +1035,76 @@ public class WorkflowStepComponent
             //-----------------------------------------
             // 7️⃣ Return Updated Steps
             //-----------------------------------------
-
+             
 
             string query = $@"
-                SELECT 
-                    wsd.Id AS id, 
-                    wsd.CompanyId AS companyid, 
-                    c.Name AS company,
-                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
-                    wp.Id AS workflowpolicyid, 
-                    wp.Name AS workflowpolicyname,
-                    wsd.StepOrder AS steporder, 
-                    wsd.StepGroup AS stepgroup, 
-                    wsd.StepType AS steptype,
-                    wsd.RoleId AS roleid, 
-                    wsd.DesignationId AS designationid, 
-                    wsd.UserId AS userid, 
-                    --wsd.ApprovalLevel AS approvallevel, 
-                    wsd.RequiresAllApprovals AS requiresallapprovals,
-                    wsd.RequiresAllApprovals AS isparallelapproval,
-                    FALSE AS canedit,
-                    FALSE AS requirecrossfunctionalhead,
-                    e.empcode AS employeecode, 
-                    e.firstname, e.midname, e.lastname,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
-                    COALESCE(r_step.name, r_emp.name) AS role, 
-                    COALESCE(r_step.name, r_emp.name) AS userrole, 
-                    COALESCE(des_step.name, des_fallback.name) AS designation,
-                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
-                    wp.DocumentTypeCode AS documenttypecode, 
-                    dt.Name AS documenttype,
-                    wsd.IsActive AS isactive, 
-                    wsd.IsDeleted AS isdeleted, 
-                    wsd.CreatedAt AS createdat, 
-                    wsd.CreatedBy AS createdby, 
-                    wsd.LastModifiedAt AS lastmodifiedat, 
-                    wsd.LastModifiedBy AS lastmodifiedby
-                FROM WorkflowStepDefinitions wsd
-                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
-                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) = 1
-                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
-                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
-                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
-                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
-                WHERE wp.CompanyId = @CompanyId
-                AND wp.EntityType = @EntityType
-                AND wp.DocumentTypeCode = @DocumentTypeCode
-                -- Allow filtering by specific policy name or ID
-                AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
-                AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
-                AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
-                AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
-                AND wsd.IsActive = TRUE
-                AND wsd.IsDeleted = FALSE
-                ORDER BY wsd.StepOrder, e.empcode ASC";
+                        WITH SetupsLookup AS (
+                            -- Project only the required columns to minimize join data buffer size in memory
+                            SELECT sdlid, name, code 
+                            FROM tblsetupsdetail
+                        )
+                        SELECT 
+                            wsd.Id AS id, 
+                            wsd.CompanyId AS companyid, 
+                            c.Name AS company,
+                            wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                            wp.Id AS workflowpolicyid, 
+                            wp.Name AS workflowpolicyname,
+                            wsd.StepOrder AS steporder, 
+                            wsd.StepGroup AS stepgroup, 
+                            wsd.StepType AS steptype,
+                            wsd.RoleId AS roleid, 
+                            wsd.DesignationId AS designationid, 
+                            wsd.UserId AS userid, 
+                            wsd.RequiresAllApprovals AS requiresallapprovals,
+                            wsd.RequiresAllApprovals AS isparallelapproval,
+                            FALSE AS canedit,
+                            FALSE AS requirecrossfunctionalhead,
+                            e.empcode AS employeecode, 
+                            e.firstname, e.midname, e.lastname,
+                            TRIM(CONCAT(e.firstname, ' ', e.midname, ' ', e.lastname)) AS employeename,
+                            COALESCE(r_step.name, r_emp.name) AS role, 
+                            COALESCE(r_step.name, r_emp.name) AS userrole, 
+                            COALESCE(des_step.name, des_fallback.name) AS designation,
+                            COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                            wp.DocumentTypeCode AS documenttypecode, 
+                            dt.Name AS documenttype,
+                            wsd.IsActive AS isactive, 
+                            wsd.IsDeleted AS isdeleted, 
+                            wsd.CreatedAt AS createdat, 
+                            wsd.CreatedBy AS createdby, 
+                            wsd.LastModifiedAt AS lastmodifiedat, 
+                            wsd.LastModifiedBy AS lastmodifiedby
+                        FROM WorkflowStepDefinitions wsd
+                        JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                        JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                        LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                        LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+    
+                        -- Cast join to strip leading zeros in e.empcode and wsd.UserId efficiently
+                        LEFT JOIN tblEmployee e ON e.empcode::bigint = wsd.UserId::bigint
+                        LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND ejp.active IS NOT FALSE
+    
+                        -- Joins mapped against the narrow SetupsLookup CTE projection
+                        LEFT JOIN SetupsLookup r_step ON r_step.sdlid = wsd.RoleId
+                        LEFT JOIN SetupsLookup r_emp ON r_emp.sdlid = ejp.roleid
+                        LEFT JOIN SetupsLookup des_step ON des_step.sdlid = wsd.DesignationId
+                        LEFT JOIN SetupsLookup des_fallback ON des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+    
+                        WHERE wp.CompanyId = @CompanyId
+                        AND wp.EntityType = @EntityType
+                        AND wp.DocumentTypeCode = @DocumentTypeCode
+                        AND wsd.IsActive = TRUE
+                        AND wsd.IsDeleted = FALSE
+    
+                        -- Sargable index-friendly filters
+                        AND (@DivisionCode IS NULL OR @DivisionCode = '' OR wp.DivisionCode = @DivisionCode)
+                        AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode)
+                        AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode)
+                        AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode)
+    
+                        ORDER BY wsd.StepOrder, e.empcode ASC;
+                        ";
 
             var queryParams = new
             {

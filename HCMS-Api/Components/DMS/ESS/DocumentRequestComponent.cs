@@ -3237,5 +3237,40 @@ public class DocumentRequestComponent
             throw;
         }
     }
+     
+
+    public async Task<IQueryable<SelectListDto>> GetRequestCreatedByUserListAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"SELECT DISTINCT
+                        e.empCode AS Employeecode,
+                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName 
+                    FROM DocumentRequests dr
+ 
+                    -- Assigned Employee
+                    LEFT JOIN tblEmployee e
+                        ON e.empCode = dr.createdBy 
+                WHERE dr.CompanyId = {CompanyId};";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            var list = dt.AsEnumerable()
+                .Select(row => new SelectListDto
+                {
+                    Code = row.Field<string>("Employeecode"),
+                    Value = row.Field<string>("EmployeeName")
+                }).ToList();
+
+            return list.AsQueryable();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
 
 }

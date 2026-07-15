@@ -188,7 +188,7 @@ public class DMSDocumentController : Controller
             {
                 Success = true,
                 Data = await _documentComponent.SubmitDocumentAsync(input),
-                Message = "Success",
+                Message = "Document Created Successfully",
                 Code = 200
             });
         }
@@ -216,7 +216,7 @@ public class DMSDocumentController : Controller
             {
                 Success = true,
                 Data = await _documentComponent.ApproveDocumentAsync(input),
-                Message = "Success",
+                Message = "Document Approved Successfully",
                 Code = 200
             });
         }
@@ -244,7 +244,7 @@ public class DMSDocumentController : Controller
             {
                 Success = true,
                 Data = await _documentComponent.RejectDocumentAsync(input),
-                Message = "Success",
+                Message = "Document Rejected Successfully",
                 Code = 200
             });
         }
@@ -272,7 +272,7 @@ public class DMSDocumentController : Controller
             {
                 Success = true,
                 Data = await _documentComponent.SendBackForReworkAsync(input),
-                Message = "Success",
+                Message = "Document Reverted Successfully",
                 Code = 200
             });
         }
@@ -522,7 +522,7 @@ public class DMSDocumentController : Controller
     }
 
     [HttpPost("get-documents-pending-approval")]
-    public async Task<IActionResult> GetDocumentsPendingApprovalAsync(TableFiltersDto input)
+    public async Task<IActionResult> GetDocumentsPendingApprovalAsync(GetDocumentsPendingApprovalDto input)
     {
         try
         {
@@ -660,8 +660,61 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpGet("download-bulk-upload-template")]
+    public async Task<IActionResult> ExportMyInboxRequestsAsync()
+    {
+        try
+        {
+            var relativePath = "template/DMS_BulkUpload_Template.xlsx";
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
 
-    
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound(new HttpApiResponse<object>()
+                {
+                    Success = false,
+                    Data = new { },
+                    Message = "Physical file does not exist on the server.",
+                    Code = 404
+                });
+            }
+
+            var memory = new MemoryStream();
+            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            {
+                await stream.CopyToAsync(memory);
+            }
+            memory.Position = 0;
+
+            // 1. Dynamically determine the content type based on the file extension (Removes hardcoding)
+            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+            if (!provider.TryGetContentType(filePath, out var contentType))
+            {
+                contentType = "application/octet-stream"; // Default fallback if type is unknown
+            }
+
+            var fileName = Path.GetFileName(filePath);
+
+            // 2. CRUCIAL FIX: Expose the Content-Disposition header to the frontend
+            // Without this line, Angular is completely blocked from reading the filename and extension!
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(memory, contentType, fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
 
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)

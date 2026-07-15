@@ -532,7 +532,7 @@ public class DocumentComponent
 
                 Title = row.Field<string>("Title"),
 
-                NextReviewDate = row.Field<string>("NextReviewDate"),
+                NextReviewDate = row.Field<DateOnly?>("NextReviewDate")?.ToString("yyyy-MM-dd") ?? string.Empty,
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -648,7 +648,7 @@ public class DocumentComponent
             new { input.DocumentId, CompanyId }, transaction);
 
             if (doc == null)
-                throw new Exception("Document not found.");
+                throw new CustomException("Document not found.", 404);
 
 
             //-------------------------------------------------
@@ -691,7 +691,7 @@ public class DocumentComponent
             }, transaction);
 
             if (policyId == null)
-                throw new Exception("No workflow policy defined for selected Cabinet Scope.");
+                throw new CustomException("No workflow policy defined for selected Cabinet Scope.", 404);
 
             //-------------------------------------------------
             // 3️⃣ Resolve Active Policy Version
@@ -711,7 +711,7 @@ public class DocumentComponent
             }, transaction);
 
             if (versionId == null)
-                throw new Exception("Workflow policy not defined for Document.");
+                throw new CustomException("Workflow policy not defined for Document.", 404);
 
             //-------------------------------------------------
             // 4️⃣ Promote Version (Rework Case)
@@ -791,7 +791,7 @@ public class DocumentComponent
                         new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
 
                     if (!employees.Any())
-                        throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
+                        throw new CustomException("Workflow misconfigured — no active employees found for a configured Role/Designation step.", 404);
 
                     foreach (var emp in employees)
                     {
@@ -818,7 +818,7 @@ public class DocumentComponent
             }
 
             if (inserted < 1)
-                throw new Exception("Workflow misconfigured — no steps copied.");
+                throw new CustomException("Workflow misconfigured — no steps copied.", 404);
 
             //-------------------------------------------------
             // 7️⃣ Activate First Step
@@ -2263,7 +2263,8 @@ public class DocumentComponent
         }
     }
 
-    public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(TableFiltersDto input)
+
+    public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(GetDocumentsPendingApprovalDto input)
     {
         try
         {
@@ -2272,15 +2273,20 @@ public class DocumentComponent
 
             // UC-33: Filter to show only documents in the pipeline (Not Draft, Effective, Rejected, or Obsolete)
             var whereClause = @"
-                WHERE doc.CompanyId = @CompanyId 
-                  AND doc.IsDeleted = FALSE
-                  AND (
-                      SELECT ds.Code 
-                      FROM DocumentStateHistory dsh 
-                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+            WHERE doc.CompanyId = @CompanyId 
+              AND doc.IsDeleted = FALSE
+              AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+              AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+              AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+              AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+              AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)
+              AND (
+                  SELECT ds.Code 
+                  FROM DocumentStateHistory dsh 
+                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                  WHERE dsh.DocumentId = doc.Id 
+                  ORDER BY dsh.ChangedAt DESC LIMIT 1
+              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -2303,45 +2309,53 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT DISTINCT
-                    doc.*,
-                    dv.Version,
-                    (SELECT ds.Name 
-                     FROM DocumentStateHistory dsh 
-                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                     WHERE dsh.DocumentId = doc.Id 
-                     ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
-                    -- Resolve the current workflow authority dynamically
-                    COALESCE(
-                        (SELECT STRING_AGG(
-                            COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
-                        )
-                        FROM WorkflowExecutionSteps wes
-                        LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
-                        LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
-                        LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
-                        WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
-                        'Pending Training/Authorization'
-                    ) AS CurrentWorkflowAuthority,
-                    doc.CreatedAt
-                FROM Vw_Documents doc
-                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
-                LEFT JOIN LATERAL (
-                    SELECT Version FROM DocumentVersions 
-                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
-                    ORDER BY CreatedAt DESC LIMIT 1
-                ) dv ON TRUE
-                LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
-                {whereClause}
-                ORDER BY {sortColumn} {sortDirection}
-                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+            SELECT DISTINCT
+                doc.*,
+                dv.Version,
+                (SELECT ds.Name 
+                 FROM DocumentStateHistory dsh 
+                 JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                 WHERE dsh.DocumentId = doc.Id 
+                 ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
+                -- Resolve the current workflow authority dynamically
+                COALESCE(
+                    (SELECT STRING_AGG(
+                        COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
+                    )
+                    FROM WorkflowExecutionSteps wes
+                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
+                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
+                    WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
+                    'Pending Training/Authorization'
+                ) AS CurrentWorkflowAuthority,
+                doc.CreatedAt
+            FROM Vw_Documents doc
+            LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+            LEFT JOIN LATERAL (
+                SELECT Version FROM DocumentVersions 
+                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
+                ORDER BY CreatedAt DESC LIMIT 1
+            ) dv ON TRUE
+            LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+            {whereClause}
+            ORDER BY {sortColumn} {sortDirection}
+            OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(1) 
-                FROM Documents doc 
-                {whereClause};";
+            SELECT COUNT(1) 
+            FROM Documents doc 
+            {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId };
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DocumentTypeCode = input.DocumentTypeCode,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2357,6 +2371,101 @@ public class DocumentComponent
             throw;
         }
     }
+
+    //public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(TableFiltersDto input)
+    //{
+    //    try
+    //    {
+    //        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+    //        int CompanyId = int.Parse(_CompanyId);
+
+    //        // UC-33: Filter to show only documents in the pipeline (Not Draft, Effective, Rejected, or Obsolete)
+    //        var whereClause = @"
+    //            WHERE doc.CompanyId = @CompanyId 
+    //              AND doc.IsDeleted = FALSE
+    //              AND (
+    //                  SELECT ds.Code 
+    //                  FROM DocumentStateHistory dsh 
+    //                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+    //                  WHERE dsh.DocumentId = doc.Id 
+    //                  ORDER BY dsh.ChangedAt DESC LIMIT 1
+    //              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+
+    //        if (!string.IsNullOrWhiteSpace(input.SearchText))
+    //        {
+    //            var search = input.SearchText.Replace("'", "''").ToUpper();
+    //            whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+    //        }
+
+    //        string sortColumn = input.SortColumn?.ToUpper() switch
+    //        {
+    //            "DOCUMENTNUMBER" => "doc.DocumentNumber",
+    //            "TITLE" => "doc.Title",
+    //            "CREATEDAT" => "doc.CreatedAt",
+    //            "CREATEDBY" => "doc.CreatedBy",
+    //            "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+    //            "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+    //            _ => "doc.CreatedAt"
+    //        };
+
+    //        string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+    //        int offset = (input.PageNumber - 1) * input.PageSize;
+
+    //        string dataSql = $@"
+    //            SELECT DISTINCT
+    //                doc.*,
+    //                dv.Version,
+    //                (SELECT ds.Name 
+    //                 FROM DocumentStateHistory dsh 
+    //                 JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+    //                 WHERE dsh.DocumentId = doc.Id 
+    //                 ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
+    //                -- Resolve the current workflow authority dynamically
+    //                COALESCE(
+    //                    (SELECT STRING_AGG(
+    //                        COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
+    //                    )
+    //                    FROM WorkflowExecutionSteps wes
+    //                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+    //                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
+    //                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
+    //                    WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
+    //                    'Pending Training/Authorization'
+    //                ) AS CurrentWorkflowAuthority,
+    //                doc.CreatedAt
+    //            FROM Vw_Documents doc
+    //            LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+    //            LEFT JOIN LATERAL (
+    //                SELECT Version FROM DocumentVersions 
+    //                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
+    //                ORDER BY CreatedAt DESC LIMIT 1
+    //            ) dv ON TRUE
+    //            LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+    //            {whereClause}
+    //            ORDER BY {sortColumn} {sortDirection}
+    //            OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+    //        string countSql = $@"
+    //            SELECT COUNT(1) 
+    //            FROM Documents doc 
+    //            {whereClause};";
+
+    //        var queryParams = new { CompanyId = CompanyId };
+
+    //        var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+    //        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+    //        return new PaginationResult<dynamic>
+    //        {
+    //            Items = items,
+    //            TotalCount = totalCount
+    //        };
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        throw;
+    //    }
+    //}
 
     public async Task<bool> AuthorizeDocumentPostTrainingAsync(AuthorizeDocumentDto input)
     {
@@ -2804,6 +2913,10 @@ public class DocumentComponent
             {
                 whereClause += " AND (doc.CreatedAt::date >= @RequestCreatedFromDate::date AND doc.CreatedAt::date <= @RequestCreatedToDate::date)";
             }
+            if (!string.IsNullOrWhiteSpace(input.RequestCreatedBy) && !string.IsNullOrWhiteSpace(input.RequestCreatedBy))
+            {
+                whereClause += " AND doc.CreatedBy = @RequestCreatedBy";
+            }
 
             if (input.DateFrom.HasValue && input.DateTo.HasValue)
             {
@@ -2876,7 +2989,8 @@ public class DocumentComponent
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
                 BusinessDomainCode = input.BusinessDomainCode,
-                DocumentTypeCode = input.DocumentTypeCode
+                DocumentTypeCode = input.DocumentTypeCode,
+                RequestCreatedBy = input.RequestCreatedBy
             };
 
             var documents = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
@@ -3303,9 +3417,17 @@ public class GetPendingAuthorization : TableFiltersDto
     public string? ActionType { get; set; }
 }
 
-public class GetAuthorizedDocumentsDto : TableFiltersDto
+public class GetDocumentsPendingApprovalDto : TableFiltersDto
 {
-    public string UserId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
+
+}
+public class GetAuthorizedDocumentsDto : TableFiltersDto
+{ 
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
@@ -3344,4 +3466,5 @@ public class GetApprovedDocumentsFilterDto : TableFiltersDto
     public string? ApprovedToDate { get; set; }
     public string? RequestCreatedFromDate { get; set; }
     public string? RequestCreatedToDate { get; set; }
+    public string? RequestCreatedBy { get; set; }
 }

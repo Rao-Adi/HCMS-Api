@@ -361,7 +361,7 @@ public class PeoplePartnersComponent
         if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
             ualConditions.Add("ual.BusinessDomainCode = @BusinessDomainCode");
 
-        whereClause += $" AND EXISTS (SELECT 1 FROM UserAccessLevels ual WHERE {string.Join(" AND ", ualConditions)})";
+        //whereClause += $" AND EXISTS (SELECT 1 FROM UserAccessLevels ual WHERE {string.Join(" AND ", ualConditions)})";
 
         if (!string.IsNullOrWhiteSpace(search))
         {

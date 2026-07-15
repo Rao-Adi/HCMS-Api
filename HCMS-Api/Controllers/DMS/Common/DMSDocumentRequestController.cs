@@ -741,6 +741,35 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+
+    [HttpGet("get-request-created-by-user-list")]
+    public async Task<IActionResult> GetRequestCreatedByUserList()
+    {
+        try
+        {
+            var selectList = await _documentRequestComponent.GetRequestCreatedByUserListAsync();
+            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            {
+                Success = true,
+                Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
+
     //[HttpPost("create-document-request")]
     //public async Task<IActionResult> Create([FromBody] CreateDocumentRequest2Dto input)
     //{

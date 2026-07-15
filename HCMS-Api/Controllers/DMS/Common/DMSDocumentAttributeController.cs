@@ -212,7 +212,7 @@ public class DMSDocumentAttributeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
+            return Ok(new HttpApiResponse<List<DocumentAttributeReadDto>>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.UpdateAsync(input),

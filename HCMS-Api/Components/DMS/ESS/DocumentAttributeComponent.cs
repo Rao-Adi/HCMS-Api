@@ -6,6 +6,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -577,7 +578,7 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttributeReadDto> UpdateAsync(DocumentAttributeUpdateDto input)
+    public async Task<List<DocumentAttributeReadDto>> UpdateAsync(DocumentAttributeUpdateDto input)
     {
         try
         {
@@ -610,16 +611,15 @@ public class DocumentAttributeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}' CompanyId = {CompanyId}";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
             string selectQuery = $@"
-                    SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
                          FROM DocumentAttributes da
                               LEFT JOIN DocumentTypes dt
@@ -628,33 +628,40 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-            WHERE da.Id = '{input.Id}' AND da.CompanyId = {CompanyId}";
+                         WHERE da.DocumentTypeCode = '{input.DocumentTypeCode}' AND da.CompanyId = {CompanyId}
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
-            DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
-            if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
 
-            DataRow row = dt.Rows[0];
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(selectQuery);
+            DataTable divisionsTable = ds.Tables[0];
 
-            return new DocumentAttributeReadDto
-            {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                ControlLabel = row.Field<string>("ControlLabel"),
-                ControlTypeId = row.Field<int>("ControlTypeId"),
-                ControlType = row.Field<string>("ControlType"),
-                ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
+            var documentAttributes = divisionsTable.AsEnumerable()
+                .Select(row => new DocumentAttributeReadDto
+                {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                    ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
+                    ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
+                    ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                }).ToList();
+
+
+            return documentAttributes;
         }
         catch (Exception ex)
         {
