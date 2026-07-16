@@ -3052,34 +3052,42 @@ public class DocumentComponent
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+        //LogToFile($"[BULK IMPORT] Starting import. ClientIP: {clientIp}, EmpId: {empId}, EmpCode: {empCode}, CompanyId: {CompanyId}");
+
         var results = new List<string>();
         if (excelFile == null || excelFile.Length == 0)
         {
+            //LogToFile("[BULK IMPORT] Error: No file provided or file length is 0.");
             results.Add("Error: No file provided.");
             return results;
         } 
 
         var parsedRows = new List<ParsedRow>();
         var fileExtension = Path.GetExtension(excelFile.FileName).ToLower();
+        //LogToFile($"[BULK IMPORT] File name: '{excelFile.FileName}', extension: '{fileExtension}', length: {excelFile.Length} bytes.");
 
         if (fileExtension == ".xlsx" || fileExtension == ".xls")
         {
             try
             {
+                //LogToFile("[BULK IMPORT] Opening file as Excel package...");
                 using var stream = excelFile.OpenReadStream();
                 using var package = new ExcelPackage(stream);
                 var worksheet = package.Workbook.Worksheets.FirstOrDefault();
                 if (worksheet == null || worksheet.Dimension == null)
                 {
+                    //LogToFile("[BULK IMPORT] Error: Excel worksheet or dimension is null.");
                     results.Add("Error: Excel worksheet is empty or invalid.");
                     return results;
                 }
 
                 int totalRows = worksheet.Dimension.End.Row;
                 int totalCols = worksheet.Dimension.End.Column;
+                //LogToFile($"[BULK IMPORT] Excel sheet loaded. Rows: {totalRows}, Columns: {totalCols}");
 
                 if (totalRows < 1)
                 {
+                    //LogToFile("[BULK IMPORT] Error: Excel totalRows < 1.");
                     results.Add("Error: Excel file has no rows.");
                     return results;
                 }
@@ -3105,9 +3113,11 @@ public class DocumentComponent
                         parsedRows.Add(new ParsedRow { RowNumber = row, Columns = cols });
                     }
                 }
+                //LogToFile($"[BULK IMPORT] Excel parsing complete. Found {parsedRows.Count} non-empty rows.");
             }
             catch (Exception ex)
             {
+                //LogToFile($"[BULK IMPORT] Exception during Excel read: {ex}");
                 results.Add($"Error reading Excel file: {ex.Message}");
                 return results;
             }
@@ -3116,11 +3126,13 @@ public class DocumentComponent
         {
             try
             {
+                //LogToFile("[BULK IMPORT] Opening file as CSV...");
                 using var reader = new StreamReader(excelFile.OpenReadStream());
                 var header = await reader.ReadLineAsync();
 
                 if (string.IsNullOrWhiteSpace(header))
                 {
+                    //LogToFile("[BULK IMPORT] Error: CSV header is empty.");
                     results.Add("Error: CSV file is empty or has an invalid header.");
                     return results;
                 }
@@ -3136,15 +3148,18 @@ public class DocumentComponent
                                                                    .Select(x => x.Trim('"', ' ')).ToArray();
                     parsedRows.Add(new ParsedRow { RowNumber = rowCount, Columns = cols });
                 }
+                //LogToFile($"[BULK IMPORT] CSV parsing complete. Found {parsedRows.Count} non-empty rows.");
             }
             catch (Exception ex)
             {
+                //LogToFile($"[BULK IMPORT] Exception during CSV read: {ex}");
                 results.Add($"Error reading CSV file: {ex.Message}");
                 return results;
             }
         }
         else
         {
+            //LogToFile($"[BULK IMPORT] Error: Invalid file format extension: '{fileExtension}'.");
             results.Add("Error: Invalid file format. Please upload an .xlsx, .xls or .csv file.");
             return results;
         }
@@ -3154,11 +3169,13 @@ public class DocumentComponent
             int row = parsedRow.RowNumber;
             var cols = parsedRow.Columns;
 
+            //LogToFile($"[BULK IMPORT] Row {row}: Starting processing. Cols count: {cols.Length}");
             await using var tx = await _common.BeginTransactionAsync();
             try
             {
                 if (cols.Length < 11)
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Insufficient columns ({cols.Length} < 11). Skipped.");
                     results.Add($"Row {row}: Skipped. Insufficient columns (expected 11, found {cols.Length}).");
                     await tx.RollbackAsync();
                     continue;
@@ -3176,8 +3193,11 @@ public class DocumentComponent
                 var nextReviewDateStr = cols[9].Trim();
                 var expectedFileName = cols[10].Trim();
 
+                //LogToFile($"[BULK IMPORT] Row {row}: Mapping: DocNum='{docNum}', Title='{title}', Initiator='{initiatorName}', Version='{version}', DocType='{docTypeName}', Div='{divName}', Dept='{deptName}', SubDept='{subDeptName}', NextReviewStr='{nextReviewDateStr}', ExpectedFile='{expectedFileName}'");
+
                 if (string.IsNullOrWhiteSpace(docNum) && string.IsNullOrWhiteSpace(title))
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Both DocNum and Title are empty. Skipped.");
                     await tx.RollbackAsync();
                     continue;
                 }
@@ -3186,46 +3206,47 @@ public class DocumentComponent
 
                 if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Invalid Next Review Date: '{nextReviewDateStr}'. Skipped.");
                     results.Add($"Row {row}: Skipped. Invalid Next Review Date '{nextReviewDateStr}'.");
                     await tx.RollbackAsync();
                     continue;
                 }
 
-                //var initiatorCode = await _common.ExecuteScalarAsync<string>("SELECT empcode FROM tblEmployee WHERE CompanyId = @CompanyId AND (firstname || ' ' || lastname) = @Name LIMIT 1", new { CompanyId, Name = initiatorName }, tx);
-                //if (string.IsNullOrEmpty(initiatorCode))
-                //{
-                //    results.Add($"Row {row}: Skipped. Initiator '{initiatorName}' not found.");
-                //    await tx.RollbackAsync();
-                //    continue;
-                //}
-
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Document Type Code where Name='{docTypeName}'");
                 var docTypeCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM DocumentTypes WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = docTypeName }, tx);
                 if (string.IsNullOrEmpty(docTypeCode))
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Document Type '{docTypeName}' not found. Skipped.");
                     results.Add($"Row {row}: Skipped. Document Type '{docTypeName}' not found.");
                     await tx.RollbackAsync();
                     continue;
                 }
 
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Division Code where Name='{divName}'");
                 var divCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Divisions WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = divName }, tx);
                 if (string.IsNullOrEmpty(divCode))
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Division '{divName}' not found. Skipped.");
                     results.Add($"Row {row}: Skipped. Division '{divName}' not found.");
                     await tx.RollbackAsync();
                     continue;
                 }
 
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Department Code where Name='{deptName}' and DivCode='{divCode}'");
                 var deptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Departments WHERE CompanyId = @CompanyId AND Name = @Name AND DivisionCode = @DivCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = deptName, DivCode = divCode }, tx);
                 if (string.IsNullOrEmpty(deptCode))
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Department '{deptName}' not found in Division '{divName}'. Skipped.");
                     results.Add($"Row {row}: Skipped. Department '{deptName}' not found in Division '{divName}'.");
                     await tx.RollbackAsync();
                     continue;
                 }
 
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for SubDepartment Code where Name='{subDeptName}' and DeptCode='{deptCode}'");
                 var subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
                 if (string.IsNullOrEmpty(subDeptCode))
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Sub-Department '{subDeptName}' not found in Department '{deptName}'. Skipped.");
                     results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
                     await tx.RollbackAsync();
                     continue;
@@ -3233,7 +3254,8 @@ public class DocumentComponent
 
                 // --- Database Insertion / Update ---
                 
-                var existingDoc = await _common.QuerySingleAsync<dynamic>(
+                //LogToFile($"[BULK IMPORT] Row {row}: Checking if document with Title='{title}' exists...");
+                var existingDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(
                     "SELECT Id, DocumentNumber FROM Documents WHERE Title = @Title AND CompanyId = @CompanyId AND IsDeleted = FALSE LIMIT 1",
                     new { Title = title, CompanyId }, tx);
 
@@ -3242,6 +3264,7 @@ public class DocumentComponent
                     var docDict = (IDictionary<string, object>)existingDoc;
                     int existingId = Convert.ToInt32(docDict["id"]);
                     string existingDocNum = docDict["documentnumber"]?.ToString() ?? "";
+                    //LogToFile($"[BULK IMPORT] Row {row}: Existing document found. ID: {existingId}, DocNum: '{existingDocNum}'. Performing UPDATE.");
 
                     await _common.ExecuteAsync(@"
                         UPDATE Documents
@@ -3266,24 +3289,32 @@ public class DocumentComponent
                         UserId = empCode
                     }, tx);
 
+                    //LogToFile($"[BULK IMPORT] Row {row}: UPDATE on Documents table succeeded. Checking if version '{version}' exists...");
                     int versionExists = await _common.ExecuteScalarAsync<int>(
                         "SELECT COUNT(1) FROM DocumentVersions WHERE DocumentId = @DocumentId AND Version = @Version AND CompanyId = @CompanyId AND IsActive = TRUE",
                         new { DocumentId = existingId, Version = version, CompanyId }, tx);
 
                     if (versionExists == 0)
                     {
+                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' does not exist. Inserting into DocumentVersions.");
                         await _common.ExecuteAsync(@"
                             INSERT INTO DocumentVersions
                             (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
                             VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
                             new { CompanyId, DocumentId = existingId, Version = version, UserId = empCode }, tx);
                     }
+                    else
+                    {
+                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' already exists.");
+                    }
 
                     await tx.CommitAsync();
+                    //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (UPDATE).");
                     results.Add($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
                 }
                 else
                 {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Document not found. Performing INSERT.");
                     int newId = await _common.ExecuteScalarAsync<int>(@"
                         INSERT INTO Documents
                         (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
@@ -3309,24 +3340,47 @@ public class DocumentComponent
                         UserId = empCode
                     }, tx);
 
+                    //LogToFile($"[BULK IMPORT] Row {row}: INSERT on Documents table succeeded. New ID: {newId}. Inserting into DocumentVersions...");
                     await _common.ExecuteAsync(@"
                         INSERT INTO DocumentVersions
-                        (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt,LastModifiedBy, LastModifiedAt)
+                        (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
                         VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
                         new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
 
                     await tx.CommitAsync();
+                    //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (INSERT).");
                     results.Add($"Row {row}: Successfully imported metadata for '{docNum}'.");
                 }
             }
             catch (Exception ex)
             {
+                //LogToFile($"[BULK IMPORT] Row {row}: Exception caught: {ex}");
                 await tx.RollbackAsync();
-                results.Add($"Row {row}: Skipped. An unexpected error occurred: {ex.Message}");
+                results.Add($"Row {row}: Skipped. An unexpected error occurred: {ex.Message}. StackTrace: {ex.StackTrace}");
             }
         }
 
         return results;
+    }
+
+    private void LogToFile(string message)
+    {
+        try
+        {
+            Console.WriteLine(message);
+            var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
+            if (!Directory.Exists(logDirectory))
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
+            var logPath = Path.Combine(logDirectory, "bulk_import_log.txt");
+            var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}";
+            File.AppendAllText(logPath, logLine);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[BULK IMPORT LOGGER ERROR] {ex.Message}");
+        }
     }
 
     public async Task<List<string>> BulkUploadDocumentFilesAsync(List<IFormFile> files)
@@ -3553,6 +3607,143 @@ public class DocumentComponent
         }
     }
 
+
+
+    public async Task<byte[]> ExportMyDocumentsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            } 
+             
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "Title",
+                "DOCUMENTNUMBER" => "DocumentNumber",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
+                _ => "CreatedAt"
+            };
+
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+             
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_documents(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @DocumentTypeCode
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection} ;";
+
+            var queryParams = new
+            {
+                CompanyId,
+                UserId = empCode,
+                input.RequestStatus,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+             
+            var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
+            if (!requests.Any())
+            {
+                return Array.Empty<byte>();
+            }
+
+            var sb = new System.Text.StringBuilder();
+            
+            // Add header row matching Angular model columns
+            var headers = new List<string>
+            {
+                "ExecutionId", "Id", "documentId", "stepId", "stepOrder", "ExecutionStatus",
+                "documentType", "documentTypeCode", "documentName", "company", "proposedDocumentNumber", "proposedVersionNumber",
+                "division", "department", "departmentId", "subDepartment", "subDepartmentId", "businessDomain", "businessDomainId",
+                "proposedContent", "draftFileUrl", "requestCreatedBy", "dateOfCreation", "requestCreatedOn", "startedAt",
+                "previsousVersionCreatedBy", "previousVersionCreatedOn", "observation", "requestedBy", "dateOfApproval", "approvalHistory"
+            };
+            sb.AppendLine(string.Join(",", headers));
+
+            // Add data rows
+            foreach (var row in requests)
+            {
+                var values = new List<string>
+                {
+                    row.ExecutionId.ToString(),
+                    row.Id.ToString(),
+                    row.Id.ToString(), // documentId
+                    row.StepId.ToString(),
+                    row.StepOrder.ToString(),
+                    row.ExecutionStatus ?? "Unknown",
+                    row.DocumentType ?? "",
+                    row.DocumentTypeCode ?? "",
+                    row.Title ?? "",
+                    row.Company ?? "",
+                    row.DocumentNumber ?? "",
+                    row.ProposedVersionNumber ?? "1.0",
+                    row.Division ?? "",
+                    row.Department ?? "",
+                    row.DepartmentCode ?? "",
+                    row.SubDepartment ?? "",
+                    row.SubDepartmentCode ?? "",
+                    row.BusinessDomain ?? "",
+                    row.BusinessDomainCode ?? "",
+                    row.VersionContent ?? "",
+                    row.DraftFileURL ?? "",
+                    row.RequestCreatedBy ?? "",
+                    row.CreatedAt ?? "",
+                    row.RequestCreatedAt ?? "",
+                    row.StartedAt ?? "",
+                    row.RequestCreatedBy ?? "", // previsousVersionCreatedBy
+                    row.RequestCreatedAt ?? "", // previousVersionCreatedOn
+                    "", // observation (not present, defaults to empty)
+                    row.CreatedBy ?? "", // requestedBy
+                    "", // dateOfApproval (not present)
+                    ""  // approvalHistory (not present)
+                };
+
+                // Escape commas and quotes for standard CSV formatting
+                var escapedValues = values.Select(value => $"\"{value.Replace("\"", "\"\"")}\"");
+                sb.AppendLine(string.Join(",", escapedValues));
+            }
+
+            return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            // In a real application, you'd log this exception
+            throw new CustomException("Failed to export data.", 500);
+        }
+    }
 }
 
 public class AuthorizeDocumentDto

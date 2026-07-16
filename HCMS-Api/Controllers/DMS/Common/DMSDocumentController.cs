@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -610,10 +610,11 @@ public class DMSDocumentController : Controller
     {
         try
         {
+            var file = csvFile ?? (Request.HasFormContentType ? Request.Form.Files.FirstOrDefault() : null);
             return Ok(new HttpApiResponse<List<string>>()
             {
                 Success = true,
-                Data = await _documentComponent.BulkImportDocumentMetadataAsync(csvFile),
+                Data = await _documentComponent.BulkImportDocumentMetadataAsync(file),
                 Message = "Bulk import metadata process completed.",
                 Code = 200
             });
@@ -700,6 +701,42 @@ public class DMSDocumentController : Controller
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
 
             return File(memory, contentType, fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+
+    [HttpPost("export-my-documents")]
+    public async Task<IActionResult> ExportMyInboxRequestsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            var fileBytes = await _documentComponent.ExportMyDocumentsAsync(input);
+
+            if (fileBytes == null || fileBytes.Length == 0)
+            {
+                return NotFound(new HttpApiResponse<object>
+                {
+                    Success = false,
+                    Message = "No data available to export.",
+                    Code = 404
+                });
+            }
+
+            string fileName = $"Document_{DateTime.Now:yyyyMMddHHmmss}.csv";
+            return File(fileBytes, "text/csv", fileName);
         }
         catch (CustomException ex)
         {
