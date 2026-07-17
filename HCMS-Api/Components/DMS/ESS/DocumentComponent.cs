@@ -8,7 +8,9 @@ using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
 using OfficeOpenXml;
+using System.ComponentModel.Design;
 using System.Data;
+using System.Reflection.Metadata;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -86,7 +88,7 @@ public class DocumentComponent
 
         // 3️⃣ Create unique filename
         var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
-        var fileName = $"{Guid.NewGuid()}{fileExtension}";
+        var fileName = $"{input.DocumentFile.FileName}{fileExtension}";
         var filePath = Path.Combine(uploadsRoot, fileName);
 
         // 4️⃣ Save file to disk
@@ -102,54 +104,55 @@ public class DocumentComponent
         try
         {
             // Check duplicate by DocumentNumber OR Title
-            string checkDuplicateQuery = @"
+            int exists = await _common.QueryFirstOrDefaultAsync<int>(@"
                 SELECT COUNT(1)
                 FROM Documents
-                WHERE (Title = @Title OR DocumentNumber = @DocumentNumber)
-                  AND IsDeleted = FALSE";
-
-            int exists = await _common.ExecuteScalarAsync<int>(checkDuplicateQuery, new { input.Title, input.DocumentNumber }, tx);
+                WHERE Title = @Title OR DocumentNumber = @DocumentNumber
+                  AND IsDeleted = FALSE;",
+                    new { Title = input.DocumentName, DocumentNumber = input.DocumentNumber }, tx);
 
             if (exists > 0)
                 throw new CustomException("Document Title or Document Number already exists.", 409);
+             
 
-            // Insert Document
-            string insertQuery = @"
+            var newId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
-                (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
-                    SubDepartmentCode, BusinessDomainCode, Title, NextReviewdate, DocumentURL, EffectiveDate,
-                    IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                ( 
+                    CompanyId, DocumentNumber, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
+                    SubDepartmentCode, BusinessDomainCode, DocumentURL, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
-                    @SubDepartmentCode, @BusinessDomainCode, @Title, @NextReviewDate, @DocumentUrl, NOW(),
-                    TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                    @CompanyId, @DocumentNumber, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, 
+                    @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
                 )
-                RETURNING Id;";
-
-            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
-            {
-                CompanyId,
-                input.DocumentNumber,
-                input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode,
-                input.Title,
-                input.NextReviewDate,
-                DocumentUrl = documentUrl,
-                UserId = empCode
+                RETURNING Id
+                ", new
+                {
+                    CompanyId,
+                    DocumentNumber= input.DocumentNumber,
+                    DocumentTypeCode = input.DocumentTypeCode,
+                    Title = input.DocumentName,
+                    NextReviewDate = input.NextReviewDate,
+                    DivisionCode = input.DivisionCode,
+                    DepartmentCode = input.DepartmentCode,
+                    SubDepartmentCode = input.SubDepartmentCode,
+                    BusinessDomainCode = input.BusinessDomainCode,
+                    DocumentUrl = documentUrl,
+                    UserId = empCode
             }, tx);
 
             // UC-32: Active Archival - Insert initial effective version
-            string versionQuery = @"
-                INSERT INTO DocumentVersions
-                (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
-                VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());"; // VersionType 2 = Effective
-
-            await _common.ExecuteAsync(versionQuery, new
+            await _common.ExecuteAsync(@"
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, @Version, 1, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+            )
+            ", new
             {
                 CompanyId,
                 DocumentId = newId,
@@ -157,34 +160,25 @@ public class DocumentComponent
                 UserId = empCode
             }, tx);
 
-            // UC-32: Active Archival - Insert State History (State 4 = EFFECTIVE)
-            string stateQuery = @"
-                INSERT INTO DocumentStateHistory
-                (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
-                VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded', NOW());";
-
-            await _common.ExecuteAsync(stateQuery, new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
-
+            //-----------------------------------------
+            // 4️⃣ Insert Draft State
+            //-----------------------------------------
+            await _common.ExecuteAsync(@"
+            INSERT INTO DocumentStateHistory
+            (
+                CompanyId, DocumentId, ToStateId, ChangedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, 1, @UserId
+            )
+            ", new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
+             
             await tx.CommitAsync();
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT doc.*, dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            SELECT doc.* from vw_documents doc
             WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -202,13 +196,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -401,23 +395,7 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            string query = $@"SELECT doc.* from vw_documents doc
                 WHERE doc.DocumentNumber = {documentNumber}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -439,13 +417,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -473,23 +451,7 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            string query = $@"SELECT doc.* from vw_documents doc
                 WHERE doc.Id = {id}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -511,13 +473,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -546,24 +508,8 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
-                WHERE doc.DivisionCode = {dCode}
+            string query = $@"SELECT doc.* from vw_documents doc
+                WHERE doc.DivisionCode = '{dCode}'
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
 
@@ -584,13 +530,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -661,16 +607,16 @@ public class DocumentComponent
 
             string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
-            var policyId = await _common.ExecuteScalarAsync<long?>(@"
+            var policyId = await _common.ExecuteScalarAsync<int?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = 'Document'
                 AND DocumentTypeCode = @DocType
-                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
-                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
-                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
-                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
+                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
                 AND IsActive = TRUE
                 AND IsDeleted = FALSE;",
             new

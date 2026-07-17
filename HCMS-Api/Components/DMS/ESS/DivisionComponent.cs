@@ -187,7 +187,7 @@ public class DivisionComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Divisions
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
@@ -221,7 +221,7 @@ public class DivisionComponent
             int CompanyId = int.Parse(_CompanyId);
 
             var whereClause = @"
-                WHERE d.IsDeleted = False 
+                WHERE d.IsDeleted = False AND d.IsActive = True 
                   AND d.CompanyId = " + CompanyId;
 
             // Search
@@ -391,7 +391,7 @@ public class DivisionComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(d.LastModifiedBy::text, '0')
-                WHERE d.Code = {code}
+                WHERE d.Code = '{code}'
                   AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";

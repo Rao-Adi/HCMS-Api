@@ -93,7 +93,7 @@ public class DocumentCreateDto
     public int? RequestId { get; set; }
 
     [MaxLength(500)]
-    public string? Title { get; set; } = null!;
+    public string? DocumentName { get; set; } = null!;
 
     public string? Version { get; set; }
     public string? Content { get; set; }

@@ -252,7 +252,7 @@ public class SubDepartmentComponent
             int CompanyId = int.Parse(_CompanyId);
 
             var whereClause = @"
-                WHERE subd.IsDeleted = False 
+                WHERE subd.IsDeleted = False AND subd.IsActive = True 
                   AND subd.CompanyId = " + CompanyId + @"
                   AND subd.IsActive = " + (input.IsActive ? "True" : "False");
 

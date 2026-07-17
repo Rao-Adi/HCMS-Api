@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Components.HCMS.Common.DataAccess;
 using HCMS_Api.Components.HCMS.Common.Models;
@@ -339,8 +339,11 @@ namespace HCMS_Api.Components.HCMS.Common.Security
         public string GetPrefix(string _TerminalId)
         {
             string _Prefix = String.Empty;
+            if (string.IsNullOrEmpty(_TerminalId)) return _Prefix;
+
+            var sanitizedIP = _TerminalId.Replace("'", "''");
             Object obj = new object();
-            obj = _utilities.GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + _TerminalId + "' order by  Id desc");
+            obj = _utilities.GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
             if (obj != null)
             {
                 _Prefix = obj.ToString();

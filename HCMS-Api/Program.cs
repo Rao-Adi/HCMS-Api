@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.BackgroundJobs;
@@ -265,9 +265,11 @@ builder.Services.AddScoped<UserAccessLevelComponent>();
 builder.Services.AddScoped<DashboardComponent>();
 builder.Services.AddScoped<DocumentTrainingAuthorizationComponent>();
 builder.Services.AddScoped<DocumentReviewPolicyComponent>();
+builder.Services.AddScoped<CustomizeEmailAlertsComponent>();
 
 
 builder.Services.AddHostedService<DataSyncService>();
+builder.Services.AddHostedService<EmailAlertBackgroundService>();
 #endregion DMS Service
 
 

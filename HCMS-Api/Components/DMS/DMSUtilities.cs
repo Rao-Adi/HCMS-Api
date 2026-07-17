@@ -1,4 +1,4 @@
-﻿﻿using Azure.Storage.Blobs;
+﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
@@ -752,8 +752,11 @@ namespace HCMS_Api.Components.DMS.Common
         public string GetPrefix(string _ClientIP)
         {
             string _Prefix = String.Empty;
+            if (string.IsNullOrEmpty(_ClientIP)) return _Prefix;
+
+            var sanitizedIP = _ClientIP.Replace("'", "''");
             Object obj = new object();
-            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + _ClientIP + "' order by  Id desc");
+            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
             if (obj != null)
             {
                 _Prefix = obj.ToString();
@@ -1711,9 +1714,15 @@ namespace HCMS_Api.Components.DMS.Common
                     // Bypass SSL certificate validation if the server uses a self-signed or untrusted certificate
                     smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
 
-                    int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
-                    await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+                int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
+                // Use StartTlsWhenAvailable for broader compatibility.
+                await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTlsWhenAvailable);
+
+                    // Force MailKit to use Basic Authentication (Login/Plain) instead of OAuth2
+                    smtp.AuthenticationMechanisms.Remove("XOAUTH2");
+
                     await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
+
                     await smtp.SendAsync(email);
                     await smtp.DisconnectAsync(true);
                 }

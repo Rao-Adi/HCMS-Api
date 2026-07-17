@@ -91,13 +91,14 @@ public class NotificationComponent
                 relatedEntityType = relatedEntityType,
                 relatedEntityId = relatedEntityId,
                 redirectionUrl = redirectionUrl,
-                CreatedAt = DateTime.UtcNow // Match SendTestNotification casing
+                CreatedAt = DateTime.Now // Match SendTestNotification casing
             };
 
             // Broadcast to ALL connected clients to guarantee real-time delivery, mirroring SendTestNotification.
             // IMPORTANT: Ensure your frontend Angular code filters incoming messages by checking:
             // if (notification.recipientUserId === currentUser.employeeCode) { showToastr(); }
-            await _hubContext.Clients.All.SendAsync("ReceiveNotification", payload);
+            //await _hubContext.Clients.All.SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group($"user_{targetUserId}").SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
             await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, transaction);
@@ -611,7 +612,7 @@ public class NotificationComponent
                 title = title,
                 message = message,
                 type = type,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             });
 
             return true;
