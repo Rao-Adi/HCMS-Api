@@ -138,7 +138,7 @@ public class AuditLogComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM AuditLogs
-                WHERE EmployeeCode = {code}
+                WHERE EmployeeCode = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));

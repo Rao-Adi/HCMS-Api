@@ -158,7 +158,7 @@ public class CompanyComponent
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Companies 
-                WHERE Code = {code}";
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }

@@ -150,7 +150,7 @@ public class DesignationComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Designations
-                WHERE Code = {code}
+                WHERE Code = '{code}'
                   AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 

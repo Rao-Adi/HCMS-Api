@@ -25,6 +25,32 @@ public class NotificationHub : Hub
     {
         try
         {
+            // 1. Check if employeeCode or empCode is passed directly in the query string (for multi-tab / fingerprint-free isolation)
+            var httpContext = Context.GetHttpContext();
+            if (httpContext != null)
+            {
+                var query = httpContext.Request.Query;
+                if (query.TryGetValue("employeeCode", out var empCodeValues))
+                {
+                    var val = empCodeValues.FirstOrDefault();
+                    if (!string.IsNullOrEmpty(val))
+                    {
+                        Console.WriteLine($"[SIGNALR] GetUserEmpCode: Found employeeCode '{val}' in query string.");
+                        return val;
+                    }
+                }
+                if (query.TryGetValue("empCode", out var empCodeValues2))
+                {
+                    var val = empCodeValues2.FirstOrDefault();
+                    if (!string.IsNullOrEmpty(val))
+                    {
+                        Console.WriteLine($"[SIGNALR] GetUserEmpCode: Found empCode '{val}' in query string.");
+                        return val;
+                    }
+                }
+            }
+
+            // 2. Fallback to standard clientIp context mapping
             var clientIp = _clientContextService.GetClientIP();
             if (string.IsNullOrEmpty(clientIp))
             {
@@ -97,13 +123,22 @@ public class NotificationHub : Hub
                 return;
             }
 
-            var empId = _utilities.GetEmpid(loginId);
-            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            string empCode = null;
+            // If the passed loginId is already an employee code format (short string starting with E or 0)
+            if (loginId.Length < 20 && (loginId.StartsWith("E") || loginId.StartsWith("0")))
+            {
+                empCode = loginId;
+            }
+            else
+            {
+                var empId = _utilities.GetEmpid(loginId);
+                empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            }
 
             if (!string.IsNullOrEmpty(empCode))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{empCode}");
-                Console.WriteLine($"[SIGNALR] Connection {Context.ConnectionId} successfully registered to user_{empCode} via RegisterClient using loginId: '{loginId}'");
+                Console.WriteLine($"[SIGNALR] Connection {Context.ConnectionId} successfully registered to user_{empCode} via RegisterClient using: '{loginId}'");
             }
             else
             {

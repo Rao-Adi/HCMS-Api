@@ -987,7 +987,7 @@ public class DocumentComponent
                     INSERT INTO DocumentUserTraining
                     (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, @EmployeeCode, 1, 0, '', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                    (@CompanyId, @DocumentId, @EmployeeCode, 1, 0, '', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
                 new { CompanyId = companyId, DocumentId = input.DocumentId, EmployeeCode = uid, UserId = empCode }, transaction);
             }
         }
@@ -1483,7 +1483,7 @@ public class DocumentComponent
                     INSERT INTO DocumentTraining
                     (CompanyId, DocumentId, TrainingMode,TrainingStatus,TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                    (@CompanyId, @DocumentId, 1, 0,'', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
                     new { CompanyId = companyId, DocumentId = documentId, UserId = (string)docInfo.createdby }, tx);
 
 
@@ -2452,8 +2452,10 @@ public class DocumentComponent
                     SELECT TRIM(e.empcode) FROM public.tblempjobprofile ejp 
                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
                     INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
-                    WHERE sd.Name = 'DCA' AND sd.smsid = 189 AND e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE",
-                    new { CompanyId }, transaction);
+                    INNER JOIN DocumentUserDistributions dud ON dud.EmployeeCode = e.Empcode
+                    WHERE sd.smsid = 189 AND e.CompanyId = @CompanyId AND dud.DocumentId = @DocumentId
+                    AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE",
+                    new { CompanyId, input.DocumentId }, transaction);
 
                 var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
                 var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
@@ -2698,13 +2700,14 @@ public class DocumentComponent
             var whereClause = @"
                 WHERE doc.CompanyId = @CompanyId 
                   AND doc.IsDeleted = FALSE
+                  AND dut.TrainingMode = @TrainingMode
                   AND (
                       SELECT ds.Code 
                       FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
                       ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) = 'AUTHORIZATION_PENDING'";
+                  )  IN ('EFFECTIVE', 'AUTHORIZATION_PENDING')";
 
             //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             //{
@@ -2750,7 +2753,7 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT
+                SELECT DISTINCT
                     doc.*, 
                     dv.Version,
                     tr.TrainingMode,
@@ -2762,15 +2765,17 @@ public class DocumentComponent
                 FROM Vw_Documents doc  
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
                 {whereClause} 
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(1) 
+                SELECT COUNT(DISTINCT doc.Id) 
                 FROM Documents doc 
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE 
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
                 {whereClause};";
 
             var queryParams = new
@@ -2781,7 +2786,8 @@ public class DocumentComponent
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
                 BusinessDomainCode = input.BusinessDomainCode,
-                DocumentTypeCode = input.DocumentTypeCode
+                DocumentTypeCode = input.DocumentTypeCode,
+                TrainingMode = input.Requeststatus == "Classroom" ? 1 : 2
             };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();

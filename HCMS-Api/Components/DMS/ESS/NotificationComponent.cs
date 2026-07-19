@@ -103,6 +103,7 @@ public class NotificationComponent
             // Dispatch Email
             await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, transaction);
 
+            
             return true;
         }
         catch (Exception)
@@ -593,7 +594,7 @@ public class NotificationComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = {empCode} AND CompanyID = {CompanyId} AND IsRead = FALSE";
+            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = '{empCode}' AND CompanyID = {CompanyId} AND IsRead = FALSE";
             return _common.ExecuteNonQuery(updateQuery);
         }
         catch (Exception)

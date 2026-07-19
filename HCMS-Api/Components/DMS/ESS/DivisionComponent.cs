@@ -202,7 +202,7 @@ public class DivisionComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = {code} AND CompanyId = {CompanyId}";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }

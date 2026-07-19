@@ -172,7 +172,7 @@ public class TransferScopePolicyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM TransferScopePolicies
-                WHERE DivisionCode = {code} AND CompanyId = {CompanyId}
+                WHERE DivisionCode = '{code}' AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -186,7 +186,7 @@ public class TransferScopePolicyComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE DivisionCode = {code} AND CompanyId = {CompanyId}";
+                WHERE DivisionCode = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -340,7 +340,7 @@ public class TransferScopePolicyComponent
                     ON d.CompanyId = c.Id
                     LEFT JOIN BusinessDomains bd
                     ON d.BusinessDomainCode = bd.Code
-                WHERE t.DivisionCode = {code} AND t.CompanyId = {CompanyId}
+                WHERE t.DivisionCode = '{code}' AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 

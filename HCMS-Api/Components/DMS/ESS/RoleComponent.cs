@@ -144,7 +144,7 @@ public class RoleComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Roles
-                WHERE Name = {code}
+                WHERE Name = '{code}'
                   AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
