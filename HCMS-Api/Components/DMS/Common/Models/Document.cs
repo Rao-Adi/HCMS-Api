@@ -187,6 +187,7 @@ public  class AllDocumentDto
     public string VersionContent { get; set; }
     public string ProposedVersionNumber { get; set; }
     public string DraftFileURL { get; set; }
+    public string Justification { get; set; }
 
     // Organizational Hierarchy
     public string Division { get; set; }

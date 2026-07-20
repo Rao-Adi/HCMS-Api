@@ -24,6 +24,8 @@ public class DocumentTrainingAuthorizationReadDto : DocumentTrainingAuthorizatio
     public bool IsDeleted { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;
+    public string CreatedByName { get; set; } = string.Empty;
     public string LastModifiedAt { get; set; } = string.Empty;
     public string LastModifiedBy { get; set; } = string.Empty;
+    public string LastModifiedByName { get; set; } = string.Empty;
 }

@@ -182,12 +182,24 @@ public class DocumentTrainingAuthorizationComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                SELECT a.*, c.Id AS CompanyId, c.Name AS Company, dt.Name AS DocumentType, 
-                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS AuthorizingUser
-                FROM DocumentTrainingAuthorizations a
-                LEFT JOIN Companies c ON a.CompanyId = c.Id
-                LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code 
-                LEFT JOIN tblEmployee e ON LTRIM(a.AuthorizingUserId::text, '0') = LTRIM(e.empcode::text, '0') AND e.CompanyId = a.CompanyId
+                 SELECT a.*, c.Id AS CompanyId, c.Name AS Company, dt.Name AS DocumentType, 
+                LTRIM(RTRIM(COALESCE(e1.firstname, '') || ' ' || COALESCE(e1.midname, '') || ' ' || COALESCE(e1.lastname, ''))) AS AuthorizingUser,
+                 -- 🔹 Audit Fields
+                  COALESCE(e.EmployeeName, a.CreatedBy::text) AS CreatedByName,
+ 
+                  COALESCE(m.EmployeeName, a.LastModifiedBy::text) AS LastModifiedByName
+                FROM DocumentTrainingAuthorizations a 
+                LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code  
+				LEFT JOIN tblEmployee e1 ON LTRIM(a.AuthorizingUserId::text, '0') = LTRIM(e1.empcode::text, '0') AND e1.CompanyId = a.CompanyId
+                LEFT JOIN Companies c
+                        ON a.CompanyId = c.Id
+                    -- 🔹 Created By Employee
+                 LEFT JOIN Vw_EmployeeNames e
+                     ON e.CleanEmpCode = LTRIM(a.CreatedBy::text, '0')
+
+                 -- 🔹 Last Modified By Employee
+                 LEFT JOIN Vw_EmployeeNames m 
+                     ON m.CleanEmpCode = LTRIM(a.LastModifiedBy::text, '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -227,9 +239,11 @@ public class DocumentTrainingAuthorizationComponent
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    CreatedByName = row.Table.Columns.Contains("CreatedByName") ? row.Field<string>("CreatedByName") : string.Empty,
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    LastModifiedByName = row.Table.Columns.Contains("LastModifiedByName") ? row.Field<string>("LastModifiedByName") : string.Empty,
                 })
                 .ToList();
 
@@ -260,11 +274,23 @@ public class DocumentTrainingAuthorizationComponent
 
             string query = $@"
                 SELECT a.*, c.Id AS CompanyId, c.Name AS Company, dt.Name AS DocumentType, 
-                       LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS AuthorizingUser
-                FROM DocumentTrainingAuthorizations a
-                LEFT JOIN Companies c ON a.CompanyId = c.Id
-                LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code 
-                LEFT JOIN tblEmployee e ON LTRIM(a.AuthorizingUserId::text, '0') = LTRIM(e.empcode::text, '0') AND e.CompanyId = a.CompanyId
+                LTRIM(RTRIM(COALESCE(e1.firstname, '') || ' ' || COALESCE(e1.midname, '') || ' ' || COALESCE(e1.lastname, ''))) AS AuthorizingUser,
+                 -- 🔹 Audit Fields
+                  COALESCE(e.EmployeeName, a.CreatedBy::text) AS CreatedByName,
+ 
+                  COALESCE(m.EmployeeName, a.LastModifiedBy::text) AS LastModifiedByName
+                FROM DocumentTrainingAuthorizations a 
+                LEFT JOIN DocumentTypes dt ON a.DocumentTypeCode = dt.Code  
+				LEFT JOIN tblEmployee e1 ON LTRIM(a.AuthorizingUserId::text, '0') = LTRIM(e1.empcode::text, '0') AND e1.CompanyId = a.CompanyId
+                LEFT JOIN Companies c
+                        ON a.CompanyId = c.Id
+                    -- 🔹 Created By Employee
+                 LEFT JOIN Vw_EmployeeNames e
+                     ON e.CleanEmpCode = LTRIM(a.CreatedBy::text, '0')
+
+                 -- 🔹 Last Modified By Employee
+                 LEFT JOIN Vw_EmployeeNames m 
+                     ON m.CleanEmpCode = LTRIM(a.LastModifiedBy::text, '0')
                 WHERE a.Id = {id} AND a.CompanyId = {CompanyId}
                   AND a.IsActive = True
                   AND a.IsDeleted = False";

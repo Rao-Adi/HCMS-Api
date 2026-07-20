@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -122,55 +122,55 @@ public class NotificationComponent
                 "New Request Pending",
                 $"A new request (Request ID: {Get("ID")}) is pending your approval.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestApprovedForwarded => (
                 "Request Approved - Forwarded",
                 $"Request ID: {Get("ID")} has been approved and requires your action.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestRejected => (
                 "Request Rejected",
                 $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Request",
-                "/dms/my-requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestRevertedForRework => (
                 "Request Rework Required",
                 $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Get("Observation")}.",
                 "Request",
-                $"/dms/requests/edit/{Get("ID")}"
+                $"/documents/my-approvals-request"
             ),
             NotificationScenario.OverdueRequestReminder => (
                 "Overdue Action Required",
                 $"ACTION REQUIRED: Request ID: {Get("ID")} is overdue. Please process immediately.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.PendingDocumentApproval => (
                 "New Document Pending Review",
                 $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) is pending your technical review.",
                 "Document",
-                "/dms/approvals/documents"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.DocumentApprovedForwarded => (
                 "Document Approved - Forwarded",
                 $"Document {Get("Doc Name")} has been approved and requires your action/authorization.",
                 "Document",
-                "/dms/approvals/documents"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.DocumentRejected => (
                 "Document Rejected",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Document",
-                "/dms/my-requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.DocumentRevertedForRework => (
                 "Document Rework Required",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
                 "Document",
-                $"/dms/documents/edit/{Get("ID")}"
+                $"/documents/my-approvals-documents"
             ),
             NotificationScenario.TrainingProofRequired => (
                 "Training Proof Required",
@@ -188,25 +188,25 @@ public class NotificationComponent
                 "Document Authorized & Effective",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
-                "/dms/my-documents"
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.PeriodicReviewDue => (
                 "Document Review Due Soon",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is due for review on {Get("Date")}. Please initiate a Revision Request.",
                 "Review",
-                "/dms/my-documents"
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.DocumentObsoleted => (
                 "Document Obsoleted",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) has been officially obsoleted as of {Get("Date")}.",
                 "Obsoletion",
-                "/dms/documents/obsoleted"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.PhysicalCopyRetrievalTask => (
                 "Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
-                "/dms/tasks/physical-copies"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.NewUserAccountCreated => (
                 "Welcome to DMS",
@@ -218,7 +218,7 @@ public class NotificationComponent
                 "Responsibility Transfer Effective",
                 $"Your responsibility transfer from {Get("Emp From")} to {Get("Emp To")} is now effective from {Get("Date From")} to {Get("Date To")}.",
                 "Setup",
-                "/dms/my-documents"
+                "/documents/my-approvals-documents"
             ),
             _ => ("Notification", "You have a new notification.", "General", "/")
         };
@@ -634,15 +634,7 @@ public class NotificationComponent
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {
-                string emailBody = $@"
-                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 8px;'>
-                        <h2 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;'>{title}</h2>
-                        <p style='font-size: 16px; color: #333; line-height: 1.5;'>{message}</p>
-                        <p style='font-size: 14px; color: #555; margin-top: 20px;'><strong>Action Required At:</strong> {redirectionUrl}</p>
-                        <hr style='border: none; border-top: 1px solid #eee; margin-top: 30px;' />
-                        <p style='font-size: 12px; color: #999; text-align: center;'>This is an automated notification from the Document Management System. Please do not reply.</p>
-                    </div>";
-
+                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
                 await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
             }
         }
@@ -651,6 +643,104 @@ public class NotificationComponent
             // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions
             Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
         }
+    }
+
+    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
+    {
+        string actionUrl = redirectionUrl ?? "#";
+        var baseUrl = _configuration["AppUrl"] ?? _configuration["BaseUrl"] ?? _configuration["FrontendUrl"] ?? "";
+        if (!string.IsNullOrEmpty(baseUrl) && actionUrl.StartsWith("/"))
+        {
+            actionUrl = baseUrl.TrimEnd('/') + actionUrl;
+        }
+
+        return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>{title}</title>
+</head>
+<body style='margin: 0; padding: 0; background-color: #f1f5f9; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif; -webkit-font-smoothing: antialiased;'>
+    <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='background-color: #f1f5f9; padding: 30px 10px;'>
+        <tr>
+            <td align='center'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;'>
+                    
+                    <!-- Header Banner -->
+                    <tr>
+                        <td style='background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 28px 32px; text-align: left;'>
+                            <table width='100%' cellspacing='0' cellpadding='0' border='0'>
+                                <tr>
+                                    <td>
+                                        <div style='display: inline-block; background-color: rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 12px; color: #ffffff; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;'>
+                                            Document Management System
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style='padding-top: 12px;'>
+                                        <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; line-height: 1.3;'>{title}</h1>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Body Content -->
+                    <tr>
+                        <td style='padding: 32px; color: #334155;'>
+                            
+                            <!-- Status Badge -->
+                            <div style='margin-bottom: 20px;'>
+                                <span style='background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block;'>
+                                    Action Required
+                                </span>
+                            </div>
+
+                            <!-- Notification Message Box -->
+                            <div style='background-color: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 18px 20px; margin-bottom: 24px;'>
+                                <p style='margin: 0; font-size: 15px; color: #1e293b; line-height: 1.6; font-weight: 500;'>
+                                    {message}
+                                </p>
+                            </div>
+
+                            <!-- Action Button Section -->
+                            {(!string.IsNullOrEmpty(redirectionUrl) ? $@"
+                            <div style='margin-top: 28px; text-align: center; background-color: #ffffff; border: 1px solid #f1f5f9; padding: 20px; border-radius: 10px;'>
+                                <p style='font-size: 13px; color: #64748b; margin-top: 0; margin-bottom: 16px; font-weight: 500;'>
+                                    Click the button below to review and process this request:
+                                </p>
+                                <a href='{actionUrl}' target='_blank' style='display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); border: 1px solid #1d4ed8;'>
+                                    View Request Details &rarr;
+                                </a>
+                                <p style='font-size: 11px; color: #94a3b8; margin-top: 14px; margin-bottom: 0; word-break: break-all;'>
+                                    Target path: <span style='font-family: monospace; color: #475569;'>{redirectionUrl}</span>
+                                </p>
+                            </div>" : "")}
+
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style='background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                            <p style='font-size: 12px; color: #64748b; margin: 0 0 6px 0; font-weight: 500;'>
+                                This is an automated notification from the <strong>Document Management System (DMS)</strong>.
+                            </p>
+                            <p style='font-size: 11px; color: #94a3b8; margin: 0;'>
+                                Please do not reply directly to this email.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>";
     }
 
 }

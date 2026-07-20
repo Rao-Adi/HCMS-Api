@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+using Azure.Storage.Blobs;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using MailKit.Security;
 //using Microsoft.IdentityModel.Logging;
@@ -1696,73 +1696,78 @@ namespace HCMS_Api.Components.DMS.Common
 
         public async Task SendEmailAsync(List<string> recipients, string subject, string body)
         {
-            try
-            {
-                var email = new MimeMessage();
-                email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
-
-                foreach (var recipient in recipients)
-                    email.To.Add(MailboxAddress.Parse(recipient));
-
-                email.Subject = subject;
-                var builder = new BodyBuilder();
-                builder.HtmlBody = body;
-                email.Body = builder.ToMessageBody();
-
-                using (var smtp = new MailKit.Net.Smtp.SmtpClient())
-                {
-                    // Bypass SSL certificate validation if the server uses a self-signed or untrusted certificate
-                    smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
-
-                int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
-                // Use StartTlsWhenAvailable for broader compatibility.
-                await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTlsWhenAvailable);
-
-                    // Force MailKit to use Basic Authentication (Login/Plain) instead of OAuth2
-                    smtp.AuthenticationMechanisms.Remove("XOAUTH2");
-
-                    await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
-
-                    await smtp.SendAsync(email);
-                    await smtp.DisconnectAsync(true);
-                }
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
+            await SendEmailAsync(recipients, null, null, subject, body);
         }
 
         public async Task SendEmailAsync(List<string> to, List<string> cc, List<string> bcc, string subject, string body)
         {
             try
             {
+                var senderEmail = _configuration.GetSection("MailSettings:Email")?.Value;
+                if (string.IsNullOrEmpty(senderEmail))
+                {
+                    Console.WriteLine("[SMTP ERROR] MailSettings:Email is not configured.");
+                    return;
+                }
+
                 var email = new MimeMessage();
-                email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
+                var mailboxAddress = MailboxAddress.Parse(senderEmail);
+                email.From.Add(mailboxAddress);
+                email.Sender = mailboxAddress;
 
-                if (to != null) foreach (var recipient in to.Distinct()) email.To.Add(MailboxAddress.Parse(recipient));
-                if (cc != null) foreach (var recipient in cc.Distinct()) email.Cc.Add(MailboxAddress.Parse(recipient));
-                if (bcc != null) foreach (var recipient in bcc.Distinct()) email.Bcc.Add(MailboxAddress.Parse(recipient));
+                if (to != null) foreach (var recipient in to.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()) email.To.Add(MailboxAddress.Parse(recipient));
+                if (cc != null) foreach (var recipient in cc.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()) email.Cc.Add(MailboxAddress.Parse(recipient));
+                if (bcc != null) foreach (var recipient in bcc.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()) email.Bcc.Add(MailboxAddress.Parse(recipient));
 
-                email.Subject = subject;
+                if (!email.To.Any() && !email.Cc.Any() && !email.Bcc.Any())
+                {
+                    Console.WriteLine("[SMTP ERROR] No recipients specified for email.");
+                    return;
+                }
+
+                email.Subject = subject ?? string.Empty;
                 var builder = new BodyBuilder();
-                builder.HtmlBody = body;
+                builder.HtmlBody = body ?? string.Empty;
                 email.Body = builder.ToMessageBody();
 
                 using (var smtp = new MailKit.Net.Smtp.SmtpClient())
                 {
+                    // Fail fast (15s timeout) instead of hanging the web API indefinitely
+                    smtp.Timeout = 15000;
+
+                    // Bypass SSL certificate validation if the server uses a self-signed or untrusted certificate
                     smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
-                    int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
-                    await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
+
+                    int.TryParse(_configuration.GetSection("MailSettings:Port")?.Value, out int _port);
+                    if (_port <= 0) _port = 25;
+
+                    var host = _configuration.GetSection("MailSettings:Host")?.Value;
+
+                    // Match SSL/TLS Socket Option based on Port (465 = SslOnConnect, 587 = StartTls, Auto fallback)
+                    var socketOption = _port == 465 ? SecureSocketOptions.SslOnConnect :
+                                       _port == 587 ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+
+                    Console.WriteLine($"[SMTP INFO] Connecting to {host}:{_port} using {socketOption}...");
+                    await smtp.ConnectAsync(host, _port, socketOption);
+
+                    // Force MailKit to use Basic Authentication (Login/Plain) instead of OAuth2
                     smtp.AuthenticationMechanisms.Remove("XOAUTH2");
-                    await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
+
+                    var pass = _configuration.GetSection("MailSettings:Password")?.Value;
+                    if (!string.IsNullOrEmpty(pass))
+                    {
+                        await smtp.AuthenticateAsync(senderEmail, pass);
+                    }
+
                     await smtp.SendAsync(email);
+                    Console.WriteLine($"[SMTP SUCCESS] Email '{subject}' sent successfully.");
                     await smtp.DisconnectAsync(true);
                 }
             }
             catch (Exception ex)
             {
-                throw ex;
+                Console.WriteLine($"[SMTP ERROR] Exception sending email '{subject}': {ex.Message}");
+                throw;
             }
         }
 
