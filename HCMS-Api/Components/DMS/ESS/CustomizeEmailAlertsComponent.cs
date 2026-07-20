@@ -171,7 +171,7 @@ public class CustomizeEmailAlertsComponent
             int exists = await _common.ExecuteScalarAsync<int>(checkQuery, new { Id = id, CompanyId }, tx);
 
             if (exists == 0)
-                throw new CustomException("Email Alert Configuration not found", 200);
+                throw new CustomException("Email Alert Configuration not found", 404);
 
             // Explicitly delete from cascade tables
             await _common.ExecuteAsync("DELETE FROM alert_document_scopes WHERE alert_config_id = @Id", new { Id = id }, tx);

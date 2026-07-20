@@ -211,7 +211,7 @@ public class BusinessDomainComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -416,7 +416,7 @@ public class BusinessDomainComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -479,7 +479,7 @@ public class BusinessDomainComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -520,7 +520,7 @@ public class BusinessDomainComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid Business Domain code.", 200);
+                throw new CustomException("Invalid Business Domain code.", 404);
 
             // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -533,7 +533,7 @@ public class BusinessDomainComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"

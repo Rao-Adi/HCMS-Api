@@ -116,7 +116,7 @@ public class DocumentReviewPolicyComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentReviewPolicy not found", 200);
+                throw new CustomException("DocumentReviewPolicy not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -345,7 +345,7 @@ public class DocumentReviewPolicyComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentReviewPolicy not found", 200);
+                throw new CustomException("DocumentReviewPolicy not found", 404);
 
             DataRow row = dt.Rows[0];
 

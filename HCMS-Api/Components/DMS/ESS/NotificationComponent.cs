@@ -315,7 +315,7 @@ public class NotificationComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Notifications not found", 200);
+                throw new CustomException("Notifications not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -456,7 +456,7 @@ public class NotificationComponent
             DataTable divisionsTable = await _common.ExecuteSqlQuery(query);
 
             if (divisionsTable.Rows.Count == 0)
-                throw new CustomException("Notifications not found", 200);
+                throw new CustomException("Notifications not found", 404);
 
 
             var divisions = divisionsTable.AsEnumerable()
@@ -508,7 +508,7 @@ public class NotificationComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Notifications not found", 200);
+                throw new CustomException("Notifications not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"

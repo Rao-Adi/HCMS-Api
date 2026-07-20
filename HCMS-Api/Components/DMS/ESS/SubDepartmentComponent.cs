@@ -69,7 +69,7 @@ public class SubDepartmentComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentCheckQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Parent Department not found", 200);
+                throw new CustomException("Parent Department not found", 404);
 
             // 🚫 Prevent duplicate Sub-Department name PER Department
             string duplicateCheckQuery = $@"
@@ -225,7 +225,7 @@ public class SubDepartmentComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -437,7 +437,7 @@ public class SubDepartmentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -506,7 +506,7 @@ public class SubDepartmentComponent
                                                       // ✅ SAFETY CHECKS
             if (subDepartmentTable == null || subDepartmentTable.Rows.Count == 0)
             {
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
             }
 
             var divisions = subDepartmentTable.AsEnumerable()
@@ -571,7 +571,7 @@ public class SubDepartmentComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(subDeptExistsQuery));
 
             if (subDeptExists == 0)
-                throw new CustomException("Sub-Department not found", 200);
+                throw new CustomException("Sub-Department not found", 404);
 
             // 🔍 Validate parent Department exists
             string departmentExistsQuery = $@"
@@ -585,7 +585,7 @@ public class SubDepartmentComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Parent Department not found", 200);
+                throw new CustomException("Parent Department not found", 404);
 
             // 🚫 Prevent duplicate name PER Department
             string duplicateNameQuery = $@"

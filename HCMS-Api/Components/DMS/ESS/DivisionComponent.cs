@@ -53,7 +53,7 @@ public class DivisionComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Division name is required.", 400);
+                throw new CustomException("Division name is required.", 404);
 
             // 🔍 Check duplicate by NAME only
             string duplicateCheckQuery = $@"
@@ -194,7 +194,7 @@ public class DivisionComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("Division not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -399,7 +399,7 @@ public class DivisionComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Division not found", 200);
+                throw new CustomException("Division not found", 404);
 
             DataRow row = dt.Rows[0];
 

@@ -62,7 +62,7 @@ public class WorkflowStepComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowStepDefinitions not found", 200);
+                throw new CustomException("WorkflowStepDefinitions not found", 404);
 
             // Soft delete
             string deleteQuery = $@"

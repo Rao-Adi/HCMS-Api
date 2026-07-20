@@ -222,7 +222,7 @@ public class DepartmentComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -434,7 +434,7 @@ public class DepartmentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -503,7 +503,7 @@ public class DepartmentComponent
                                                       // ✅ SAFETY CHECKS
             if (departmentTable == null || departmentTable.Rows.Count == 0)
             {
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
             }
 
             var departments = departmentTable.AsEnumerable()
@@ -547,13 +547,13 @@ public class DepartmentComponent
 
             // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Department code is required.", 200);
+                throw new CustomException("Department code is required.", 404);
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Department name is required.", 200);
+                throw new CustomException("Department name is required.", 404);
 
             if (string.IsNullOrWhiteSpace(input.DivisionCode))
-                throw new CustomException("Division code is required.", 200);
+                throw new CustomException("Division code is required.", 404);
 
             // 🔍 Check department exists
             string departmentExistsQuery = $@"
@@ -567,7 +567,7 @@ public class DepartmentComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             // 🔍 Validate parent Division exists
             string divisionExistsQuery = $@"
@@ -581,7 +581,7 @@ public class DepartmentComponent
                 Convert.ToInt32(_common.ExecuteScalarQuery(divisionExistsQuery));
 
             if (divisionExists == 0)
-                throw new CustomException("Parent Division not found", 200);
+                throw new CustomException("Parent Division not found", 404);
 
             // 🚫 Prevent duplicate Department Name PER Division
             string duplicateNameQuery = $@"
@@ -598,7 +598,7 @@ public class DepartmentComponent
 
             if (duplicate > 0)
                 throw new CustomException(
-                    "Department name already exists in this Division", 200);
+                    "Department name already exists in this Division", 404);
 
             // ✏️ Update ONLY mutable fields
             string updateQuery = $@"

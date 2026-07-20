@@ -155,7 +155,7 @@ public class DocumentVersionComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -322,7 +322,7 @@ public class DocumentVersionComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -373,7 +373,7 @@ public class DocumentVersionComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"

@@ -403,7 +403,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -459,7 +459,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -516,7 +516,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 

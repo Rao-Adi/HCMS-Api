@@ -122,7 +122,7 @@ public class DocumentTrainingAuthorizationComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentTrainingAuthorization not found", 200);
+                throw new CustomException("DocumentTrainingAuthorization not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -337,7 +337,7 @@ public class DocumentTrainingAuthorizationComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id <= 0)
-                throw new CustomException("Invalid Id.", 400);
+                throw new CustomException("Invalid Id.", 404);
 
             // Check existence
             string checkQuery = $@"
