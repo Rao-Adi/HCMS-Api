@@ -52,7 +52,7 @@ public class DocumentReviewPolicyComponent
             SELECT COUNT(1)
             FROM DocumentReviewPolicies
             WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
-              AND IsDeleted = FALSE";
+              AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 

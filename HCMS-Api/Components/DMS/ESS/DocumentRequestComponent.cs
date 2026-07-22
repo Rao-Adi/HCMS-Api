@@ -3253,7 +3253,7 @@ public class DocumentRequestComponent
  
                     -- Assigned Employee
                     LEFT JOIN tblEmployee e
-                        ON e.empCode = dr.createdBy  AND e.CompanyId = @CompanyId
+                        ON e.empCode = dr.createdBy
                 WHERE dr.CompanyId = {CompanyId};";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);

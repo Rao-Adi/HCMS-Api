@@ -2202,6 +2202,97 @@ public class DocumentComponent
         }
     }
 
+    public async Task<PendingAuthorizationCountsDto> GetPendingAuthorizationCountsAsync(GetPendingAuthorization input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
+                  )";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
+            {
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP" || input.DocumentCategoryFilter.ToUpper() == "1")
+                {
+                    whereClause += " AND UPPER(doc.DocumentType) = 'SOP'";
+                }
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "2")
+                {
+                    whereClause += " AND UPPER(doc.DocumentType) != 'SOP'";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sql = $@"
+                SELECT 
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC LIMIT 1
+                    ) IN ('APPROVED', 'TRAINING_PENDING') THEN 1 END) AS PendingCount,
+
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC LIMIT 1
+                    ) IN ('EFFECTIVE', 'AUTHORIZED') THEN 1 END) AS AuthorizedCount,
+
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC LIMIT 1
+                    ) IN ('REJECTED') THEN 1 END) AS RejectedCount
+                FROM VW_Documents doc
+                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
+
+            var result = await _common.QuerySingleAsync<PendingAuthorizationCountsDto>(sql, queryParams);
+            return result ?? new PendingAuthorizationCountsDto();
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
 
     public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(GetDocumentsPendingApprovalDto input)
     {
@@ -3769,4 +3860,11 @@ public class GetApprovedDocumentsFilterDto : TableFiltersDto
     public string? RequestCreatedFromDate { get; set; }
     public string? RequestCreatedToDate { get; set; }
     public string? RequestCreatedBy { get; set; }
+}
+
+public class PendingAuthorizationCountsDto
+{
+    public int PendingCount { get; set; }
+    public int AuthorizedCount { get; set; }
+    public int RejectedCount { get; set; }
 }

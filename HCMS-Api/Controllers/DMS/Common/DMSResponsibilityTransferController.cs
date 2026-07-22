@@ -155,7 +155,7 @@ public class DMSResponsibilityTransferController : Controller
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.CreateAsync(input),
-                Message = "DocumentType created successfully.",
+                Message = "Action taken successfully.",
                 Code = 200
             });
         }
@@ -182,7 +182,7 @@ public class DMSResponsibilityTransferController : Controller
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.UpdateAsync(input),
-                Message = "DocumentType updated successfully.",
+                Message = "Action taken successfully.",
                 Code = 200
             });
         }
@@ -212,7 +212,7 @@ public class DMSResponsibilityTransferController : Controller
                 {
                     Success = false,
                     Data = new { },
-                    Message = "DocumentType not found",
+                    Message = "Record not found",
                     Code = 404
                 });
             }
@@ -221,7 +221,7 @@ public class DMSResponsibilityTransferController : Controller
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.DeleteAsync(code),
-                Message = "DocumentType deleted successfully.",
+                Message = "Record deleted successfully.",
                 Code = 200
             });
         }

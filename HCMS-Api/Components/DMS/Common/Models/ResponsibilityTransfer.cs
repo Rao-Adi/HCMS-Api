@@ -61,7 +61,7 @@ public class ResponsibilityTransferCreateDto
     public string EmployeeTo { get; set; }
     public string ReasonForTransfer { get; set; }
     public DateTime EffectiveDateFrom { get; set; }
-    public DateTime EffectiveDateTo { get; set; }
+    public DateTime? EffectiveDateTo { get; set; }
     public bool PermanentTransfer { get; set; }
     public IFormFile Attachment { get; set; }
     public string Remarks { get; set; }

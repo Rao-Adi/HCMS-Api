@@ -107,37 +107,37 @@ public class TransferWorkflowPolicyComponent
             // Fetch inserted record
             string selectQuery = $@"  
                 SELECT 
-                    t.*, 
-                    div_setup.Name AS Division, 
-                    c.Name AS Company,
-                    head.FullName AS DivisionHeadName,
-                    head.Designation AS DivisionHeadDesignation
-                FROM TransferWorkflowPolicies t
-                -- Join on sdlid because divisioncode contains the ID '12916'
-                LEFT JOIN public.tblsetupsdetail div_setup 
-                    ON t.DivisionCode::int = div_setup.sdlid 
-                    AND div_setup.smsid = 70
-                LEFT JOIN Companies c 
-                    ON t.CompanyId = c.Id
-                -- Sub-query to fetch the most senior person in that division
-                LEFT JOIN LATERAL (
-                    SELECT 
-                        e.firstname || ' ' || e.lastname AS FullName,
-                        dsg.name AS Designation
-                    FROM public.tblemployee e
-                    INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                    WHERE e.divid = div_setup.sdlid  
-                    ORDER BY 
-                        CASE 
-                            WHEN dsg.name LIKE '%Director%' THEN 1
-                            WHEN dsg.name LIKE '%General Manager%' THEN 2
-                            WHEN dsg.name LIKE '%Head%' THEN 3
-                            WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
-                            ELSE 5 
-                        END ASC,
-                        e.datejoin ASC
-                    LIMIT 1
-                ) head ON TRUE
+                            t.*, 
+                            div_setup.Name AS Division, 
+                            c.Name AS Company,
+                            head.FullName AS DivisionHeadName,
+                            head.Designation AS DivisionHeadDesignation
+                        FROM TransferWorkflowPolicies t
+                        -- Join on sdlid because divisioncode contains the ID '12916'
+                        LEFT JOIN public.tblsetupsdetail div_setup 
+                            ON t.DivisionCode::int = div_setup.sdlid 
+                            AND div_setup.smsid = 70
+                        LEFT JOIN Companies c 
+                            ON t.CompanyId = c.Id
+                        -- Sub-query to fetch the most senior person in that division
+                        LEFT JOIN LATERAL (
+                            SELECT 
+                                e.firstname || ' ' || e.lastname AS FullName,
+                                dsg.name AS Designation
+                            FROM public.tblemployee e
+                            INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                            WHERE e.divid = div_setup.sdlid  
+                            ORDER BY 
+                                CASE 
+                                    WHEN dsg.name LIKE '%Director%' THEN 1
+                                    WHEN dsg.name LIKE '%General Manager%' THEN 2
+                                    WHEN dsg.name LIKE '%Head%' THEN 3
+                                    WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
+                                    ELSE 5 
+                                END ASC,
+                                e.datejoin ASC
+                            LIMIT 1
+                        ) head ON TRUE
                 WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);

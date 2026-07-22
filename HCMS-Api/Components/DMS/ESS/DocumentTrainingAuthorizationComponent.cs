@@ -53,7 +53,7 @@ public class DocumentTrainingAuthorizationComponent
             SELECT COUNT(1)
             FROM DocumentTrainingAuthorizations
             WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
-              AND IsDeleted = FALSE";
+              AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -360,8 +360,7 @@ public class DocumentTrainingAuthorizationComponent
             SET 
                 DocumentTypeCode = '{input.DocumentTypeCode}',
                 AuthorizationRequired = {(input.AuthorizationRequired ? "TRUE" : "FALSE")}, 
-                AuthorizingUserId = {userIdVal},
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                AuthorizingUserId = {userIdVal}, 
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = {input.Id} AND CompanyId = {CompanyId}";

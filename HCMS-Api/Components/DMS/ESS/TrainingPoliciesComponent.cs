@@ -58,7 +58,7 @@ public class TrainingPolicyComponent
             SELECT COUNT(1)
             FROM TrainingPolicies
             WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
-              AND IsDeleted = FALSE";
+             AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
