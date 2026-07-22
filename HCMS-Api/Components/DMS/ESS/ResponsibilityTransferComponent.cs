@@ -150,7 +150,7 @@ public class ResponsibilityTransferComponent
                 approverId = await _common.ExecuteScalarAsync<string>(@"
                     SELECT e.empCode 
                     FROM public.tblEmployee e
-                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE 
                     INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
                     WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId LIMIT 1",
                     new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId, CompanyId = CompanyId });

@@ -1346,10 +1346,10 @@ public class DocumentComponent
                 u.Email,
                 d.Title
             FROM DocumentUserTraining dut
-            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode
+            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode AND e.CompanyId = @CompanyId
             JOIN Documents d ON d.Id = dut.DocumentId
             WHERE dut.CompanyId = @CompanyId
-              AND dut.DocumentId = @DocumentId
+              AND dut.DocumentId = @DocumentId              
               AND dut.TrainingStatus = 0
               AND dut.IsActive = TRUE
               AND dut.IsDeleted = FALSE;
@@ -2010,11 +2010,11 @@ public class DocumentComponent
                 SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
-                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
-                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
@@ -2166,7 +2166,7 @@ public class DocumentComponent
                 FROM VW_Documents doc   
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy 
+                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -2263,8 +2263,8 @@ public class DocumentComponent
                     )
                     FROM WorkflowExecutionSteps wes
                     LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
-                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
-                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
+                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId  AND r.CompanyId = @CompanyId
+                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId  AND des.CompanyId = @CompanyId
                     WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
                     'Pending Training/Authorization'
                 ) AS CurrentWorkflowAuthority,
@@ -2962,7 +2962,7 @@ public class DocumentComponent
                 SELECT dud.DocumentId, e.empCode AS EmployeeCode, 
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
                 FROM DocumentUserDistributions dud
-                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode
+                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
                 WHERE dud.CompanyId = @CompanyId AND dud.DocumentId = ANY(@DocumentIds);",
                 new { CompanyId, DocumentIds = documentIds })).ToList();
 
@@ -3262,7 +3262,8 @@ public class DocumentComponent
 
                     await tx.CommitAsync();
                     //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (UPDATE).");
-                    results.Add($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
+                    // Log success physically but do not return in skipped/error list
+                    LogToFile($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
                 }
                 else
                 {
@@ -3301,7 +3302,8 @@ public class DocumentComponent
 
                     await tx.CommitAsync();
                     //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (INSERT).");
-                    results.Add($"Row {row}: Successfully imported metadata for '{docNum}'.");
+                    // Log success physically but do not return in skipped/error list
+                    LogToFile($"Row {row}: Successfully imported metadata for '{docNum}'.");
                 }
             }
             catch (Exception ex)

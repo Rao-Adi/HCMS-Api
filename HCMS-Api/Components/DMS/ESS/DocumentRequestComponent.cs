@@ -975,8 +975,8 @@ public class DocumentRequestComponent
                         @CreatedBy, 
                         @LastModifiedBy
                     FROM DocumentRequestRoleDistributions dr
-                    INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1
-                    INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE
+                    INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1  AND e.CompanyId = @CompanyId
+                    INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                     LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
                     WHERE dr.DocumentRequestId = @RequestId
                       AND dr.CompanyId = @CompanyId
@@ -1426,11 +1426,11 @@ public class DocumentRequestComponent
                 SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
-                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
-                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
@@ -1850,11 +1850,11 @@ public class DocumentRequestComponent
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                        COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentUserDistributions dud
-                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode
-                LEFT JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
+                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                LEFT JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
                 WHERE dud.DocumentId = @DocumentId AND dud.CompanyId = @CompanyId;";
 
             document.UserList = (await _common.QueryAsync<DocumentRequestUserDistribution>(userDistSql, new { DocumentId = documentId, CompanyId })).ToList();
@@ -2016,11 +2016,11 @@ public class DocumentRequestComponent
                 SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
-                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
-                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
@@ -2137,7 +2137,7 @@ public class DocumentRequestComponent
                 ON wes.CompanyId = we.CompanyId
                 AND wes.WorkflowExecutionId = we.Id
                 AND wes.IsActive = TRUE
-            LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text
+            LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text   AND e.CompanyId = @CompanyId
             --LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
             LEFT JOIN WorkflowStepDefinitions wsd 
                 ON wsd.CompanyId = wes.CompanyId
@@ -2255,7 +2255,7 @@ public class DocumentRequestComponent
                         ON wes.CompanyId = we.CompanyId
                         AND wes.WorkflowExecutionId = we.Id
                         AND wes.IsActive = TRUE
-                    LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text
+                    LEFT JOIN tblEmployee e ON wes.AssignedUserId = e.empcode::Text   AND e.CompanyId = @CompanyId
                     --LEFT JOIN Roles r ON wes.AssignedRoleId = r.Id
                     LEFT JOIN WorkflowStepDefinitions wsd 
                         ON wsd.CompanyId = wes.CompanyId
@@ -2363,17 +2363,17 @@ public class DocumentRequestComponent
 
                     -- Assigned Employee
                     LEFT JOIN tblEmployee e
-                        ON e.empCode = wes.AssignedUserId
+                        ON e.empCode = wes.AssignedUserId AND e.CompanyId = @CompanyId
 
                     LEFT JOIN public.tblempjobprofile ejp 
                         ON ejp.empid = e.empid 
-                        AND ejp.Active = TRUE
+                        AND ejp.Active = TRUE   AND ejp.CompanyId = @CompanyId
 
                     LEFT JOIN public.tblsetupsdetail r 
-                        ON r.sdlid = ejp.roleid
+                        ON r.sdlid = ejp.roleid   AND r.CompanyId = @CompanyId
 
                     LEFT JOIN public.tblsetupsdetail desig 
-                        ON desig.sdlid = ejp.dsgid
+                        ON desig.sdlid = ejp.dsgid   AND desig.CompanyId = @CompanyId
 
                     -- 🔹 Created By Employee
                     LEFT JOIN Vw_EmployeeNames c 
@@ -2446,13 +2446,13 @@ public class DocumentRequestComponent
                     ON wsd.CompanyId = wes.CompanyId
                     AND wsd.Id = wes.StepDefinitionId
                 LEFT JOIN tblEmployee e
-                   ON e.empCode = wes.AssignedUserId
+                   ON e.empCode = wes.AssignedUserId  AND e.CompanyId = @CompanyId
                 LEFT JOIN public.tblempjobprofile ejp 
-                   ON ejp.empid = e.empid AND ejp.Active = TRUE
+                   ON ejp.empid = e.empid AND ejp.Active = TRUE  AND ejp.CompanyId = @CompanyId
                 LEFT JOIN public.tblsetupsdetail r 
-                   ON r.sdlid = ejp.roleid
+                   ON r.sdlid = ejp.roleid AND r.CompanyId = @CompanyId
                 LEFT JOIN public.tblsetupsdetail desig 
-                   ON desig.sdlid = ejp.dsgid
+                   ON desig.sdlid = ejp.dsgid AND desig.CompanyId = @CompanyId
                 LEFT JOIN (
                     SELECT 
                         CompanyId, 
@@ -3253,7 +3253,7 @@ public class DocumentRequestComponent
  
                     -- Assigned Employee
                     LEFT JOIN tblEmployee e
-                        ON e.empCode = dr.createdBy 
+                        ON e.empCode = dr.createdBy  AND e.CompanyId = @CompanyId
                 WHERE dr.CompanyId = {CompanyId};";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);

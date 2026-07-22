@@ -479,26 +479,26 @@ public class DocumentTrainingComponent
                 FROM DocumentUserTraining dut
                 
                 LEFT JOIN tblEmployee e 
-                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')
+                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')  AND e.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblempjobprofile ejp 
                     ON ejp.empid = e.empid 
-                    AND COALESCE(ejp.Active, TRUE) = TRUE
+                    AND COALESCE(ejp.Active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail r 
-                    ON r.sdlid = ejp.roleid
+                    ON r.sdlid = ejp.roleid  AND r.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail desig 
-                    ON desig.sdlid = ejp.dsgid
+                    ON desig.sdlid = ejp.dsgid  AND desig.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail div 
-                    ON div.sdlid = e.divid
+                    ON div.sdlid = e.divid AND div.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail dep 
-                    ON dep.sdlid = e.mdptid
+                    ON dep.sdlid = e.mdptid AND dep.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail subd 
-                    ON subd.sdlid = e.dptid
+                    ON subd.sdlid = e.dptid AND subd.CompanyId = @CompanyId
                     
                 WHERE dut.DocumentId = @DocumentId 
                   AND dut.CompanyId = @CompanyId

@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -51,39 +51,39 @@ public class TemplateComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            if (input.IsDefault)
-            {
-                string checkDefaultQuery = $@"
-                SELECT COUNT(1)
-                FROM Templates
-                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
-                  AND IsDefault = TRUE
-                  AND IsDeleted = FALSE";
+            //if (input.IsDefault)
+            //{
+            //    string checkDefaultQuery = $@"
+            //    SELECT COUNT(1)
+            //    FROM Templates
+            //    WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
+            //      AND IsDefault = TRUE
+            //      AND IsDeleted = FALSE";
 
-                int defaultExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkDefaultQuery));
+            //    int defaultExists = Convert.ToInt32(_common.ExecuteScalarQuery(checkDefaultQuery));
 
-                if (defaultExists > 0)
-                    throw new CustomException("A default template already exists for this Document Type.", 409);
-            }
-            else
-            {
-                string checkQuery = $@"
-                SELECT COUNT(1)
-                FROM Templates
-                WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
-                  AND COALESCE(DivisionCode,'') = COALESCE('{input.DivisionCode}','')
-                  AND COALESCE(DepartmentCode,'') = COALESCE('{input.DepartmentCode}','')
-                  AND COALESCE(SubDepartmentCode,'') = COALESCE('{input.SubDepartmentCode}','')
-                  AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
-                  AND IsDefault = FALSE
-                  AND IsDeleted = FALSE
-                  AND CompanyId = {CompanyId}";
+            //    if (defaultExists > 0)
+            //        throw new CustomException("A default template already exists for this Document Type.", 409);
+            //}
+            //else
+            //{
+            //    string checkQuery = $@"
+            //    SELECT COUNT(1)
+            //    FROM Templates
+            //    WHERE DocumentTypeCode = '{input.DocumentTypeCode}' 
+            //      AND COALESCE(DivisionCode,'') = COALESCE('{input.DivisionCode}','')
+            //      AND COALESCE(DepartmentCode,'') = COALESCE('{input.DepartmentCode}','')
+            //      AND COALESCE(SubDepartmentCode,'') = COALESCE('{input.SubDepartmentCode}','')
+            //      AND COALESCE(BusinessDomainCode,'') = COALESCE('{input.BusinessDomainCode}','')
+            //      AND IsDefault = FALSE
+            //      AND IsDeleted = FALSE
+            //      AND CompanyId = {CompanyId}";
 
-                int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
+            //    int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
-                if (exists > 0)
-                    throw new CustomException("A template for this specific scope already exists.", 409);
-            }
+            //    if (exists > 0)
+            //        throw new CustomException("A template for this specific scope already exists.", 409);
+            //}
 
             string templateFileUrl = input.TemplateFileUrl ?? string.Empty;
 
@@ -111,75 +111,127 @@ public class TemplateComponent
                 input.TemplateContent = "";
             }
 
-            // Insert (PostgreSQL syntax)
-            string Safe(string s) => s?.Replace("'", "''") ?? "";
-            int SafeInt(int s) => 0;
+            // Check if matching template already exists
+            string checkQuery = @"
+                SELECT Id FROM Templates
+                WHERE CompanyId = @CompanyId
+                  AND DocumentTypeCode = @DocumentTypeCode
+                  AND IsDefault = @IsDefault
+                  AND IsDeleted = FALSE
+                  AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                  AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                  AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                  AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                LIMIT 1;";
 
-            string sql = @"
-                        INSERT INTO Templates (
-                            CompanyId,
-                            DocumentTypeCode,
-                            TemplateName,
-                            TemplateFileUrl,
-                            TemplateType,
-                            DivisionCode,
-                            DepartmentCode,
-                            SubDepartmentCode,
-                            BusinessDomainCode,
-                            IsDefault, 
-                            TemplateContent,
-                            IsActive,
-                            IsDeleted,
-                            CreatedAt,
-                            CreatedBy,
-                            LastModifiedAt,
-                            LastModifiedBy
-                        )
-                        VALUES (
-                            @CompanyId,
-                            @DocumentTypeCode,
-                            @TemplateName,
-                            @TemplateFileUrl,
-                            @TemplateType,
-                            @DivisionCode,
-                            @DepartmentCode,
-                            @SubDepartmentCode,
-                            @BusinessDomainCode,
-                            @IsDefault,
-                            @TemplateContent,
-                            TRUE,
-                            FALSE,
-                            NOW(),
-                            @CreatedBy,
-                            NOW(),
-                            @LastModifiedBy
-                        )
-                        RETURNING Id;
-                    ";
+            var checkParams = new
+            {
+                CompanyId = CompanyId,
+                DocumentTypeCode = input.DocumentTypeCode,
+                IsDefault = input.IsDefault,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode
+            };
 
-            // Assuming _common.ExecuteScalarQuery accepts command + parameters
-            // (if not → change your helper or use NpgsqlCommand directly)
+            int? existingId = await _dapperService.ExecuteScalarAsync<int?>(checkQuery, checkParams);
+            int targetId;
 
-            var parameters = new Dictionary<string, object>
-                    {
-                        { "@CompanyId",           CompanyId},
-                        { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
-                        { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
-                        { "@TemplateFileUrl",     templateFileUrl           },
-                        { "@TemplateType",        input.TemplateType  },
-                        { "@DivisionCode",        input.DivisionCode        ?? (object)DBNull.Value },
-                        { "@DepartmentCode",      input.DepartmentCode      ?? (object)DBNull.Value },
-                        { "@SubDepartmentCode",   input.SubDepartmentCode   ?? (object)DBNull.Value },
-                        { "@BusinessDomainCode",   input.BusinessDomainCode   ?? (object)DBNull.Value },
-                        { "@IsDefault",           input.IsDefault           },  // bool → true/false (no quotes)
-                        { "@TemplateContent",     input.TemplateContent     ?? (object)DBNull.Value },
-                        { "@CreatedBy",           empCode                    },
-                        { "@LastModifiedBy",      empCode                    }
-                    };
+            if (existingId.HasValue && existingId.Value > 0)
+            {
+                string updateSql = @"
+                    UPDATE Templates SET
+                        TemplateName = @TemplateName,
+                        TemplateFileUrl = @TemplateFileUrl,
+                        TemplateType = @TemplateType,
+                        TemplateContent = @TemplateContent,
+                        IsDefault = @IsDefault,
+                        IsActive = TRUE,
+                        LastModifiedAt = NOW(),
+                        LastModifiedBy = @LastModifiedBy
+                    WHERE Id = @Id;";
 
-            int newId = Convert.ToInt32(_common.ExecuteScalarQuery(sql, parameters));
+                var updateParams = new
+                {
+                    Id = existingId.Value,
+                    TemplateName = input.TemplateName,
+                    TemplateFileUrl = templateFileUrl,
+                    TemplateType = input.TemplateType,
+                    TemplateContent = input.TemplateContent,
+                    IsDefault = input.IsDefault,
+                    LastModifiedBy = empCode
+                };
 
-            // Fetch inserted record
+                await _dapperService.ExecuteAsync(updateSql, updateParams);
+                targetId = existingId.Value;
+            }
+            else
+            {
+                // Insert (PostgreSQL syntax)
+                string sql = @"
+                            INSERT INTO Templates (
+                                CompanyId,
+                                DocumentTypeCode,
+                                TemplateName,
+                                TemplateFileUrl,
+                                TemplateType,
+                                DivisionCode,
+                                DepartmentCode,
+                                SubDepartmentCode,
+                                BusinessDomainCode,
+                                IsDefault, 
+                                TemplateContent,
+                                IsActive,
+                                IsDeleted,
+                                CreatedAt,
+                                CreatedBy,
+                                LastModifiedAt,
+                                LastModifiedBy
+                            )
+                            VALUES (
+                                @CompanyId,
+                                @DocumentTypeCode,
+                                @TemplateName,
+                                @TemplateFileUrl,
+                                @TemplateType,
+                                @DivisionCode,
+                                @DepartmentCode,
+                                @SubDepartmentCode,
+                                @BusinessDomainCode,
+                                @IsDefault,
+                                @TemplateContent,
+                                TRUE,
+                                FALSE,
+                                NOW(),
+                                @CreatedBy,
+                                NOW(),
+                                @LastModifiedBy
+                            )
+                            RETURNING Id;
+                        ";
+
+                var parameters = new Dictionary<string, object>
+                        {
+                            { "@CompanyId",           CompanyId},
+                            { "@DocumentTypeCode",    input.DocumentTypeCode    ?? (object)DBNull.Value },
+                            { "@TemplateName",        input.TemplateName        ?? (object)DBNull.Value },
+                            { "@TemplateFileUrl",     templateFileUrl           },
+                            { "@TemplateType",        input.TemplateType  },
+                            { "@DivisionCode",        input.DivisionCode        ?? (object)DBNull.Value },
+                            { "@DepartmentCode",      input.DepartmentCode      ?? (object)DBNull.Value },
+                            { "@SubDepartmentCode",   input.SubDepartmentCode   ?? (object)DBNull.Value },
+                            { "@BusinessDomainCode",  input.BusinessDomainCode  ?? (object)DBNull.Value },
+                            { "@IsDefault",           input.IsDefault           },  // bool → true/false (no quotes)
+                            { "@TemplateContent",     input.TemplateContent     ?? (object)DBNull.Value },
+                            { "@CreatedBy",           empCode                    },
+                            { "@LastModifiedBy",      empCode                    }
+                        };
+
+                targetId = Convert.ToInt32(_common.ExecuteScalarQuery(sql, parameters));
+            }
+
+            // Fetch record
             string selectQuery = $@"
             SELECT  t.*, div.Name AS Division, d.Name Department, sd.Name SubDepartment, c.Name AS Company, bd.Name AS BusinessDomain
             FROM Templates t
@@ -193,7 +245,7 @@ public class TemplateComponent
             ON t.CompanyId = c.Id
             LEFT JOIN BusinessDomains bd
             ON t.BusinessDomainCode = bd.Code
-            WHERE t.Id = {newId} AND t.CompanyId ={CompanyId}";
+            WHERE t.Id = {targetId} AND t.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

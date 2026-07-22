@@ -57,7 +57,9 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE ControlLabel = '{input.ControlLabel}' AND CompanyId ={CompanyId}
+            WHERE ControlLabel = '{input.ControlLabel}'
+              AND DocumentTypeCode = '{input.DocumentTypeCode}'
+              AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));

@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -611,10 +611,23 @@ public class DMSDocumentController : Controller
         try
         {
             var file = csvFile ?? (Request.HasFormContentType ? Request.Form.Files.FirstOrDefault() : null);
+            var results = await _documentComponent.BulkImportDocumentMetadataAsync(file);
+
+            if (results != null && results.Any(r => r.Contains("Skipped") || r.StartsWith("Error")))
+            {
+                return BadRequest(new HttpApiResponse<List<string>>()
+                {
+                    Success = false,
+                    Data = results,
+                    Message = "Some records were skipped or failed during the bulk import process.",
+                    Code = 400
+                });
+            }
+
             return Ok(new HttpApiResponse<List<string>>()
             {
                 Success = true,
-                Data = await _documentComponent.BulkImportDocumentMetadataAsync(file),
+                Data = results,
                 Message = "Bulk import metadata process completed.",
                 Code = 200
             });
