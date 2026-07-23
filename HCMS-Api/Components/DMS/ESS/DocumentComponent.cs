@@ -113,7 +113,7 @@ public class DocumentComponent
 
             if (exists > 0)
                 throw new CustomException("Document Title or Document Number already exists.", 409);
-             
+
 
             var newId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
@@ -128,18 +128,18 @@ public class DocumentComponent
                 )
                 RETURNING Id
                 ", new
-                {
-                    CompanyId,
-                    DocumentNumber= input.DocumentNumber,
-                    DocumentTypeCode = input.DocumentTypeCode,
-                    Title = input.DocumentName,
-                    NextReviewDate = input.NextReviewDate,
-                    DivisionCode = input.DivisionCode,
-                    DepartmentCode = input.DepartmentCode,
-                    SubDepartmentCode = input.SubDepartmentCode,
-                    BusinessDomainCode = input.BusinessDomainCode,
-                    DocumentUrl = documentUrl,
-                    UserId = empCode
+            {
+                CompanyId,
+                DocumentNumber = input.DocumentNumber,
+                DocumentTypeCode = input.DocumentTypeCode,
+                Title = input.DocumentName,
+                NextReviewDate = input.NextReviewDate,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentUrl = documentUrl,
+                UserId = empCode
             }, tx);
 
             // UC-32: Active Archival - Insert initial effective version
@@ -173,7 +173,7 @@ public class DocumentComponent
                 @CompanyId, @DocumentId, 1, @UserId
             )
             ", new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
-             
+
             await tx.CommitAsync();
 
             // Fetch inserted record
@@ -599,7 +599,7 @@ public class DocumentComponent
             //-------------------------------------------------
             // Validate & Save Training Users
             //-------------------------------------------------
-            await ValidateAndSaveTrainingUsersAsync(input, doc, CompanyId, empCode, transaction);
+            await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction);
 
             //-------------------------------------------------
             // 2️⃣ Resolve Correct Workflow Policy
@@ -953,7 +953,7 @@ public class DocumentComponent
         }
     }
 
-    private async Task ValidateAndSaveTrainingUsersAsync(dynamic input, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction)
+    private async Task ValidateAndSaveTrainingUsersAsync(List<TraningUsers> TrainingUsers, int documentId, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction)
     {
         // 1. Check if Training is required for this DocumentType
         var tp = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -970,7 +970,7 @@ public class DocumentComponent
         {
             // UC Requirement: Users must be attached if Training = True
             // Note: Ensure your 'SubmitDocument' DTO contains: public List<string>? TrainingUserIds { get; set; }
-            if (input.TrainingUserIds == null || input.TrainingUserIds.Count == 0)
+            if (TrainingUsers == null || TrainingUsers.Count == 0)
                 throw new CustomException("Training is required for this document type. Please select users for training.", 400);
 
             // Clear any existing training users (useful in case of rework/resubmission)
@@ -978,17 +978,17 @@ public class DocumentComponent
                 DELETE FROM DocumentUserTraining 
                 WHERE DocumentId = @DocumentId 
                   AND CompanyId = @CompanyId;",
-                new { DocumentId = input.DocumentId, CompanyId = companyId }, transaction);
+                new { DocumentId = documentId, CompanyId = companyId }, transaction);
 
             // Insert new explicitly attached training users
-            foreach (string uid in input.TrainingUserIds)
+            foreach (var uid in TrainingUsers)
             {
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentUserTraining
                     (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, @EmployeeCode, 1, 0, '', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
-                new { CompanyId = companyId, DocumentId = input.DocumentId, EmployeeCode = uid, UserId = empCode }, transaction);
+                    (@CompanyId, @DocumentId, @EmployeeCode, @TrainingMode, 0, '', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = uid.EmployeeCode, TrainingMode = uid.TrainingMode, UserId = empCode }, transaction);
             }
         }
     }
@@ -1346,7 +1346,7 @@ public class DocumentComponent
                 u.Email,
                 d.Title
             FROM DocumentUserTraining dut
-            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode AND e.CompanyId = @CompanyId
+            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode AND u.CompanyId = @CompanyId
             JOIN Documents d ON d.Id = dut.DocumentId
             WHERE dut.CompanyId = @CompanyId
               AND dut.DocumentId = @DocumentId              
@@ -2847,12 +2847,12 @@ public class DocumentComponent
                 SELECT DISTINCT
                     doc.*, 
                     dv.Version,
-                    tr.TrainingMode,
+                    dut.TrainingMode AS TrainingMode,
                     tr.TrainingProofURL,
                     doc.CreatedAt,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.IsDeleted = FALSE) AS TotalAssigned,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS TotalCompleted,
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS AverageScore
                 FROM Vw_Documents doc  
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
@@ -3103,7 +3103,7 @@ public class DocumentComponent
             //LogToFile("[BULK IMPORT] Error: No file provided or file length is 0.");
             results.Add("Error: No file provided.");
             return results;
-        } 
+        }
 
         var parsedRows = new List<ParsedRow>();
         var fileExtension = Path.GetExtension(excelFile.FileName).ToLower();
@@ -3296,7 +3296,7 @@ public class DocumentComponent
                 }
 
                 // --- Database Insertion / Update ---
-                
+
                 //LogToFile($"[BULK IMPORT] Row {row}: Checking if document with Title='{title}' exists...");
                 var existingDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(
                     "SELECT Id, DocumentNumber FROM Documents WHERE Title = @Title AND CompanyId = @CompanyId AND IsDeleted = FALSE LIMIT 1",
@@ -3675,8 +3675,8 @@ public class DocumentComponent
                     UPPER(DocumentName) LIKE '%{search}%'
                     OR UPPER(RequestNumber) LIKE '%{search}%'
                 )";
-            } 
-             
+            }
+
             // Sorting (whitelisted to avoid SQL Injection)
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
@@ -3691,7 +3691,7 @@ public class DocumentComponent
 
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
-             
+
 
             var dataSql = $@"SELECT * FROM fn_get_my_inbox_documents(
                     @CompanyId,
@@ -3718,7 +3718,7 @@ public class DocumentComponent
                 input.DocumentTypeCode
             };
 
-             
+
             var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
             if (!requests.Any())
             {
@@ -3726,7 +3726,7 @@ public class DocumentComponent
             }
 
             var sb = new System.Text.StringBuilder();
-            
+
             // Add header row matching Angular model columns
             var headers = new List<string>
             {
@@ -3820,7 +3820,7 @@ public class GetDocumentsPendingApprovalDto : TableFiltersDto
 
 }
 public class GetAuthorizedDocumentsDto : TableFiltersDto
-{ 
+{
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }

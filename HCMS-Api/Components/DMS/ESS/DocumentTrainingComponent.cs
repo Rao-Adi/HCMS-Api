@@ -457,7 +457,7 @@ public class DocumentTrainingComponent
         }
     }
 
-    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId)
+    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId, int trainingMode)
     {
         try
         {
@@ -471,6 +471,11 @@ public class DocumentTrainingComponent
                     dut.TrainingStatus,
                     dut.AssessmentScore,
                     dut.TrainingProofUrl,
+                    dut.TrainingMode,
+	                    CASE 
+                            WHEN dut.TrainingMode = 1 THEN 'Classroom' 
+                            ELSE 'Online' 
+                        END AS TrainingModeName,
                     r.name AS RoleName,
                     desig.name AS Designation,
                     div.name AS Division,
@@ -501,10 +506,11 @@ public class DocumentTrainingComponent
                     ON subd.sdlid = e.dptid AND subd.CompanyId = @CompanyId
                     
                 WHERE dut.DocumentId = @DocumentId 
+                  AND (@TrainingMode = 0 OR dut.TrainingMode = @TrainingMode)
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
 
-            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId })).ToList();
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId , TrainingMode = trainingMode })).ToList();
 
             var totalAssigned = userScores.Count;
             var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed

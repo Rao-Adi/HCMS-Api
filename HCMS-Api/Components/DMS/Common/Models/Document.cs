@@ -137,9 +137,13 @@ public class SubmitDocument
     public int DocumentId { get; set; } 
 
     public List<CreateDocumentAttributeValueDto> Attributes { get; set; } = new();
-    public List<string>? TrainingUserIds { get; set; }  
-    public int? TrainingMode { get; set; }  
+    public List<TraningUsers>? TrainingUsers { get; set; }   
 
+}
+public class TraningUsers
+{
+    public int TrainingMode { get; set; }
+    public string EmployeeCode { get; set; }
 }
 
 public class CreateDocumentAttributeValueDto
