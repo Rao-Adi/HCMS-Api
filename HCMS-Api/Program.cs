@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.BackgroundJobs;
@@ -229,6 +229,7 @@ builder.Services.AddScoped<DMSCommon>();
 builder.Services.AddScoped<DMSDataServices>();
 builder.Services.AddScoped<IDMSDapperDataService, DMSDapperDataService>();
 builder.Services.AddScoped<DivisionComponent>();
+builder.Services.AddScoped<EmployeeDraftObservationComponent>();
 builder.Services.AddScoped<DepartmentComponent>();
 builder.Services.AddScoped<SubDepartmentComponent>();
 builder.Services.AddScoped<DocumentTypeComponent>();

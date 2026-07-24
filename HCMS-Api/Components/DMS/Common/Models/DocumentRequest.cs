@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common.Misc;
+﻿﻿using HCMS_Api.Common.Misc;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -84,6 +84,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? BusinessDomain { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DraftFileURL { get; set; }
+    public int? ParentDocumentId { get; set; }
 
     public bool IsReworked { get; set; }
 
@@ -452,6 +453,7 @@ public class DraftDocumentRequestDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
+    public int? ParentDocumentId { get; set; }
      
 
     // 🟩 UC-22

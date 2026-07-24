@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -647,11 +647,15 @@ public class NotificationComponent
 
     private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
     {
-        string actionUrl = redirectionUrl ?? "#";
-        var baseUrl = _configuration["AppUrl"] ?? _configuration["BaseUrl"] ?? _configuration["FrontendUrl"] ?? "";
-        if (!string.IsNullOrEmpty(baseUrl) && actionUrl.StartsWith("/"))
+        string actionUrl = redirectionUrl ?? "";
+        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
+        if (!string.IsNullOrEmpty(actionUrl) && actionUrl != "#")
         {
-            actionUrl = baseUrl.TrimEnd('/') + actionUrl;
+            actionUrl = baseUrl.TrimEnd('/') + "/" + actionUrl.TrimStart('/');
+        }
+        else
+        {
+            actionUrl = baseUrl;
         }
 
         return $@"

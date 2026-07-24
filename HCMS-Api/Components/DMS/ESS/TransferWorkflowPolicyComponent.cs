@@ -607,9 +607,9 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
-                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId 
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId 
+                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId 
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -617,8 +617,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId 
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId 
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };
@@ -684,9 +684,10 @@ public class TransferWorkflowPolicyComponent
                        rt.ActionDate,
                        rt.Status
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
-                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId AND COALESCE(uc.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId 
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId 
+                LEFT JOIN tblEmployee uc ON LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(uc.empcode::text), '0') AND uc.CompanyId = rt.CompanyId 
+                
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -694,8 +695,8 @@ public class TransferWorkflowPolicyComponent
             string countSql = $@"
                 SELECT COUNT(1) 
                 FROM ResponsibilityTransfers rt
-                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON LTRIM(RTRIM(rt.EmployeeFrom::text), '0') = LTRIM(RTRIM(uf.empcode::text), '0') AND uf.CompanyId = rt.CompanyId  
+                LEFT JOIN tblEmployee ut ON LTRIM(RTRIM(rt.EmployeeTo::text), '0') = LTRIM(RTRIM(ut.empcode::text), '0') AND ut.CompanyId = rt.CompanyId 
                 {whereClause};";
 
             var queryParams = new { CompanyId = CompanyId, Status = input.Status, UserId = empCode };

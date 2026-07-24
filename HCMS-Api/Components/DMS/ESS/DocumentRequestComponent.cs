@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -93,12 +93,12 @@ public class DocumentRequestComponent
                 INSERT INTO DocumentRequests
                 (
                     CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
-                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Status, CreatedBy, LastModifiedBy, IsContentFinalized
+                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Status, CreatedBy, LastModifiedBy, IsContentFinalized, ParentDocumentId
                 )
                 VALUES
                 (
                     @CompanyId, 'DR-' || nextval('document_request_seq'), @RequestType, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
-                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Status, @CreatedBy, @LastModifiedBy, FALSE
+                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Status, @CreatedBy, @LastModifiedBy, FALSE, @ParentDocumentId
                 )
                 RETURNING Id;",
             new
@@ -116,7 +116,8 @@ public class DocumentRequestComponent
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Draft,
                 CreatedBy = empCode,
-                LastModifiedBy = empCode
+                LastModifiedBy = empCode,
+                dto.ParentDocumentId
             }, transaction);
 
             //-----------------------------------------
@@ -226,8 +227,8 @@ public class DocumentRequestComponent
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
-                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
-                var fileName = $"DRF_{Guid.NewGuid()}{fileExtension}";
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName); 
+                var fileName = $"{dto.DraftFile.FileName}";
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -246,7 +247,7 @@ public class DocumentRequestComponent
                 SET
                     DocumentName = @DocumentName,
                     Justification = @Justification,
-                    ProposedContent = @ProposedContent, 
+                    ProposedContent = @ProposedContent,  
                     DraftFileUrl = COALESCE(@DraftFileUrl, DraftFileUrl),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @LastModifiedBy
@@ -401,13 +402,13 @@ public class DocumentRequestComponent
                 (
                     CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
                     DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, 
-                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy
+                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId
                 )
                 VALUES
                 (
                     @CompanyId, 'DR-' || nextval('document_request_seq'), @RequestType, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
                     @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, 
-                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId
+                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId
                 )
                 RETURNING Id;",
             new
@@ -424,7 +425,8 @@ public class DocumentRequestComponent
                 dto.SubDepartmentCode,
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Submitted,
-                UserId = empCode
+                UserId = empCode,
+                dto.ParentDocumentId
             }, transaction);
 
             // 4. Insert Distribution Lists
@@ -2569,19 +2571,31 @@ public class DocumentRequestComponent
                 nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
             }
 
+            // Generate the system-designed document number
+            string documentNumber = await GenerateDocumentNumberAsync(
+                companyId,
+                (string)request.divisioncode,
+                (string)request.departmentcode,
+                (string)request.subdepartmentcode,
+                (string)request.documenttypecode,
+                (int?)request.parentdocumentid,
+                (string)request.businessdomaincode,
+                transaction);
+
             //-----------------------------------------
             // 2️⃣ Create Document
             //-----------------------------------------
             var documentId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
                 ( 
-                    CompanyId, DocumentNumber, RequestId, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
+                    CompanyId, DocumentNumber, ParentDocumentId, RequestId, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
                     SubDepartmentCode, BusinessDomainCode, DocumentURL, CreatedBy, LastModifiedBy
                 )
                 VALUES
                 (
                     @CompanyId,
-                    'DOC-' || nextval('document_seq'), 
+                    @DocumentNumber,
+                    @ParentDocumentId,
                     @RequestId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @CreatedBy, @LastModifiedBy
                 )
                 RETURNING Id
@@ -2589,6 +2603,8 @@ public class DocumentRequestComponent
             {
                 companyId,
                 requestId,
+                DocumentNumber = documentNumber,
+                ParentDocumentId = (int?)request.parentdocumentid,
                 DocumentTypeCode = request.documenttypecode,
                 Title = request.documentname,
                 NextReviewDate = nextReviewDate,
@@ -2847,37 +2863,39 @@ public class DocumentRequestComponent
 
             var myRequestsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myRequestsQuery, new { CompanyId, empCode });
 
-            // Query 2: Counts for requests in the current user's INBOX (for action)
-            var myInboxQuery = @"
-            SELECT
-                COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
-                COUNT(1) FILTER (WHERE we.Status = 'Completed' AND wes.Decision = 'Approved') AS Approved,
-                COUNT(1) FILTER (WHERE we.Status IN ('Rejected', 'Reworked') AND wes.Decision IN ('Rejected', 'Reworked')) AS RejectedOrReverted
-            FROM WorkflowExecutionSteps wes
-            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
-            WHERE wes.CompanyId = @CompanyId 
-              AND we.EntityType = 'Request'
-              AND (
-                wes.AssignedUserId = @empCode
-                OR 
-                wes.AssignedRoleId IN (
-                    SELECT ejp.roleid
-                    FROM public.tblempjobprofile ejp
-                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId 
-                      AND TRIM(e.empcode) = @empCode 
-                      AND ejp.Active = TRUE
-                )
-                OR 
-                wes.AssignedDesignationId IN (
-                    SELECT ejp.dsgid
-                    FROM public.tblempjobprofile ejp
-                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
-                    WHERE e.CompanyId = @CompanyId 
-                      AND TRIM(e.empcode) = @empCode 
-                      AND ejp.Active = TRUE
-                )
-              );";
+             // Query 2: Counts for requests in the current user's INBOX (for action)
+             var myInboxQuery = @"
+             SELECT
+                 COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
+                 COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
+                 COUNT(1) FILTER (WHERE (we.Status = 'Rejected' AND wes.Decision = 'Rejected') OR (we.Status = 'Reworked' AND wes.Decision = 'Reworked')) AS RejectedOrReverted
+             FROM WorkflowExecutionSteps wes
+             JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+             JOIN Vw_DocumentRequests dr ON dr.Id = we.EntityId AND dr.CompanyId = we.CompanyId
+             JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+             WHERE wes.CompanyId = @CompanyId 
+               AND we.EntityType = 'Request'
+               AND (
+                 wes.AssignedUserId = @empCode
+                 OR 
+                 wes.AssignedRoleId IN (
+                     SELECT ejp.roleid
+                     FROM public.tblempjobprofile ejp
+                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                     WHERE e.CompanyId = @CompanyId 
+                       AND TRIM(e.empcode) = @empCode 
+                       AND ejp.Active = TRUE
+                 )
+                 OR 
+                 wes.AssignedDesignationId IN (
+                     SELECT ejp.dsgid
+                     FROM public.tblempjobprofile ejp
+                     INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                     WHERE e.CompanyId = @CompanyId 
+                       AND TRIM(e.empcode) = @empCode 
+                       AND ejp.Active = TRUE
+                 )
+               );";
 
             var myInboxCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
 
@@ -3273,4 +3291,197 @@ public class DocumentRequestComponent
         }
     }
 
+    public async Task<string> GenerateDocumentNumberAsync(int companyId, string divisionCode, string departmentCode, string subDepartmentCode, string documentTypeCode, int? parentDocumentId, string businessDomainCode = null, NpgsqlTransaction transaction = null)
+    {
+        // 1. Lookup Document Type Name to use as TYP
+        var docTypeName = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Name FROM documenttypes 
+            WHERE Code = @DocumentTypeCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1",
+            new { DocumentTypeCode = documentTypeCode, CompanyId = companyId }, transaction);
+
+        if (string.IsNullOrWhiteSpace(docTypeName))
+            docTypeName = "DOC"; // fallback
+
+        // 2. Lookup Names for Cabinet Hierarchy
+        var cabinetNames = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT 
+                (SELECT Name FROM divisions WHERE Code = @DivisionCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS DivisionName,
+                (SELECT Name FROM departments WHERE Code = @DepartmentCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS DepartmentName,
+                (SELECT Name FROM subdepartments WHERE Code = @SubDepartmentCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS SubDepartmentName,
+                (SELECT Name FROM businessdomains WHERE Code = @BusinessDomainCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS BusinessDomainName",
+            new
+            {
+                DivisionCode = divisionCode,
+                DepartmentCode = departmentCode,
+                SubDepartmentCode = subDepartmentCode,
+                BusinessDomainCode = businessDomainCode,
+                CompanyId = companyId
+            }, transaction);
+
+        string GetAbbreviation(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            
+            name = name.Trim().ToUpper();
+            
+            // Remove noise words
+            var noiseWords = new[] { "DIVISION", "DEPARTMENT", "SUB-DEPARTMENT", "SUBDEPARTMENT", "SECTION", "DOMAIN" };
+            foreach (var nw in noiseWords)
+            {
+                name = name.Replace(nw, "").Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            // Common dictionary mappings
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "MARKETING", "MKT" },
+                { "QUALITY ASSURANCE", "QA" },
+                { "SOFTWARE DEVELOPMENT", "SD" },
+                { "INFORMATION TECHNOLOGY", "IT" },
+                { "HUMAN RESOURCES", "HR" },
+                { "PRODUCTION", "PROD" },
+                { "FINANCE", "FIN" },
+                { "TEST", "TST" }
+            };
+
+            if (mappings.TryGetValue(name, out string mapped))
+                return mapped;
+
+            // If it's already a short abbreviation
+            if (name.Length <= 4 && name.All(char.IsLetter))
+                return name;
+
+            var words = name.Split(new[] { ' ', '-', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 1)
+            {
+                var w = words[0];
+                return w.Length > 3 ? w.Substring(0, 3) : w;
+            }
+
+            var abbr = "";
+            foreach (var word in words)
+            {
+                if (char.IsLetterOrDigit(word[0]))
+                {
+                    abbr += word[0];
+                }
+            }
+            return abbr;
+        }
+
+        string div = null;
+        string dpt = null;
+        string sct = null;
+        string bsd = null;
+
+        if (cabinetNames != null)
+        {
+            div = GetAbbreviation((string)cabinetNames.divisionname);
+            dpt = GetAbbreviation((string)cabinetNames.departmentname);
+            sct = GetAbbreviation((string)cabinetNames.subdepartmentname);
+            bsd = GetAbbreviation((string)cabinetNames.businessdomainname);
+        }
+
+        string typ = docTypeName.ToUpper();
+ 
+         // 3. If it is an annexure (parentDocumentId is provided and > 0)
+         if (parentDocumentId.HasValue && parentDocumentId.Value > 0)
+         {
+             var parentDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                 SELECT DocumentNumber FROM documents 
+                 WHERE Id = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                 new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+ 
+             if (parentDoc == null || string.IsNullOrWhiteSpace((string)parentDoc.documentnumber))
+                 throw new Exception("Parent document not found for annexure generation.");
+ 
+             string parentNum = (string)parentDoc.documentnumber;
+ 
+             // Query existing annexures for this parent to determine the next letter suffix
+             var existingAnnexures = await _common.QueryAsync<string>(@"
+                 SELECT DocumentNumber FROM documents 
+                 WHERE ParentDocumentId = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                 new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+ 
+             var usedLetters = new HashSet<char>();
+             foreach (var annNum in existingAnnexures)
+             {
+                 if (string.IsNullOrWhiteSpace(annNum)) continue;
+                 var parts = annNum.Split('-');
+                 var lastPart = parts[parts.Length - 1];
+                 if (lastPart.Length == 1 && char.IsLetter(lastPart[0]))
+                 {
+                     usedLetters.Add(char.ToUpper(lastPart[0]));
+                 }
+             }
+ 
+             char nextLetter = 'A';
+             for (char c = 'A'; c <= 'Z'; c++)
+             {
+                 if (!usedLetters.Contains(c))
+                 {
+                     nextLetter = c;
+                     break;
+                 }
+             }
+ 
+             return $"{parentNum}-{nextLetter}";
+         }
+ 
+         // 4. Otherwise, normal document numbering: Build prefix using only linked cabinet segments
+         var segments = new List<string>();
+         if (!string.IsNullOrWhiteSpace(div)) segments.Add(div);
+         if (!string.IsNullOrWhiteSpace(dpt)) segments.Add(dpt);
+         if (!string.IsNullOrWhiteSpace(sct)) segments.Add(sct);
+         if (!string.IsNullOrWhiteSpace(bsd)) segments.Add(bsd);
+         segments.Add(typ);
+ 
+         string prefix = string.Join("-", segments) + "-";
+
+        var existingDocs = await _common.QueryAsync<string>(@"
+            SELECT DocumentNumber FROM documents 
+            WHERE CompanyId = @CompanyId 
+              AND (@DivisionCode IS NULL AND DivisionCode IS NULL OR DivisionCode = @DivisionCode)
+              AND (@DepartmentCode IS NULL AND DepartmentCode IS NULL OR DepartmentCode = @DepartmentCode)
+              AND (@SubDepartmentCode IS NULL AND SubDepartmentCode IS NULL OR SubDepartmentCode = @SubDepartmentCode)
+              AND (@BusinessDomainCode IS NULL AND BusinessDomainCode IS NULL OR BusinessDomainCode = @BusinessDomainCode)
+              AND DocumentTypeCode = @DocumentTypeCode 
+              AND DocumentNumber LIKE @Prefix || '%'
+              AND IsDeleted = FALSE",
+            new
+            {
+                CompanyId = companyId,
+                DivisionCode = divisionCode,
+                DepartmentCode = departmentCode,
+                SubDepartmentCode = subDepartmentCode,
+                BusinessDomainCode = businessDomainCode,
+                DocumentTypeCode = documentTypeCode,
+                Prefix = prefix
+            }, transaction);
+
+        int maxSeq = 0;
+        foreach (var docNum in existingDocs)
+        {
+            if (string.IsNullOrWhiteSpace(docNum)) continue;
+            if (docNum.Length <= prefix.Length) continue;
+            var suffix = docNum.Substring(prefix.Length);
+            if (suffix.Length >= 3)
+            {
+                var seqStr = suffix.Substring(0, 3);
+                if (int.TryParse(seqStr, out int seqVal))
+                {
+                    if (seqVal > maxSeq)
+                    {
+                        maxSeq = seqVal;
+                    }
+                }
+            }
+        }
+
+        int nextSeq = maxSeq + 1;
+        string seqPart = nextSeq.ToString("D3");
+        return $"{prefix}{seqPart}";
+    }
 }
