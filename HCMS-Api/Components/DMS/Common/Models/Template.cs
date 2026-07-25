@@ -81,7 +81,7 @@ public class TemplateCreateDto
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileUrl { get; set; } = null!;
+    public string? TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
      

@@ -392,7 +392,7 @@ public class DMSDocumentController : Controller
                 });
             }
 
-            var relativePath = request.DocumentURL.TrimStart('/');
+            var relativePath = request.DocumentURL.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
             var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
 
             if (!System.IO.File.Exists(filePath))

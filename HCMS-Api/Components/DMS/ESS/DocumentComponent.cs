@@ -86,7 +86,7 @@ public class DocumentComponent
 
         // 3️⃣ Create unique filename
         var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
-        var fileName = $"{input.DocumentFile.FileName}{fileExtension}";
+        var fileName = $"{input.DocumentFile.FileName}";
         var filePath = Path.Combine(uploadsRoot, fileName);
 
         // 4️⃣ Save file to disk
@@ -209,9 +209,9 @@ public class DocumentComponent
                 Title = row.Field<string>("Title"),
                 Version = row.Table.Columns.Contains("Version") && !row.IsNull("Version") ? row.Field<string>("Version") : string.Empty,
 
-                NextReviewDate = row.Table.Columns.Contains("NextReviewdate") && !row.IsNull("NextReviewdate")
-                    ? row.Field<DateTime>("NextReviewdate").ToString("yyyy-MM-dd HH:mm:ss")
-                    : (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate") ? row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty),
+                NextReviewDate = (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate"))
+                                ? row.Field<DateOnly>("NextReviewDate").ToString("yyyy-MM-dd") : string.Empty,
+
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -244,8 +244,12 @@ public class DocumentComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(doc.Name) LIKE '%{search}%'
-                    OR UPPER(doc.Id) LIKE '%{search}%'
+                    UPPER(doc.Title) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentNumber) LIKE '%{search}%' 
+                    OR UPPER(doc.Division) LIKE '%{search}%'
+                    OR UPPER(doc.Department) LIKE '%{search}%'
+                    OR UPPER(doc.SubDepartment) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentType) LIKE '%{search}%' 
                 )";
             }
 
@@ -279,7 +283,7 @@ public class DocumentComponent
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Documents doc
+                        FROM VW_Documents doc
                         {whereClause};
                     ";
 
@@ -1557,7 +1561,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Cancelled',
+                SET Status = 'Rejected',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
@@ -1676,7 +1680,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Cancelled',
+                SET Status = 'Reworked',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
@@ -3365,13 +3369,14 @@ public class DocumentComponent
                         )
                         VALUES
                         (
-                            @CompanyId, 'DOC-' || nextval('document_seq'), @DocumentTypeCode, @DivisionCode, @DepartmentCode,
+                            @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
                             @SubDepartmentCode, @Title, @NextReviewDate, @ExpectedFileName,
                             TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
                         )
                         RETURNING Id;", new
                     {
                         CompanyId,
+                        DocumentNumber = docNum,
                         DocumentTypeCode = docTypeCode,
                         DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
                         DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
