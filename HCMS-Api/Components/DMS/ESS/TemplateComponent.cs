@@ -480,8 +480,7 @@ public class TemplateComponent
                     ON t.CompanyId = c.Id
                     LEFT JOIN BusinessDomains bd
                     ON t.BusinessDomainCode = bd.Code
-                WHERE t.DocumentTypeCode = '{code}' AND t.CompanyId = {CompanyId}
-                  AND t.IsDefault = True
+                WHERE t.DocumentTypeCode = '{code}' AND t.CompanyId = {CompanyId} 
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
