@@ -793,6 +793,33 @@ public class DMSDocumentController : Controller
     }
 
 
+    [HttpPost("get-effective-documents-for-revision")]
+    public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetEffectiveDocumentsForRevisionAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
     //{

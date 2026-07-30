@@ -658,6 +658,75 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    // UC-22: Revision-only counterpart to submit-draft-document-request. Submits an existing
+    // Revision draft (DocumentRequestTypeCode == "Revision") and starts its workflow.
+    [HttpPost("submit-revision-document-request")]
+    public async Task<IActionResult> SubmitRevisionDocumentRequest(SubmitRevisionDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.SubmitRevisionDocumentRequestAsync(input),
+                Message = "Revision Request submitted successfully.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    // UC-22: Revision-only counterpart to create-and-submit-document-request. Requires
+    // ParentDocumentId and validates content differs from that document before starting the workflow.
+    [HttpPost("create-and-submit-revision-document-request")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> CreateAndSubmitRevisionDocumentRequest([FromForm] DraftDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<long>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.CreateAndSubmitRevisionDocumentRequestAsync(input),
+                Message = "Revision Request submitted successfully.",
+                Code = 201
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
 
     [HttpGet("get-effective-documents-details-by-id")]
     public async Task<IActionResult> GetEffectiveDocumentDetailsForRevision(int documentId)
@@ -687,32 +756,32 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpPost("get-effective-documents-for-revision")]
-    public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
-    {
-        try
-        {
-            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
-            {
-                Success = true,
-                Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
-                Message = "Success",
-                Code = 200
-            });
-        }
-        catch (CustomException ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, ex.Message);
-            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-            return StatusCode(response.Code, response);
-        }
-    }
+    //[HttpPost("get-effective-documents-for-revision")]
+    //public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    //{
+    //    try
+    //    {
+    //        return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+    //            Message = "Success",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
 
     [HttpGet("get-draft-documents-count")]
     public async Task<IActionResult> GetDraftDocumentCount()

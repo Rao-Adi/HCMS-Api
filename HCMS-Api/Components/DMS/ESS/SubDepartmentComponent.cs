@@ -52,10 +52,10 @@ public class SubDepartmentComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Sub-Department name is required.", 200);
+                throw new CustomException("Sub-Department name is required.", 400);
 
             if (string.IsNullOrWhiteSpace(input.DepartmentCode))
-                throw new CustomException("Department code is required.", 200);
+                throw new CustomException("Department code is required.", 400);
 
             // 🔍 Validate parent Department exists
             string departmentCheckQuery = $@"
@@ -85,7 +85,7 @@ public class SubDepartmentComponent
 
             if (exists > 0)
                 throw new CustomException(
-                    "Sub-Department already exists in this Department", 200);
+                    "Sub-Department already exists in this Department", 409);
 
             // 🔢 Generate next SCT code PER Department
             string lastCodeQuery = $@"

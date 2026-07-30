@@ -250,7 +250,7 @@ public class TemplateComponent
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                return new TemplateReadDto();
 
             DataRow row = dt.Rows[0];
 

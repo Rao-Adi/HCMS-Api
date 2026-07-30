@@ -2152,21 +2152,17 @@ public class DocumentComponent
 
             string dataSql = $@"
                 SELECT Distinct
-                    doc.*, 
-                    dv.Version,
+                    doc.*,  
                     tr.TrainingMode,
                     tr.TrainingProofURL,
-                    doc.CreatedAt,
-                    dv.Version,
-                    tr.TrainingProofURL,
+                    doc.CreatedAt,  
                     LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
                     doc.CreatedAt,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
                     (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
 
-                FROM VW_Documents doc   
-                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                FROM VW_Documents doc    
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
                 {whereClause}
@@ -3288,13 +3284,33 @@ public class DocumentComponent
                 }
 
                 //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for SubDepartment Code where Name='{subDeptName}' and DeptCode='{deptCode}'");
-                var subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
-                if (string.IsNullOrEmpty(subDeptCode))
+                //var subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
+                //if (string.IsNullOrEmpty(subDeptCode))
+                //{
+                //    //LogToFile($"[BULK IMPORT] Row {row}: Sub-Department '{subDeptName}' not found in Department '{deptName}'. Skipped.");
+                //    results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
+                //    await tx.RollbackAsync();
+                //    continue;
+                //}
+
+
+
+                string? subDeptCode = null;
+                if (!string.IsNullOrWhiteSpace(subDeptName) &&
+                    (subDeptName.Trim().Equals("N/A", StringComparison.OrdinalIgnoreCase) ||
+                     subDeptName.Trim().Equals("NA", StringComparison.OrdinalIgnoreCase)))
                 {
-                    //LogToFile($"[BULK IMPORT] Row {row}: Sub-Department '{subDeptName}' not found in Department '{deptName}'. Skipped.");
-                    results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
-                    await tx.RollbackAsync();
-                    continue;
+                    subDeptCode = null;
+                }
+                else
+                {
+                    subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
+                    if (string.IsNullOrEmpty(subDeptCode))
+                    {
+                        results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
+                        await tx.RollbackAsync();
+                        continue;
+                    }
                 }
 
                 // --- Database Insertion / Update ---
@@ -3792,6 +3808,260 @@ public class DocumentComponent
             throw new CustomException("Failed to export data.", 500);
         }
     }
+
+
+
+
+    public async Task<PaginationResult<EffectiveDocumentDetailsDto>> GetEffectiveDocumentsForRevisionAsync(TableFiltersDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE d.CompanyId = @CompanyId 
+                  AND d.IsDeleted = FALSE 
+                  AND d.IsActive = TRUE
+                  AND EXISTS (SELECT 1 FROM DocumentStateHistory dsh 
+			       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+			       WHERE dsh.DocumentId = d.Id
+			         AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED') 
+			     )";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(d.Title) LIKE '%{search}%'
+                    OR UPPER(d.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "d.DocumentNumber",
+                "DOCUMENTNAME" => "d.Title",
+                "TITLE" => "d.Title",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
+                _ => "d.Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"
+                SELECT DISTINCT d.*
+                FROM Vw_Documents d
+                INNER JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.CompanyId = d.CompanyId AND dv.VersionType = 2 
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"
+                SELECT COUNT(DISTINCT d.Id)
+                FROM Vw_Documents d
+                INNER JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.CompanyId = d.CompanyId AND dv.VersionType = 2
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId
+            };
+
+            var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId });
+
+
+            var requests = new List<EffectiveDocumentDetailsDto>();
+            foreach (var row in dynamicRequests)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                requests.Add(new EffectiveDocumentDetailsDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    DocumentNumber = GetValue<string>(dict, "documentnumber"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    RequestId = GetValue<int>(dict, "requestid"),
+                    Version = GetValue<string>(dict, "version"),
+                    VersionType = GetValue<string>(dict, "versiontype"),
+                    NextReviewDate = GetValue<string>(dict, "nextreviewdate"),
+                    ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
+                    DocumentId = GetValue<int>(dict, "documentid"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    DocumentName = GetValue<string>(dict, "title"),
+                    DocumentURL = GetValue<string>(dict, "documenturl"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
+                    CreatedByName = GetValue<string>(dict, "createdbyname"),
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                });
+            }
+
+            if (!requests.Any())
+                return new PaginationResult<EffectiveDocumentDetailsDto>
+                {
+                    Items = new List<EffectiveDocumentDetailsDto>(),
+                    TotalCount = 0
+                };
+
+
+            //-------------------------------------------------
+            // 2️⃣ Extract Ids
+            //-------------------------------------------------
+
+            var requestIds = requests.Select(x => x.Id).ToArray();
+
+            //-------------------------------------------------
+            // 3️⃣ Get Role Distributions
+            //-------------------------------------------------
+
+            var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
+                SELECT dl.*,
+                       div.Name AS Division,
+                       dep.Name AS Department,
+                       subd.Name AS SubDepartment,
+                       bd.Name AS BusinessDomain,
+	                   dt.Name AS DistributionType
+                   FROM DocumentRequestRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
+                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id 
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+                WHERE dl.CompanyId = @CompanyId
+                AND dl.DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 4️⃣ Get User Distributions
+            //-------------------------------------------------
+
+            var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
+                FROM DocumentRequestUserDistributions drd 
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
+                WHERE drd.CompanyId = @CompanyId
+                AND DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 5️⃣ Map Distributions Into Each Request
+            //-------------------------------------------------
+
+            foreach (var request in requests)
+            {
+                request.DistributionList = roleDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .Select(x => new DistributionListReadDto
+                    {
+                        Id = x.Id,
+                        DocumentRequestId = x.DocumentRequestId,
+                        CompanyId = x.CompanyId,
+                        Company = x.Company,
+                        RoleId = x.RoleId,
+                        Role = x.Role,
+                        DistributionTypeId = x.DistributionTypeId,
+                        DistributionType = x.DistributionType,
+                        Division = x.Division,
+                        DivisionCode = x.DivisionCode,
+                        Department = x.Department,
+                        DepartmentCode = x.DepartmentCode,
+                        SubDepartment = x.SubDepartment,
+                        SubDepartmentCode = x.SubDepartmentCode,
+                        BusinessDomain = x.BusinessDomain,
+                        BusinessDomainCode = x.BusinessDomainCode,
+                    }).ToList();
+
+                request.UserList = userDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .ToList();
+            }
+
+            return new PaginationResult<EffectiveDocumentDetailsDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
+
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
+
+
+    // Helper method to safely get values from the dynamic row
+    private static T GetValue<T>(IDictionary<string, object> row, string columnName)
+    {
+        if (row.ContainsKey(columnName) && row[columnName] != null && row[columnName] != DBNull.Value)
+        {
+            try
+            {
+                var value = row[columnName];
+
+                // Handle type conversions
+                if (typeof(T) == typeof(int?) || typeof(T) == typeof(int))
+                {
+                    if (value is int intValue)
+                        return (T)(object)intValue;
+                    if (value is long longValue)
+                        return (T)(object)(int)longValue;
+                    if (value is decimal decimalValue)
+                        return (T)(object)(int)decimalValue;
+                }
+
+                if (typeof(T) == typeof(string) && value != null)
+                    return (T)(object)value.ToString();
+
+                return (T)value;
+            }
+            catch
+            {
+                return default(T);
+            }
+        }
+        return default(T);
+    }
+
+
 }
 
 public class AuthorizeDocumentDto

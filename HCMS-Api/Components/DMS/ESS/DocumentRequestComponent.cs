@@ -604,6 +604,281 @@ public class DocumentRequestComponent
         }
     }
 
+    // UC-22: One-shot create+submit for a Revision of an existing document. Kept separate from
+    // CreateAndSubmitDocumentRequestAsync because a Revision must reference a ParentDocumentId,
+    // must validate that content differs from that document, and may route to a different policy.
+    public async Task<long> CreateAndSubmitRevisionDocumentRequestAsync(DraftDocumentRequestDto dto)
+    {
+        await using var transaction = await _common.BeginTransactionAsync();
+
+        try
+        {
+            // 1. Get User/Company Info
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            string? Normalize(string? value) =>
+                string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+            // Validation: Justification is mandatory for submission
+            if (string.IsNullOrWhiteSpace(dto.Justification))
+                throw new CustomException("Justification is required to submit a document request.", 400);
+
+            // A Revision must reference the existing document being revised
+            if (dto.ParentDocumentId == null)
+                throw new CustomException("ParentDocumentId is required to submit a revision request.", 400);
+
+            // 2. Handle File Upload
+            string? draftFileUrl = null;
+            if (dto.DraftFile != null && dto.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileName = $"{dto.DraftFile.FileName}";
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await dto.DraftFile.CopyToAsync(stream);
+                }
+                draftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
+            // UC-22 Validation: Ensure content has been altered from the original document being revised
+            var originalDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.DocumentURL, dv.Content
+                FROM Documents d
+                LEFT JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
+                WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
+                ORDER BY dv.CreatedAt DESC LIMIT 1;",
+                new { DocumentId = dto.ParentDocumentId, CompanyId }, transaction);
+
+            if (originalDoc != null)
+            {
+                bool contentUnchanged = (dto.ProposedContent == originalDoc.content) || (string.IsNullOrWhiteSpace(dto.ProposedContent) && string.IsNullOrWhiteSpace(originalDoc.content));
+                bool fileUnchanged = (draftFileUrl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(draftFileUrl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
+
+                if (contentUnchanged && fileUnchanged)
+                    throw new CustomException("Document Content must be altered from the original version before submitting a revision request.", 400);
+            }
+
+            // 3. Insert Document Request with 'Submitted' status
+            var requestId = await _common.ExecuteScalarAsync<long>(@"
+                INSERT INTO DocumentRequests
+                (
+                    CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
+                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId
+                )
+                VALUES
+                (
+                    @CompanyId, 'DR-' || nextval('document_request_seq'), @DocumentRequestTypeCode, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
+                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
+                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId
+                )
+                RETURNING Id;",
+            new
+            {
+                CompanyId,
+                dto.DocumentTypeCode,
+                dto.DocumentRequestTypeCode,
+                dto.DocumentName,
+                dto.Justification,
+                dto.ProposedContent,
+                DraftFileUrl = draftFileUrl,
+                dto.DivisionCode,
+                dto.DepartmentCode,
+                dto.SubDepartmentCode,
+                dto.BusinessDomainCode,
+                Status = DocumentRequestStatus.Submitted,
+                UserId = empCode,
+                dto.ParentDocumentId
+            }, transaction);
+
+            // 4. Insert Distribution Lists
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction);
+
+
+            // 5. Workflow Execution Logic
+            // Prefer a Revision-specific policy; fall back to the standard Request policy if
+            // none has been configured for this DocumentType/scope yet.
+            async Task<long?> ResolvePolicyIdAsync(string entityType) => await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id FROM WorkflowPolicies
+                WHERE CompanyId = @CompanyId AND EntityType = @EntityType AND DocumentTypeCode = @DocType
+                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                AND IsActive = TRUE AND IsDeleted = FALSE;",
+            new
+            {
+                CompanyId,
+                EntityType = entityType,
+                DocType = dto.DocumentTypeCode,
+                DivisionCode = Normalize(dto.DivisionCode),
+                DepartmentCode = Normalize(dto.DepartmentCode),
+                SubDepartmentCode = Normalize(dto.SubDepartmentCode),
+                BusinessDomainCode = Normalize(dto.BusinessDomainCode)
+            }, transaction);
+
+            var policyId = await ResolvePolicyIdAsync("Revision") ?? await ResolvePolicyIdAsync("Request");
+
+            if (policyId == null)
+                throw new CustomException("No workflow policy defined for selected Cabinet Scope.", 404);
+
+            var versionId = await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id FROM WorkflowPolicyVersions
+                WHERE CompanyId = @CompanyId AND WorkflowPolicyId = @PolicyId AND IsActive = TRUE LIMIT 1;",
+            new { CompanyId, PolicyId = policyId }, transaction);
+
+            if (versionId == null)
+                throw new CustomException("Active workflow policy version not found.", 404);
+
+            var executionId = await _common.ExecuteScalarAsync<long>(@"
+                INSERT INTO WorkflowExecutions (CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy)
+                VALUES (@CompanyId, @WorkflowPolicyVersionId, @EntityType, @EntityId, @Status, @StartedBy)
+                RETURNING Id;",
+                new
+                {
+                    CompanyId,
+                    WorkflowPolicyVersionId = versionId,
+                    EntityType = "Request",
+                    EntityId = requestId,
+                    Status = "Running",
+                    StartedBy = empCode
+                }, transaction);
+
+            var stepDefs = await _common.QueryAsync<dynamic>(@"
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                FROM WorkflowStepDefinitions
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, transaction);
+
+            int runningStepOrder = 1;
+            int insertedSteps = 0;
+
+            foreach (var stepDef in stepDefs)
+            {
+                if (stepDef.userid != null)
+                {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers
+                        WHERE EmployeeFrom = @EmpFrom
+                        AND CompanyId = @CompanyId AND Status = 2
+                        AND EffectiveDateFrom <= CURRENT_DATE
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                        ORDER BY Id DESC LIMIT 1;",
+                        new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
+
+                    runningStepOrder++;
+                    insertedSteps++;
+                }
+                else if (stepDef.roleid != null || stepDef.designationid != null)
+                {
+                    var employees = await _common.QueryAsync<string>(@"
+                        SELECT TRIM(e.empcode)
+                        FROM public.tblempjobprofile ejp
+                        INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId
+                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
+                          AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
+                        ORDER BY e.empid ASC;",
+                        new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
+
+                    if (!employees.Any())
+                        throw new CustomException("Workflow misconfigured — no active employees found for a configured Role/Designation step.", 409);
+
+                    foreach (var emp in employees)
+                    {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers
+                            WHERE EmployeeFrom = @EmpFrom
+                            AND CompanyId = @CompanyId AND Status = 2
+                            AND EffectiveDateFrom <= CURRENT_DATE
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                            ORDER BY Id DESC LIMIT 1;",
+                            new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
+                        runningStepOrder++;
+                        insertedSteps++;
+                    }
+                }
+            }
+
+            if (insertedSteps < 1)
+                throw new CustomException("Workflow misconfigured — no steps defined for this policy version.", 409);
+
+            await _common.ExecuteAsync(@"
+                UPDATE WorkflowExecutionSteps
+                SET IsActive = TRUE
+                WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
+                AND StepOrder = (SELECT MIN(StepOrder) FROM WorkflowExecutionSteps WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId);",
+                new { ExecutionId = executionId, CompanyId }, transaction);
+
+            // 6. History
+            await InsertHistoryAsync(CompanyId, requestId, DocumentRequestStatus.Submitted, empCode, "Revision Request Created and Submitted", transaction);
+
+
+            // 7. Prepare and Send Notification
+
+            var activeStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.StepOrder, dr.RequestNumber
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN DocumentRequests dr ON dr.Id = we.EntityId
+                WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.CompanyId = @CompanyId
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, transaction);
+
+            List<string> approvers = new List<string>();
+            string requestNumberStr = requestId.ToString();
+            if (activeStep != null)
+            {
+                requestNumberStr = Convert.ToString(activeStep.requestnumber) ?? requestId.ToString();
+                approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, transaction);
+            }
+
+            if (approvers.Any())
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr } };
+                foreach (var approver in approvers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
+                }
+            }
+
+            // 8. Commit
+            await transaction.CommitAsync();
+
+            return requestId;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     private async Task<bool> SubmitDocumentRequestAsync(SubmitDocumentRequestDto input)
     {
         await using var tx = await _common.BeginTransactionAsync();
@@ -864,6 +1139,312 @@ public class DocumentRequestComponent
                     UserId = empCode,
                     input.RequestId,
                     CompanyId 
+                }, tx);
+
+            // Prepare notification data
+            var activeStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT wes.StepOrder, dr.RequestNumber
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                JOIN DocumentRequests dr ON dr.Id = we.EntityId
+                WHERE wes.WorkflowExecutionId = @ExecutionId AND wes.CompanyId = @CompanyId
+                AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, tx);
+
+            List<string> approvers = new List<string>();
+            string requestNumber = input.RequestId.ToString();
+            if (activeStep != null)
+            {
+                requestNumber = Convert.ToString(activeStep.requestnumber) ?? input.RequestId.ToString();
+                approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, tx);
+            }
+
+            if (approvers.Any())
+            {
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
+                foreach (var approver in approvers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders, tx);
+                }
+            }
+
+            await tx.CommitAsync();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // UC-22: Submits an existing Revision draft. Kept separate from SubmitDocumentRequestAsync
+    // because Revision requests carry different validation (content must differ from the
+    // original document being revised) and can route to a different WorkflowPolicy.
+    public async Task<bool> SubmitRevisionDocumentRequestAsync(SubmitRevisionDocumentRequestDto input)
+    {
+        await using var tx = await _common.BeginTransactionAsync();
+
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            //-------------------------------------------------
+            // Validate Request
+            //-------------------------------------------------
+
+            var request = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT *
+                FROM DocumentRequests
+                WHERE Id = @RequestId
+                AND CompanyId = @CompanyId
+                FOR UPDATE;",
+                new { input.RequestId, CompanyId }, tx);
+
+            if (request == null)
+                throw new Exception("Request not found.");
+
+            //if (request.status != (int)DocumentRequestStatus.Draft)
+            //    throw new Exception("Only draft requests can be submitted.");
+
+            //if (request.documentrequesttypecode != "Revision")
+            //    throw new Exception("This endpoint only accepts Revision requests.");
+
+            // UC-22 Validation: Justification is mandatory
+            if (string.IsNullOrWhiteSpace(request.justification))
+                throw new Exception("Justification is required to submit a document request.");
+
+            // UC-22 Validation: Ensure content has been altered from the original document being revised
+            if (request.parentdocumentid != null)
+            {
+                var originalDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT d.DocumentURL, dv.Content
+                    FROM Documents d
+                    LEFT JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
+                    WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
+                    ORDER BY dv.CreatedAt DESC LIMIT 1;",
+                    new { DocumentId = request.parentdocumentid, CompanyId }, tx);
+
+                if (originalDoc != null)
+                {
+                    bool contentUnchanged = (request.proposedcontent == originalDoc.content) || (string.IsNullOrWhiteSpace(request.proposedcontent) && string.IsNullOrWhiteSpace(originalDoc.content));
+                    bool fileUnchanged = (request.draftfileurl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(request.draftfileurl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
+
+                    if (contentUnchanged && fileUnchanged)
+                        throw new Exception("Document Content must be altered from the original version before submitting a revision request.");
+                }
+            }
+
+            //-------------------------------------------------
+            // UC-22 USER MODIFICATION BEFORE FREEZE
+            //-------------------------------------------------
+
+            await _common.ExecuteAsync(@"
+            DELETE FROM DocumentRequestRoleDistributions
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+
+            await _common.ExecuteAsync(@"
+            DELETE FROM DocumentRequestUserDistributions
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+            //-------------------------------------------------
+            // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
+            //-------------------------------------------------
+            await InsertDistributionsAsync(CompanyId, input.RequestId,
+                input.DistributionList, input.UserIds,
+                empCode, tx);
+
+            //-------------------------------------------------
+            // Resolve Correct Policy FIRST (Scope Routing)
+            // Prefer a Revision-specific policy; fall back to the standard Request policy if
+            // none has been configured for this DocumentType/scope yet.
+            //-------------------------------------------------
+
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+
+            async Task<long?> ResolvePolicyIdAsync(string entityType) => await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id
+                FROM WorkflowPolicies
+                WHERE CompanyId = @CompanyId
+                AND EntityType = @EntityType
+                AND DocumentTypeCode = @DocType
+                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                AND IsActive = TRUE
+                AND IsDeleted = FALSE;",
+            new
+            {
+                CompanyId,
+                EntityType = entityType,
+                DocType = request.documenttypecode,
+                DivisionCode = Normalize(Convert.ToString(request.divisioncode)),
+                DepartmentCode = Normalize(Convert.ToString(request.departmentcode)),
+                SubDepartmentCode = Normalize(Convert.ToString(request.subdepartmentcode)),
+                BusinessDomainCode = Normalize(Convert.ToString(request.businessdomaincode))
+            }, tx);
+
+            var policyId = await ResolvePolicyIdAsync("Revision") ?? await ResolvePolicyIdAsync("Request");
+
+            if (policyId == null)
+                throw new Exception("No workflow policy defined for selected Cabinet Scope.");
+
+            //-------------------------------------------------
+            // Resolve ACTIVE Version using PolicyId
+            //-------------------------------------------------
+
+            var versionId = await _common.ExecuteScalarAsync<long?>(@"
+                SELECT Id
+                FROM WorkflowPolicyVersions
+                WHERE CompanyId = @CompanyId
+                AND WorkflowPolicyId = @PolicyId
+                AND IsActive = TRUE
+                LIMIT 1;",
+            new
+            {
+                CompanyId,
+                PolicyId = policyId
+            }, tx);
+
+            if (versionId == null)
+                throw new Exception("Workflow policy version not found.");
+
+            //-------------------------------------------------
+            // Create Execution
+            //-------------------------------------------------
+
+            var executionId = await _common.ExecuteScalarAsync<long>(@"
+                INSERT INTO WorkflowExecutions
+                (
+                    CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy
+                )
+                VALUES
+                (
+                    @CompanyId, @WorkflowPolicyVersionId, @EntityType, @EntityId, @Status, @StartedBy
+                )
+                RETURNING Id;",
+                new
+                {
+                    CompanyId,
+                    WorkflowPolicyVersionId = versionId,
+                    EntityType = "Request",
+                    EntityId = input.RequestId,
+                    Status = "Running",
+                    StartedBy = empCode
+                }, tx);
+
+            var stepDefs = await _common.QueryAsync<dynamic>(@"
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                FROM WorkflowStepDefinitions
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, tx);
+
+            int runningStepOrder = 1;
+            int inserted = 0;
+
+            foreach (var stepDef in stepDefs)
+            {
+                if (stepDef.userid != null)
+                {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers
+                        WHERE EmployeeFrom = @EmpFrom
+                        AND CompanyId = @CompanyId AND Status = 2
+                        AND EffectiveDateFrom <= CURRENT_DATE
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                        ORDER BY Id DESC LIMIT 1;",
+                        new { EmpFrom = actualUserId, CompanyId }, tx);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
+                    runningStepOrder++;
+                    inserted++;
+                }
+                else if (stepDef.roleid != null || stepDef.designationid != null)
+                {
+                    var employees = await _common.QueryAsync<string>(@"
+                        SELECT TRIM(e.empcode)
+                        FROM public.tblempjobprofile ejp
+                        INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId
+                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
+                          AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
+                        ORDER BY e.empid ASC;",
+                        new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, tx);
+
+                    if (!employees.Any())
+                        throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
+
+                    foreach (var emp in employees)
+                    {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers
+                            WHERE EmployeeFrom = @EmpFrom
+                            AND CompanyId = @CompanyId AND Status = 2
+                            AND EffectiveDateFrom <= CURRENT_DATE
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                            ORDER BY Id DESC LIMIT 1;",
+                            new { EmpFrom = actualUserId, CompanyId }, tx);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
+                        runningStepOrder++;
+                        inserted++;
+                    }
+                }
+            }
+
+            if (inserted < 1)
+                throw new Exception("Workflow misconfigured — no steps copied.");
+
+            //-------------------------------------------------
+            // Activate FIRST step (NO JOINS)
+            //-------------------------------------------------
+
+            await _common.ExecuteAsync(@"
+                UPDATE WorkflowExecutionSteps
+                SET IsActive = TRUE
+                WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
+                AND StepOrder =
+                (
+                    SELECT MIN(StepOrder)
+                    FROM WorkflowExecutionSteps
+                    WHERE WorkflowExecutionId = @ExecutionId AND CompanyId = @CompanyId
+                );",
+                new { ExecutionId = executionId, CompanyId }, tx);
+
+            //-------------------------------------------------
+            // Update Request
+            //-------------------------------------------------
+
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentRequests
+                SET Status = @Status,
+                    SubmittedAt = NOW(),
+                    SubmittedBy = @UserId,
+                    IsContentFinalized = TRUE
+                WHERE Id = @RequestId AND CompanyId = @CompanyId;",
+                new
+                {
+                    Status = DocumentRequestStatus.Submitted,
+                    UserId = empCode,
+                    input.RequestId,
+                    CompanyId
                 }, tx);
 
             // Prepare notification data
@@ -1944,6 +2525,7 @@ public class DocumentRequestComponent
                     RequestId = GetValue<int>(dict, "requestid"),
                     Version = GetValue<string>(dict, "version"),
                     VersionType = GetValue<string>(dict, "versiontype"),
+                    NextReviewDate = GetValue<string>(dict, "nextreviewdate"),
                     ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
                     DocumentId = GetValue<int>(dict, "documentid"),
                     DocumentType = GetValue<string>(dict, "documenttype"),

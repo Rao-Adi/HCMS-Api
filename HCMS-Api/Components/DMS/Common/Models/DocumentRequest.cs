@@ -516,8 +516,18 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
 }
 
 public class SubmitDocumentRequestDto
-{ 
-    public int RequestId { get; set; } 
+{
+    public int RequestId { get; set; }
+    public string DocumentRequestType { get; set; }
+
+    // UC-22 User Modification Allowed
+    public List<DistributionListCreateDto>? DistributionList { get; set; }
+    public List<string>? UserIds { get; set; }
+}
+
+public class SubmitRevisionDocumentRequestDto
+{
+    public int RequestId { get; set; }
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
