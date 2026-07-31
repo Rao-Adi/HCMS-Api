@@ -119,23 +119,15 @@ public class TransferWorkflowPolicyComponent
                             AND div_setup.smsid = 70
                         LEFT JOIN Companies c 
                             ON t.CompanyId = c.Id
-                        -- Sub-query to fetch the most senior person in that division
+                        -- Resolve the actual configured Approval Authority (t.ApprovalUserId),
+                        -- not the most senior person in the division -- those are not the same person.
                         LEFT JOIN LATERAL (
-                            SELECT 
-                                e.firstname || ' ' || e.lastname AS FullName,
+                            SELECT
+                                REGEXP_REPLACE(TRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, '')), '\s+', ' ', 'g') AS FullName,
                                 dsg.name AS Designation
                             FROM public.tblemployee e
-                            INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                            WHERE e.divid = div_setup.sdlid  
-                            ORDER BY 
-                                CASE 
-                                    WHEN dsg.name LIKE '%Director%' THEN 1
-                                    WHEN dsg.name LIKE '%General Manager%' THEN 2
-                                    WHEN dsg.name LIKE '%Head%' THEN 3
-                                    WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
-                                    ELSE 5 
-                                END ASC,
-                                e.datejoin ASC
+                            LEFT JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                            WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(t.ApprovalUserId::text), '0')
                             LIMIT 1
                         ) head ON TRUE
                 WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
@@ -268,23 +260,15 @@ public class TransferWorkflowPolicyComponent
                             AND div_setup.smsid = 70
                         LEFT JOIN Companies c 
                             ON t.CompanyId = c.Id
-                        -- Sub-query to fetch the most senior person in that division
+                        -- Resolve the actual configured Approval Authority (t.ApprovalUserId),
+                        -- not the most senior person in the division -- those are not the same person.
                         LEFT JOIN LATERAL (
-                            SELECT 
-                                e.firstname || ' ' || e.lastname AS FullName,
+                            SELECT
+                                REGEXP_REPLACE(TRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, '')), '\s+', ' ', 'g') AS FullName,
                                 dsg.name AS Designation
                             FROM public.tblemployee e
-                            INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                            WHERE e.divid = div_setup.sdlid  
-                            ORDER BY 
-                                CASE 
-                                    WHEN dsg.name LIKE '%Director%' THEN 1
-                                    WHEN dsg.name LIKE '%General Manager%' THEN 2
-                                    WHEN dsg.name LIKE '%Head%' THEN 3
-                                    WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
-                                    ELSE 5 
-                                END ASC,
-                                e.datejoin ASC
+                            LEFT JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                            WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(t.ApprovalUserId::text), '0')
                             LIMIT 1
                         ) head ON TRUE
                         {whereClause}
@@ -377,21 +361,12 @@ public class TransferWorkflowPolicyComponent
                 LEFT JOIN Companies c 
                     ON t.CompanyId = c.Id
                 LEFT JOIN LATERAL (
-                    SELECT 
-                        e.firstname || ' ' || e.lastname AS FullName,
+                    SELECT
+                        REGEXP_REPLACE(TRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, '')), '\s+', ' ', 'g') AS FullName,
                         dsg.name AS Designation
                     FROM public.tblemployee e
-                    INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                    WHERE e.divid = div_setup.sdlid  
-                    ORDER BY 
-                        CASE 
-                            WHEN dsg.name LIKE '%Director%' THEN 1
-                            WHEN dsg.name LIKE '%General Manager%' THEN 2
-                            WHEN dsg.name LIKE '%Head%' THEN 3
-                            WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
-                            ELSE 5 
-                        END ASC,
-                        e.datejoin ASC
+                    LEFT JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                    WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(t.ApprovalUserId::text), '0')
                     LIMIT 1
                 ) head ON TRUE
                 WHERE t.DivisionCode = '{code?.Replace("'", "''")}'
@@ -475,11 +450,10 @@ public class TransferWorkflowPolicyComponent
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE TransferWorkflowPolicies
-            SET 
-                DivisionCode = '{input.DivisionCode?.Replace("'", "''")}', 
-                ApprovalRoleId = {input.ApprovalRoleId},
-                ApprovalUserId = {input.ApprovalUserId},
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+            SET
+                DivisionCode = '{input.DivisionCode?.Replace("'", "''")}',
+                ApprovalRoleId = '{input.ApprovalRoleId?.Replace("'", "''")}',
+                ApprovalUserId = '{input.ApprovalUserId?.Replace("'", "''")}',
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
@@ -504,21 +478,12 @@ public class TransferWorkflowPolicyComponent
             LEFT JOIN Companies c 
                 ON t.CompanyId = c.Id
             LEFT JOIN LATERAL (
-                SELECT 
-                    e.firstname || ' ' || e.lastname AS FullName,
+                SELECT
+                    REGEXP_REPLACE(TRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, '')), '\s+', ' ', 'g') AS FullName,
                     dsg.name AS Designation
                 FROM public.tblemployee e
-                INNER JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
-                WHERE e.divid = div_setup.sdlid  
-                ORDER BY 
-                    CASE 
-                        WHEN dsg.name LIKE '%Director%' THEN 1
-                        WHEN dsg.name LIKE '%General Manager%' THEN 2
-                        WHEN dsg.name LIKE '%Head%' THEN 3
-                        WHEN dsg.name LIKE '%Sr. Manager%' THEN 4
-                        ELSE 5 
-                    END ASC,
-                    e.datejoin ASC
+                LEFT JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(t.ApprovalUserId::text), '0')
                 LIMIT 1
             ) head ON TRUE
             WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
@@ -597,9 +562,9 @@ public class TransferWorkflowPolicyComponent
 
             string dataSql = $@"
                 SELECT rt.Id,
-                       COALESCE(NULLIF(LTRIM(RTRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, ''))), ''), rt.CreatedBy) AS CreatedBy,
-                       LTRIM(RTRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, ''))) AS employeefromname,
-                       LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, ''))) AS employeetoname,
+                       COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, '')), '\s+', ' ', 'g'), ''), rt.CreatedBy) AS CreatedBy,
+                       REGEXP_REPLACE(TRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, '')), '\s+', ' ', 'g') AS employeefromname,
+                       REGEXP_REPLACE(TRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, '')), '\s+', ' ', 'g') AS employeetoname,
                        rt.ReasonForTransfer,
                        rt.EffectiveDateFrom,
                        rt.EffectiveDateTo,
@@ -674,9 +639,9 @@ public class TransferWorkflowPolicyComponent
 
             string dataSql = $@"
                 SELECT rt.Id,
-                       COALESCE(NULLIF(LTRIM(RTRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, ''))), ''), rt.CreatedBy) AS CreatedBy,
-                       LTRIM(RTRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, ''))) AS employeefromname,
-                       LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, ''))) AS employeetoname,
+                       COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(uc.firstname, '') || ' ' || COALESCE(uc.midname, '') || ' ' || COALESCE(uc.lastname, '')), '\s+', ' ', 'g'), ''), rt.CreatedBy) AS CreatedBy,
+                       REGEXP_REPLACE(TRIM(COALESCE(uf.firstname, '') || ' ' || COALESCE(uf.midname, '') || ' ' || COALESCE(uf.lastname, '')), '\s+', ' ', 'g') AS employeefromname,
+                       REGEXP_REPLACE(TRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.midname, '') || ' ' || COALESCE(ut.lastname, '')), '\s+', ' ', 'g') AS employeetoname,
                        rt.ReasonForTransfer,
                        rt.EffectiveDateFrom,
                        rt.EffectiveDateTo,

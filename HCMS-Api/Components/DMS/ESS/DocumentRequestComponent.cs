@@ -51,9 +51,28 @@ public class DocumentRequestComponent
         _documentComponent = documentComponent;
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
-        _workflowStepComponent = workflowStepComponent; 
+        _workflowStepComponent = workflowStepComponent;
     }
-     
+
+    // Uploaded file names sometimes arrive with the extension duplicated (e.g. a browser-downloaded
+    // "Template.docx" gets re-saved by the OS/browser as "Template.docx.docx" before the user
+    // re-uploads it during a revision) — collapses exactly one trailing repeat back to the original.
+    private static string SanitizeDuplicatedExtension(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+            return fileName;
+
+        var ext = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(ext) &&
+            fileName.Length > ext.Length * 2 &&
+            fileName.EndsWith(ext + ext, StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = fileName.Substring(0, fileName.Length - ext.Length);
+        }
+
+        return fileName;
+    }
+
     public async Task<long> CreateDraftDocumentRequestAsync(DraftDocumentRequestDto dto)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -75,7 +94,7 @@ public class DocumentRequestComponent
                     Directory.CreateDirectory(uploadsRoot);
 
                 var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
-                var fileName = $"{dto.DraftFile.FileName}";
+                var fileName = SanitizeDuplicatedExtension(dto.DraftFile.FileName);
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -228,7 +247,7 @@ public class DocumentRequestComponent
                     Directory.CreateDirectory(uploadsRoot);
 
                 var fileExtension = Path.GetExtension(dto.DraftFile.FileName); 
-                var fileName = $"{dto.DraftFile.FileName}";
+                var fileName = SanitizeDuplicatedExtension(dto.DraftFile.FileName);
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -357,7 +376,7 @@ public class DocumentRequestComponent
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
-                var fileName = $"{dto.DraftFile.FileName}";
+                var fileName = SanitizeDuplicatedExtension(dto.DraftFile.FileName);
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -610,7 +629,7 @@ public class DocumentRequestComponent
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
-                var fileName = $"{dto.DraftFile.FileName}";
+                var fileName = SanitizeDuplicatedExtension(dto.DraftFile.FileName);
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))

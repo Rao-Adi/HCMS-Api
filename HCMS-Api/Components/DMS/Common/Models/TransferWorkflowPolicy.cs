@@ -55,13 +55,10 @@ public class TransferWorkflowPolicyCreateDto
 public class TransferWorkflowPolicyUpdateDto
 {
     public int Id { get; set; }
-     
-    public string Company { get; set; } = null!;  
+      
     public string? DivisionCode { get; set; }  
 
     public string ApprovalRoleId { get; set; }
-    public string ApprovalUserId { get; set; }
-    public bool IsActive { get; set; }
-    public bool IsDeleted { get; set; }
+    public string ApprovalUserId { get; set; } 
 
 }

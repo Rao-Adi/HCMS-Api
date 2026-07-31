@@ -788,7 +788,7 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 1, 2, @ExecutionId, @empCode
+                    @CompanyId, @DocumentId, 1, (SELECT Id FROM DocumentStates WHERE Code = 'PENDING_APPROVAL'), @ExecutionId, @empCode
                 );",
             new
             {
@@ -1588,7 +1588,7 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 2, 5, @ExecutionId, @Comments, @empCode
+                    @CompanyId, @DocumentId, 2, (SELECT Id FROM DocumentStates WHERE Code = 'REJECTED'), @ExecutionId, @Comments, @empCode
                 );",
             new
             {
@@ -1716,7 +1716,7 @@ public class DocumentComponent
                     @CompanyId,
                     @DocumentId,
                     2,
-                    1,
+                    (SELECT Id FROM DocumentStates WHERE Code = 'DRAFT'),
                     @ExecutionId,
                     @Comments,
                     @empCode
