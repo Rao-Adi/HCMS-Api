@@ -324,36 +324,7 @@ public class DocumentRequestComponent
 
 
 
-    public async Task<bool> SubmitDraftDocumentRequestAsync(SubmitDocumentRequestDto input)
-    {
-        //string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        //var clientIp = _clientContextService.GetClientIP();
-        //var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
-        //int CompanyId = int.Parse(_CompanyId);
-        //var empId = _utilities.GetEmpid(clientIp);
-        //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-
-        //// Optional: ensure draft exists before calling original submit
-        //var draftExists = await _common.ExecuteScalarAsync<int>(@"
-        //    SELECT COUNT(1)
-        //    FROM DocumentRequests
-        //    WHERE Id = @RequestId
-        //    AND CompanyId = @CompanyId
-        //    AND Status = @DraftStatus;",
-        //new
-        //{
-        //    input.RequestId,
-        //    CompanyId,
-        //    DraftStatus = DocumentRequestStatus.Draft
-        //});
-
-        //if (draftExists == 0)
-        //    throw new Exception("Only draft requests can be submitted.");
-
-        // Call your EXISTING working method
-        return await SubmitDocumentRequestAsync(input);
-    }
+  
 
     public async Task<long> CreateAndSubmitDocumentRequestAsync(DraftDocumentRequestDto dto)
     {
@@ -879,6 +850,37 @@ public class DocumentRequestComponent
         }
     }
 
+    public async Task<bool> SubmitDraftDocumentRequestAsync(SubmitDocumentRequestDto input)
+    {
+        //string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        //var clientIp = _clientContextService.GetClientIP();
+        //var prefix = _utilities.GetPrefix(clientIp);
+        //var userId = _utilities.GetUserid(prefix);
+        //int CompanyId = int.Parse(_CompanyId);
+        //var empId = _utilities.GetEmpid(clientIp);
+        //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        //// Optional: ensure draft exists before calling original submit
+        //var draftExists = await _common.ExecuteScalarAsync<int>(@"
+        //    SELECT COUNT(1)
+        //    FROM DocumentRequests
+        //    WHERE Id = @RequestId
+        //    AND CompanyId = @CompanyId
+        //    AND Status = @DraftStatus;",
+        //new
+        //{
+        //    input.RequestId,
+        //    CompanyId,
+        //    DraftStatus = DocumentRequestStatus.Draft
+        //});
+
+        //if (draftExists == 0)
+        //    throw new Exception("Only draft requests can be submitted.");
+
+        // Call your EXISTING working method
+        return await SubmitDocumentRequestAsync(input);
+    }
+
     private async Task<bool> SubmitDocumentRequestAsync(SubmitDocumentRequestDto input)
     {
         await using var tx = await _common.BeginTransactionAsync();
@@ -1208,11 +1210,14 @@ public class DocumentRequestComponent
             if (request == null)
                 throw new Exception("Request not found.");
 
-            //if (request.status != (int)DocumentRequestStatus.Draft)
-            //    throw new Exception("Only draft requests can be submitted.");
+            if (request.status != (int)DocumentRequestStatus.Draft)
+                throw new Exception("Only draft requests can be submitted.");
 
-            //if (request.documentrequesttypecode != "Revision")
-            //    throw new Exception("This endpoint only accepts Revision requests.");
+            // DocumentRequestTypeCode is a lookup-driven code (e.g. "DRT-0002"), not the literal
+            // string "Revision", so it can't be reliably string-matched here. ParentDocumentId is
+            // the authoritative signal that this draft is actually a revision of an existing document.
+            if (request.parentdocumentid == null)
+                throw new Exception("This endpoint only accepts Revision requests linked to an existing document (ParentDocumentId is missing).");
 
             // UC-22 Validation: Justification is mandatory
             if (string.IsNullOrWhiteSpace(request.justification))
@@ -1732,7 +1737,9 @@ public class DocumentRequestComponent
                     CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
                     CreatedBy = GetValue<string>(dict, "createdby"),
                     LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
-                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby")
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
+                    PreviousVersionCreatedOn = GetValue<DateTime?>(dict, "previousversioncreatedon")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    PreviousVersionCreatedBy = GetValue<string>(dict, "previousversioncreatedby")
                 });
             }
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2348,7 +2355,6 @@ public class DocumentRequestComponent
                         empCode,
                         tx);
 
-                    //await CreateDocumentFromApprovedRequestAsync(input.CompanyId, executionId, input.UserId, tx);
                 }
             }
 
@@ -2874,6 +2880,33 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             //var empId = _utilities.GetEmpid(clientIp);
             //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // A document can go through multiple requests over its lifetime (the original Creation
+            // request, then one or more Revision requests). Resolve forward through that chain
+            // (Request -> the Document it produced -> any newer Request revising that Document) so
+            // callers always get observations for the Actual/current request, even if the requestId
+            // they passed is from before the latest revision.
+            if (entityType == "Request")
+            {
+                var actualRequestId = await _common.ExecuteScalarAsync<int?>(@"
+                    WITH RECURSIVE RequestChain AS (
+                        SELECT dr.Id, dr.CreatedAt
+                        FROM DocumentRequests dr
+                        WHERE dr.Id = @RequestId AND dr.CompanyId = @CompanyId
+
+                        UNION ALL
+
+                        SELECT nextdr.Id, nextdr.CreatedAt
+                        FROM RequestChain rc
+                        INNER JOIN Documents d ON d.RequestId = rc.Id AND d.CompanyId = @CompanyId
+                        INNER JOIN DocumentRequests nextdr ON nextdr.ParentDocumentId = d.Id AND nextdr.CompanyId = @CompanyId
+                    )
+                    SELECT Id FROM RequestChain ORDER BY CreatedAt DESC LIMIT 1;",
+                    new { RequestId = documentId, CompanyId });
+
+                if (actualRequestId.HasValue)
+                    documentId = actualRequestId.Value;
+            }
 
             //var sql = $@"
             //    SELECT 

@@ -215,6 +215,11 @@ public  class AllDocumentDto
     public string ExecutionStatus { get; set; }
     public string? StartedAt { get; set; } // Maps to TIMESTAMP
 
+    // Populated only for Revision requests: when/by whom the document version being revised was created
+    public string? PreviousVersionCreatedOn { get; set; }
+    public string? PreviousVersionCreatedBy { get; set; }
+
+
     // 🟩 UC-22
     public List<DistributionListReadDto>? DistributionList { get; set; }
     public List<DocumentRequestUserDistribution>? UserList { get; set; }

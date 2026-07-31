@@ -989,7 +989,7 @@ public class DocumentComponent
                     INSERT INTO DocumentUserTraining
                     (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, @EmployeeCode, @TrainingMode, 0, '', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                    (@CompanyId, @DocumentId, @EmployeeCode, @TrainingMode, 0, '', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
                 new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = uid.EmployeeCode, TrainingMode = uid.TrainingMode, UserId = empCode }, transaction);
             }
         }
@@ -1179,7 +1179,10 @@ public class DocumentComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @empCode
+                        @CompanyId, @DocumentId,
+                        (SELECT Id FROM DocumentStates WHERE Code = 'PENDING_APPROVAL'),
+                        (SELECT Id FROM DocumentStates WHERE Code = 'APPROVED'),
+                        @ExecutionId, @empCode
                     );",
                 new
                 {
@@ -1289,7 +1292,10 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 3, 4, @UserId
+                    @CompanyId, @DocumentId,
+                    (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                    (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'),
+                    @UserId
                 )",
             new { CompanyId = companyId, DocumentId = documentId, UserId = empCode }, transaction);
 
@@ -1473,19 +1479,23 @@ public class DocumentComponent
 
                 // 2. If Training is required, Transition to TRAINING_PENDING
                 var stateId = await _common.QueryFirstOrDefaultAsync<int?>(@"SELECT Id FROM DocumentStates WHERE Code = 'TRAINING_PENDING'", tx);
-                int trainingPendingStateId = stateId ?? 6;
+                if (stateId == null)
+                    throw new Exception("DocumentStates is missing the 'TRAINING_PENDING' code.");
 
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
-                    VALUES (@CompanyId, @DocumentId, 3, @ToStateId, @UserId, NOW());",
-                    new { CompanyId = companyId, DocumentId = documentId, ToStateId = trainingPendingStateId, UserId = userId }, tx);
+                    VALUES (@CompanyId, @DocumentId,
+                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                        @ToStateId, @UserId, NOW());",
+                    new { CompanyId = companyId, DocumentId = documentId, ToStateId = stateId, UserId = userId }, tx);
 
-                // 3. Create the Parent Training Record
+                // 3. Create the Parent Training Record. ReadyForAuthorization starts FALSE — it only
+                // flips to TRUE once AcknowledgeAndSendForAuthorizationAsync actually runs.
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentTraining
                     (CompanyId, DocumentId, TrainingMode,TrainingStatus,TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, 1, 0,'', 0, 0, TRUE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                    (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
                     new { CompanyId = companyId, DocumentId = documentId, UserId = (string)docInfo.createdby }, tx);
 
 
@@ -1807,7 +1817,7 @@ public class DocumentComponent
                     FROM DocumentStateHistory dsh
                     WHERE dsh.CompanyId  = d.CompanyId
                       AND dsh.DocumentId = d.Id
-                    ORDER BY dsh.ChangedAt DESC
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC
                     LIMIT 1
                   ) = 1   -- Draft
 
@@ -1864,7 +1874,7 @@ public class DocumentComponent
                   FROM DocumentStateHistory dsh
                   WHERE dsh.CompanyId = d.CompanyId
                     AND dsh.DocumentId = d.Id
-                  ORDER BY dsh.ChangedAt DESC
+                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC
                   LIMIT 1
               ) = 1; -- Draft Status ID "
             , new { CompanyId = int.Parse(CompanyId), RequestId = requestId });
@@ -2087,7 +2097,7 @@ public class DocumentComponent
             }
             else
             {
-                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
+                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING')";
             }
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
@@ -2099,7 +2109,7 @@ public class DocumentComponent
                       FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                   ) {stateFilter}
                   AND (
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
@@ -2160,18 +2170,28 @@ public class DocumentComponent
                     doc.CreatedAt,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
 
-                FROM VW_Documents doc    
+                FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
+                -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(1) 
-                FROM VW_Documents doc 
+                SELECT COUNT(1)
+                FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
@@ -2250,15 +2270,15 @@ public class DocumentComponent
                         FROM DocumentStateHistory dsh 
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                         WHERE dsh.DocumentId = doc.Id 
-                        ORDER BY dsh.ChangedAt DESC LIMIT 1
-                    ) IN ('APPROVED', 'TRAINING_PENDING') THEN 1 END) AS PendingCount,
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                    ) IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING') THEN 1 END) AS PendingCount,
 
                     COUNT(CASE WHEN (
                         SELECT ds.Code 
                         FROM DocumentStateHistory dsh 
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                         WHERE dsh.DocumentId = doc.Id 
-                        ORDER BY dsh.ChangedAt DESC LIMIT 1
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                     ) IN ('EFFECTIVE', 'AUTHORIZED') THEN 1 END) AS AuthorizedCount,
 
                     COUNT(CASE WHEN (
@@ -2266,7 +2286,7 @@ public class DocumentComponent
                         FROM DocumentStateHistory dsh 
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                         WHERE dsh.DocumentId = doc.Id 
-                        ORDER BY dsh.ChangedAt DESC LIMIT 1
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                     ) IN ('REJECTED') THEN 1 END) AS RejectedCount
                 FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
@@ -2313,7 +2333,7 @@ public class DocumentComponent
                   FROM DocumentStateHistory dsh 
                   JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                   WHERE dsh.DocumentId = doc.Id 
-                  ORDER BY dsh.ChangedAt DESC LIMIT 1
+                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
               ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -2344,7 +2364,7 @@ public class DocumentComponent
                  FROM DocumentStateHistory dsh 
                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                  WHERE dsh.DocumentId = doc.Id 
-                 ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
+                 ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
                 -- Resolve the current workflow authority dynamically
                 COALESCE(
                     (SELECT STRING_AGG(
@@ -2357,15 +2377,25 @@ public class DocumentComponent
                     WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
                     'Pending Training/Authorization'
                 ) AS CurrentWorkflowAuthority,
-                doc.CreatedAt
+                doc.CreatedAt,
+                prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                    prevdoc.CreatedBy
+                )::character varying AS PreviousVersionCreatedBy
             FROM Vw_Documents doc
             LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
             LEFT JOIN LATERAL (
-                SELECT Version FROM DocumentVersions 
-                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
+                SELECT Version FROM DocumentVersions
+                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
                 ORDER BY CreatedAt DESC LIMIT 1
             ) dv ON TRUE
             LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+            -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
+            LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+            -- The earlier document this one is a revision of (only present for revisions)
+            LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+            LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
             {whereClause}
             ORDER BY {sortColumn} {sortDirection}
             OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -2416,7 +2446,7 @@ public class DocumentComponent
     //                  FROM DocumentStateHistory dsh 
     //                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
     //                  WHERE dsh.DocumentId = doc.Id 
-    //                  ORDER BY dsh.ChangedAt DESC LIMIT 1
+    //                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
     //              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
 
     //        if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -2447,7 +2477,7 @@ public class DocumentComponent
     //                 FROM DocumentStateHistory dsh 
     //                 JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
     //                 WHERE dsh.DocumentId = doc.Id 
-    //                 ORDER BY dsh.ChangedAt DESC LIMIT 1) AS CurrentStatus,
+    //                 ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
     //                -- Resolve the current workflow authority dynamically
     //                COALESCE(
     //                    (SELECT STRING_AGG(
@@ -2511,13 +2541,39 @@ public class DocumentComponent
             if (string.IsNullOrWhiteSpace(input.Action))
                 throw new CustomException("An action (Approve/Reject) is required.", 400);
 
-            // Get current state for history
-            var fromStateId = await _common.ExecuteScalarAsync<int>(
-                "SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1",
+            // Get current state for history. Ties on ChangedAt (multiple transitions can land in the
+            // same DB transaction, and NOW() is fixed per-transaction in Postgres) are broken by Id so
+            // this always reflects the truly latest transition, not an arbitrary one.
+            var currentState = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT dsh.ToStateId, ds.Code
+                FROM DocumentStateHistory dsh
+                JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                WHERE dsh.DocumentId = @DocumentId
+                ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1",
                 new { input.DocumentId }, transaction);
+
+            if (currentState == null)
+                throw new CustomException("Document has no recorded state.", 404);
+
+            int fromStateId = (int)currentState.tostateid;
+            string currentStateCode = (string)currentState.code;
 
             if (input.Action.Equals("APPROVED", StringComparison.OrdinalIgnoreCase))
             {
+                // Final authorization is only valid once the document is actually Authorization
+                // Pending, or Approved with no training requirement (so it never went through
+                // Authorization Pending to begin with). This is the same "ready" definition
+                // GetPendingAuthorizationsAsync already uses for what it shows as pending authorization.
+                bool trainingRequired = await _common.ExecuteScalarAsync<bool>(@"
+                    SELECT EXISTS(SELECT 1 FROM DocumentTraining WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsActive = TRUE);",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                bool readyForFinalAuthorization = currentStateCode == "AUTHORIZATION_PENDING"
+                    || (!trainingRequired && currentStateCode == "APPROVED");
+
+                if (!readyForFinalAuthorization)
+                    throw new CustomException($"Document cannot be authorized from its current state ('{currentStateCode}'). Training must be acknowledged (or not required) first.", 409);
+
                 // 1. Archive previous effective versions
                 await _common.ExecuteAsync(@"
                     UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE 
@@ -2737,7 +2793,7 @@ public class DocumentComponent
                      WHERE dsh2.DocumentId = doc.Id 
                        AND ds2.Code IN ('EFFECTIVE', 'AUTHORIZED') 
                        AND dsh2.ChangedBy = @UserId 
-                     ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
+                     ORDER BY dsh2.ChangedAt DESC, dsh2.Id DESC LIMIT 1) AS DateOfAuthorization
                 FROM Documents doc
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
@@ -2787,16 +2843,17 @@ public class DocumentComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"
-                WHERE doc.CompanyId = @CompanyId 
+                WHERE doc.CompanyId = @CompanyId
                   AND doc.IsDeleted = FALSE
                   AND dut.TrainingMode = @TrainingMode
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
                   AND (
-                      SELECT ds.Code 
-                      FROM DocumentStateHistory dsh 
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  )  IN ('EFFECTIVE', 'AUTHORIZATION_PENDING')";
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
 
             //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             //{
@@ -2850,12 +2907,22 @@ public class DocumentComponent
                     doc.CreatedAt,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS AverageScore
-                FROM Vw_Documents doc  
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS AverageScore,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
+                FROM Vw_Documents doc
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
-                {whereClause} 
+                -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
@@ -2910,7 +2977,7 @@ public class DocumentComponent
                       FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                   ) = 'EFFECTIVE'";
 
             if (!string.IsNullOrWhiteSpace(input.DivisionCode))
@@ -2990,17 +3057,27 @@ public class DocumentComponent
 
             // 4. Data Query
             string dataSql = $@"
-                SELECT 
+                SELECT
                     Distinct doc.*,
-                    (SELECT dsh2.ChangedAt 
-                     FROM DocumentStateHistory dsh2 
+                    (SELECT dsh2.ChangedAt
+                     FROM DocumentStateHistory dsh2
                      JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
-                     WHERE dsh2.DocumentId = doc.Id 
+                     WHERE dsh2.DocumentId = doc.Id
                        AND ds2.Code = 'EFFECTIVE'
-                     ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
+                     ORDER BY dsh2.ChangedAt DESC, dsh2.Id DESC LIMIT 1) AS DateOfAuthorization,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
                 FROM VW_Documents doc
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.VersionType = 2 AND dv.IsActive = TRUE
+                -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -3596,18 +3673,19 @@ public class DocumentComponent
             // Query 1: Counts for documents CREATED BY the current user
             var myDocumentsQuery = @"
                 WITH LatestStates AS (
-                    SELECT 
+                    SELECT
                         dsh.DocumentId,
-                        dsh.ToStateId,
-                        ROW_NUMBER() OVER(PARTITION BY dsh.DocumentId ORDER BY dsh.ChangedAt DESC) as rn
+                        ds.Code AS StateCode,
+                        ROW_NUMBER() OVER(PARTITION BY dsh.DocumentId ORDER BY dsh.ChangedAt DESC, dsh.Id DESC) as rn
                     FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.CompanyId = @CompanyId
                 )
-                SELECT 
-                    COUNT(1) FILTER (WHERE ls.ToStateId = 1) AS Draft,
-                    COUNT(1) FILTER (WHERE ls.ToStateId = 2) AS InReview,
-                    COUNT(1) FILTER (WHERE ls.ToStateId IN (3, 4, 6)) AS Approved,
-                    COUNT(1) FILTER (WHERE ls.ToStateId = 5) AS Rejected
+                SELECT
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'DRAFT') AS Draft,
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'PENDING_APPROVAL') AS InReview,
+                    COUNT(1) FILTER (WHERE ls.StateCode IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')) AS Approved,
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'REJECTED') AS Rejected
                 FROM Documents d
                 JOIN LatestStates ls ON d.Id = ls.DocumentId AND ls.rn = 1
                 WHERE d.CompanyId = @CompanyId

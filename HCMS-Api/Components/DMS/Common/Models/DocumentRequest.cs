@@ -86,6 +86,10 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? DraftFileURL { get; set; }
     public int? ParentDocumentId { get; set; }
 
+    // Populated only for Revision requests: when/by whom the document version being revised was created
+    public string? PreviousVersionCreatedOn { get; set; }
+    public string? PreviousVersionCreatedBy { get; set; }
+
     public bool IsReworked { get; set; }
 
     public int Status { get; set; }

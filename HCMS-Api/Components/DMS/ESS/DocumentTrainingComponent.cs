@@ -542,29 +542,51 @@ public class DocumentTrainingComponent
 
         await using var tx = await _common.BeginTransactionAsync();
         try
-        { 
+        {
 
-            // 1. Mark Document Training as Acknowledged / Ready
+            // Guard: only acknowledge a document that's actually sitting in TRAINING_PENDING. Without
+            // this, this endpoint can be called from any state and corrupt the lifecycle (e.g. an
+            // already-Effective document being sent back to Authorization Pending).
+            var currentState = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT ds.Code
+                FROM DocumentStateHistory dsh
+                JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                WHERE dsh.DocumentId = @DocumentId
+                ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1",
+                new { DocumentId = documentId }, tx);
+
+            if (currentState == null || (string)currentState.code != "TRAINING_PENDING")
+                throw new CustomException("Document is not currently pending training acknowledgment.", 409);
+
+            // 1. Mark Document Training as Acknowledged / Ready. The ReadyForAuthorization = FALSE
+            // condition makes this idempotent: a second call (double-click, retry) updates zero rows
+            // instead of silently succeeding and inserting another state-history row below.
             string updateQuery = @"
                 UPDATE DocumentTraining
-                SET 
+                SET
                     ReadyForAuthorization = TRUE,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
-                WHERE DocumentId = @DocumentId 
+                WHERE DocumentId = @DocumentId
                   AND CompanyId = @CompanyId
-                  AND IsDeleted = FALSE";
-            
-            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+                  AND IsDeleted = FALSE
+                  AND ReadyForAuthorization = FALSE";
 
-            // 2. Log Action and transition state to AUTHORIZATION_PENDING (ID=7)
+            var rowsUpdated = await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            if (rowsUpdated == 0)
+                throw new CustomException("This document's training has already been acknowledged.", 409);
+
+            // 2. Log Action and transition state to AUTHORIZATION_PENDING. Tiebreak by Id: multiple
+            // state transitions can land in the same DB transaction (same NOW() in Postgres), so
+            // ChangedAt alone isn't a reliable way to find the truly-latest row.
             string stateQuery = @"
                 INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
-                SELECT @CompanyId, @DocumentId, 
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                SELECT @CompanyId, @DocumentId,
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
                        (SELECT Id FROM DocumentStates WHERE Code = 'AUTHORIZATION_PENDING'),
                        @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
-            
+
             await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
 
             // TODO: Add notification logic here to inform the final authorizer(s) that a document is ready for their action.
