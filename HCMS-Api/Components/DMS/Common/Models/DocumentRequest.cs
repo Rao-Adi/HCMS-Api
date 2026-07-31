@@ -426,6 +426,36 @@ public class DocumentRequestDetailsDto
 
 }
 
+// One row per Document in a revision chain (original + every subsequent revision),
+// returned in chronological order by GetDocumentRevisionHistoryAsync.
+public class RevisionHistoryItemDto
+{
+    public int DocumentId { get; set; }
+    public string DocumentNumber { get; set; }
+    public string DocumentName { get; set; }
+    public int? ParentDocumentId { get; set; }
+    public string Version { get; set; }
+
+    public int? RequestId { get; set; }
+    public string RequestNumber { get; set; }
+    public string DocumentRequestTypeCode { get; set; }
+    public string Justification { get; set; }
+
+    public DateTime? RequestedOn { get; set; }
+    public string RequestedBy { get; set; }
+
+    public DateTime? ApprovedOn { get; set; }
+    public string ApprovedBy { get; set; }
+
+    public DateTime? EffectiveOn { get; set; }
+    public string EffectiveBy { get; set; }
+
+    public string CurrentStatus { get; set; }
+
+    // True for the newest document in the chain (the one with no revision made of it yet).
+    public bool IsCurrentVersion { get; set; }
+}
+
 
 
 /// <summary>

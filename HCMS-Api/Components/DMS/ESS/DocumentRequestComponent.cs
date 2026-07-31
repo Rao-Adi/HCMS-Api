@@ -3099,6 +3099,133 @@ public class DocumentRequestComponent
         }
     }
 
+    // Returns the full revision chain for a document — the original document plus every
+    // subsequent revision of it — regardless of which document in the chain is passed in.
+    // Walks Documents.ParentDocumentId backward to find the original, then forward to collect
+    // every revision made since, so the caller doesn't need to know where in the chain
+    // `documentId` sits.
+    public async Task<IEnumerable<RevisionHistoryItemDto>> GetDocumentRevisionHistoryAsync(int documentId)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var sql = @"
+                WITH RECURSIVE Ancestors AS (
+                    SELECT Id, ParentDocumentId, 0 AS Depth
+                    FROM Documents
+                    WHERE Id = @DocumentId AND CompanyId = @CompanyId
+
+                    UNION ALL
+
+                    SELECT d.Id, d.ParentDocumentId, a.Depth + 1
+                    FROM Documents d
+                    INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
+                    WHERE d.CompanyId = @CompanyId
+                ),
+                RootDoc AS (
+                    SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1
+                ),
+                Chain AS (
+                    SELECT d.Id
+                    FROM Documents d
+                    INNER JOIN RootDoc r ON d.Id = r.RootId
+
+                    UNION ALL
+
+                    SELECT d2.Id
+                    FROM Documents d2
+                    INNER JOIN Chain c ON d2.ParentDocumentId = c.Id
+                    WHERE d2.CompanyId = @CompanyId
+                )
+                SELECT
+                    d.Id AS DocumentId,
+                    d.DocumentNumber,
+                    d.Title AS DocumentName,
+                    d.ParentDocumentId,
+                    COALESCE(dv.Version, '0.1') AS Version,
+                    d.RequestId,
+                    dr.RequestNumber,
+                    dr.DocumentRequestTypeCode,
+                    dr.Justification,
+                    dr.CreatedAt AS RequestedOn,
+                    COALESCE(reqEmp.Name, dr.CreatedBy) AS RequestedBy,
+                    apprv.ChangedAt AS ApprovedOn,
+                    COALESCE(apEmp.Name, apprv.ChangedBy) AS ApprovedBy,
+                    eff.ChangedAt AS EffectiveOn,
+                    COALESCE(efEmp.Name, eff.ChangedBy) AS EffectiveBy,
+                    curState.Code AS CurrentStatus,
+                    NOT EXISTS (
+                        SELECT 1 FROM Documents child
+                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
+                    ) AS IsCurrentVersion
+                FROM Chain c
+                INNER JOIN Documents d ON d.Id = c.Id AND d.CompanyId = @CompanyId
+                LEFT JOIN DocumentRequests dr ON dr.Id = d.RequestId AND dr.CompanyId = @CompanyId
+                -- LATERAL + LIMIT 1 everywhere below: Vw_employeeNames can still hold more than one
+                -- row per cleanempcode within a company, and DocumentVersions isn't DB-constrained
+                -- to exactly one VersionType=2 row per document. A plain LEFT JOIN on either fans a
+                -- single document row out into duplicates; LIMIT 1 guarantees at most one row per
+                -- document no matter what.
+                LEFT JOIN LATERAL (
+                    SELECT dv2.Version
+                    FROM DocumentVersions dv2
+                    WHERE dv2.DocumentId = d.Id AND dv2.CompanyId = d.CompanyId AND dv2.VersionType = 2
+                    ORDER BY dv2.Id DESC LIMIT 1
+                ) dv ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT ven.employeename AS Name
+                    FROM Vw_employeeNames ven
+                    WHERE ven.cleanempcode = LTRIM(RTRIM(dr.CreatedBy::text), '0')
+                    ORDER BY (ven.companyid = @CompanyId) DESC
+                    LIMIT 1
+                ) reqEmp ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT dsh.ChangedAt, dsh.ChangedBy
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId AND ds.Code = 'APPROVED'
+                    ORDER BY dsh.ChangedAt ASC, dsh.Id ASC LIMIT 1
+                ) apprv ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT ven.employeename AS Name
+                    FROM Vw_employeeNames ven
+                    WHERE ven.cleanempcode = LTRIM(RTRIM(apprv.ChangedBy::text), '0')
+                    ORDER BY (ven.companyid = @CompanyId) DESC
+                    LIMIT 1
+                ) apEmp ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT dsh.ChangedAt, dsh.ChangedBy
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId AND ds.Code = 'EFFECTIVE'
+                    ORDER BY dsh.ChangedAt ASC, dsh.Id ASC LIMIT 1
+                ) eff ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT ven.employeename AS Name
+                    FROM Vw_employeeNames ven
+                    WHERE ven.cleanempcode = LTRIM(RTRIM(eff.ChangedBy::text), '0')
+                    ORDER BY (ven.companyid = @CompanyId) DESC
+                    LIMIT 1
+                ) efEmp ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT ds.Code
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) curState ON TRUE
+                ORDER BY d.CreatedAt ASC;";
+
+            return await _common.QueryAsync<RevisionHistoryItemDto>(sql, new { DocumentId = documentId, CompanyId });
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
     // Helper method to safely get values from the dynamic row
     private static T GetValue<T>(IDictionary<string, object> row, string columnName)
     {

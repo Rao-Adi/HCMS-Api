@@ -267,6 +267,35 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+
+
+    [HttpGet("get-document-revision-history")]
+    public async Task<IActionResult> GetDocumentRevisionHistory(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<RevisionHistoryItemDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetDocumentRevisionHistoryAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("get-my-draft-request")]
     public async Task<IActionResult> GetMyDraftRequests(GetDocumentDto input)
     {
