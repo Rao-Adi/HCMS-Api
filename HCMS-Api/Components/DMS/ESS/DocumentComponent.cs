@@ -3068,6 +3068,146 @@ public class DocumentComponent
         }
     }
 
+    /// <summary>
+    /// Lightweight companion to GetDocumentsPendingTrainingAcknowledgmentAsync (same "list" +
+    /// "list-counts" pattern as GetPendingAuthorizationsAsync / GetPendingAuthorizationCountsAsync)
+    /// for badge counts (e.g. the sidebar's Training for SOP Documents entry) that only need a
+    /// number, not the full paginated dataset with its per-document training-progress joins.
+    /// Unlike the list endpoint, this ignores Requeststatus/TrainingMode and counts documents
+    /// pending training across both Classroom and Online — a document is deduplicated (counted
+    /// once) even if it has assignees in both modes.
+    /// </summary>
+    public async Task<int> GetDocumentsPendingTrainingCountAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId
+                  AND doc.IsDeleted = FALSE
+                  AND dut.TrainingMode = @TrainingMode
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
+                  AND (
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string countSql = $@"
+                SELECT COUNT(DISTINCT doc.Id)
+                FROM Vw_Documents doc
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode,
+                TrainingMode = input.Requeststatus == "Classroom" ? 1 : 2
+            };
+
+            return await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    // Same scope/filters as GetDocumentsPendingTrainingCountAsync, but returns both tabs'
+    // counts (plus their total) in one query instead of requiring one call per TrainingMode --
+    // for populating both tab badges on the SOP Document Training screen from a single request.
+    public async Task<DocumentsPendingTrainingCountsDto> GetDocumentsPendingTrainingCountsAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId
+                  AND doc.IsDeleted = FALSE
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
+                  AND (
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string countSql = $@"
+                SELECT
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE dut.TrainingMode = 1) AS ClassroomCount,
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE dut.TrainingMode = 2) AS OnlineCount,
+                    COUNT(DISTINCT doc.Id) AS TotalCount
+                FROM Vw_Documents doc
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
+
+            var result = await _common.QuerySingleAsync<DocumentsPendingTrainingCountsDto>(countSql, queryParams);
+            return result ?? new DocumentsPendingTrainingCountsDto();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
     public async Task<PaginationResult<dynamic>> GetApprovedEffectiveDocumentsAsync(GetApprovedDocumentsFilterDto input)
     {
         try
@@ -4296,6 +4436,13 @@ public class GetDocumentsPendingTrainingDto : TableFiltersDto
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
     public string? Requeststatus { get; set; }
+}
+
+public class DocumentsPendingTrainingCountsDto
+{
+    public int ClassroomCount { get; set; }
+    public int OnlineCount { get; set; }
+    public int TotalCount { get; set; }
 }
 
 public class GetApprovedDocumentsFilterDto : TableFiltersDto

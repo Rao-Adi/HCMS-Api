@@ -562,6 +562,60 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpPost("get-documents-pending-training-count")]
+    public async Task<IActionResult> GetDocumentsPendingTrainingCountAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsPendingTrainingCountAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-documents-pending-training-counts")]
+    public async Task<IActionResult> GetDocumentsPendingTrainingCountsAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<DocumentsPendingTrainingCountsDto>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsPendingTrainingCountsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("get-documents-pending-approval")]
     public async Task<IActionResult> GetDocumentsPendingApprovalAsync(GetDocumentsPendingApprovalDto input)
     {
