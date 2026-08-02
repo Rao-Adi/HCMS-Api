@@ -599,6 +599,42 @@ public class TransferWorkflowPolicyComponent
         }
     }
 
+    // Same scope as GetMyResponsibilityTransfersApprovalsAsync (ApproverId = current user, not deleted)
+    // but counts every status in one query instead of returning full rows for one status at a time --
+    // for showing counts on tab labels without fetching the paginated list per tab.
+    public async Task<ResponsibilityTransferApprovalCountsDto> GetMyResponsibilityTransfersApprovalsCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            string sql = @"
+                SELECT
+                    COUNT(1) FILTER (WHERE rt.Status = 1) AS PendingCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 2) AS ApprovedCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 3) AS RejectedCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 4) AS RevertedCount,
+                    COUNT(1) AS TotalCount
+                FROM ResponsibilityTransfers rt
+                WHERE rt.IsDeleted = FALSE
+                  AND rt.CompanyId = @CompanyId
+                  AND rt.ApproverId = @UserId;";
+
+            var queryParams = new { CompanyId = CompanyId, UserId = empCode };
+
+            var result = await _common.QuerySingleAsync<ResponsibilityTransferApprovalCountsDto>(sql, queryParams);
+            return result ?? new ResponsibilityTransferApprovalCountsDto();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
     public async Task<PaginationResult<dynamic>> GetMySubmittedResponsibilityTransfersAsync(GetMyResponsibilityTransfersDto input)
     {
         try
@@ -754,4 +790,13 @@ public class GetMyResponsibilityTransfersDto : TableFiltersDto
 {
     public int Status { get; set; }
     public string? UserId { get; set; }
+}
+
+public class ResponsibilityTransferApprovalCountsDto
+{
+    public int PendingCount { get; set; }
+    public int ApprovedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int RevertedCount { get; set; }
+    public int TotalCount { get; set; }
 }

@@ -217,6 +217,33 @@ public class DMSTransferWorkflowPolicyController : Controller
         }
     }
 
+    [HttpGet("get-my-responsibility-transfers-approvals-count")]
+    public async Task<IActionResult> GetMyResponsibilityTransfersApprovalsCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<ResponsibilityTransferApprovalCountsDto>()
+            {
+                Success = true,
+                Data = await _transferWorkflowPolicyComponent.GetMyResponsibilityTransfersApprovalsCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("get-my-submitted-responsibility-transfers")]
     public async Task<IActionResult> GetMySubmittedResponsibilityTransfers([FromBody] GetMyResponsibilityTransfersDto input)
     {

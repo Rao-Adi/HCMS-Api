@@ -1037,7 +1037,7 @@ public class DocumentComponent
                 throw new Exception("No valid document content found to promote.");
 
             //-----------------------------------------
-            // 3️⃣ Promote 0.1 → 1.0
+            // 3️⃣ Promote 1.0 → 1.0
             //-----------------------------------------
             var newVersion = "1.0";
 
@@ -1051,7 +1051,7 @@ public class DocumentComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, '0.1', 1, @Content, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, '1.0', 1, @Content, @CreatedBy, @LastModifiedBy
             )
             ", new
             {

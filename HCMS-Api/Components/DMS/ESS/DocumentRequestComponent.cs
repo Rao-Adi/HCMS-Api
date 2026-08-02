@@ -3163,7 +3163,7 @@ public class DocumentRequestComponent
                     d.DocumentNumber,
                     d.Title AS DocumentName,
                     d.ParentDocumentId,
-                    COALESCE(dv.Version, '0.1') AS Version,
+                    COALESCE(dv.Version, '1.0') AS Version,
                     d.RequestId,
                     dr.RequestNumber,
                     dr.DocumentRequestTypeCode,
@@ -3292,7 +3292,7 @@ public class DocumentRequestComponent
              ↓
          PROMOTE Audience ✅
              ↓
-         Document Draft 0.1 Ready */
+         Document Draft 1.0 Ready */
     public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string empCode, NpgsqlTransaction transaction)
     {
         //await using var transaction = await _common.BeginTransactionAsync();
@@ -3379,7 +3379,7 @@ public class DocumentRequestComponent
             }, transaction);
 
             //-----------------------------------------
-            // 3️⃣ Create Draft Version 0.1
+            // 3️⃣ Create Draft Version 1.0
             //-----------------------------------------
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
@@ -3388,7 +3388,7 @@ public class DocumentRequestComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, '0.1', 1, @Content, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, '1.0', 1, @Content, @CreatedBy, @LastModifiedBy
             )
             ", new
             {

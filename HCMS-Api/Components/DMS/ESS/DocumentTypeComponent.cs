@@ -461,7 +461,7 @@ public class DocumentTypeComponent
             UPDATE DocumentTypes
             SET 
                 Name = '{input.Name.Replace("'", "''")}',
-                Description = '{input.Description!.Replace("'", "''")}',
+                Description = '{input.Description?.Replace("'", "''")}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
