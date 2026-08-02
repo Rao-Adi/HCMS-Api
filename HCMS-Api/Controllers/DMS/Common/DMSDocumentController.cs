@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace HCMS_Api.Controllers.DMS.Common;
 
@@ -180,10 +181,23 @@ public class DMSDocumentController : Controller
 
 
     [HttpPost("submit-document")]
-    public async Task<IActionResult> SubmitDocument(SubmitDocument input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> SubmitDocument([FromForm] SubmitDocument input)
     {
         try
         {
+            // Attributes/TrainingUsers travel as JSON-encoded strings inside the multipart form
+            // (multipart is required here because DocumentFile can only travel that way, not as a
+            // JSON body) -- ASP.NET Core's form binder can't bind a List<T> from a single JSON
+            // string field, so we deserialize them ourselves instead of relying on model binding.
+            var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+            if (Request.Form.TryGetValue("attributes", out var attributesJson) && !string.IsNullOrWhiteSpace(attributesJson))
+                input.Attributes = JsonSerializer.Deserialize<List<CreateDocumentAttributeValueDto>>(attributesJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("trainingusers", out var trainingUsersJson) && !string.IsNullOrWhiteSpace(trainingUsersJson))
+                input.TrainingUsers = JsonSerializer.Deserialize<List<TraningUsers>>(trainingUsersJson!, jsonOptions) ?? new();
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,

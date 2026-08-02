@@ -133,12 +133,21 @@ public class DocumentUpdateDto : AuditableEntity
 }
 
 public class SubmitDocument
-{ 
-    public int DocumentId { get; set; } 
+{
+    public int DocumentId { get; set; }
 
+    // Bound directly when the request is a JSON body. When submitted as multipart form data
+    // (required whenever DocumentFile is attached), the controller instead reads them from
+    // JSON-encoded "attributes"/"trainingusers" form fields and populates these lists itself,
+    // since ASP.NET Core's form binder can't bind a List<T> from a single JSON string field.
     public List<CreateDocumentAttributeValueDto> Attributes { get; set; } = new();
-    public List<TraningUsers>? TrainingUsers { get; set; }   
+    public List<TraningUsers>? TrainingUsers { get; set; }
 
+    // Template attachment for when it wasn't provided at Document Request creation time.
+    // Only one of these is expected, depending on the DocumentType's configured Template:
+    // DocumentFile for a file-based template (PDF/Word), ProposedContent for an HTML template.
+    public IFormFile? DocumentFile { get; set; }
+    public string? ProposedContent { get; set; }
 }
 public class TraningUsers
 {

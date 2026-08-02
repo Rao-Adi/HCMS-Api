@@ -591,6 +591,13 @@ public class DocumentComponent
             if (doc == null)
                 throw new CustomException("Document not found.", 404);
 
+            //-------------------------------------------------
+            // Attach Template, only if one wasn't already provided at Document Request
+            // creation time (i.e. Documents.DocumentURL is still empty and the Draft
+            // DocumentVersions row still has no Content).
+            //-------------------------------------------------
+
+            await AttachTemplateIfMissingAsync(input, doc, CompanyId, empCode, transaction);
 
             //-------------------------------------------------
             // Validate & Save Attributes (NEW METHOD)
@@ -836,6 +843,106 @@ public class DocumentComponent
         {
             await transaction.RollbackAsync();
             throw;
+        }
+    }
+
+    // Uploaded file names sometimes arrive with the extension duplicated (e.g. a browser-downloaded
+    // template gets re-saved by the OS/browser as "Template.docx.docx" before being re-uploaded here).
+    // Collapses exactly one trailing repeat back to the original name.
+    private static string SanitizeDuplicatedExtension(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+            return fileName;
+
+        var ext = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(ext) &&
+            fileName.Length > ext.Length * 2 &&
+            fileName.EndsWith(ext + ext, StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = fileName.Substring(0, fileName.Length - ext.Length);
+        }
+
+        return fileName;
+    }
+
+    // A Document created from an approved Request may not have had its template attached yet
+    // (the Request Creation form allows submitting without one). This lets it be attached here,
+    // at Document Creation/Submission time, instead. Which input is expected depends entirely on
+    // the DocumentType's configured Template: a file-based template (PDF/Word, TemplateType 1/2)
+    // expects DocumentFile; an HTML template (TemplateType 3) expects ProposedContent.
+    private async Task AttachTemplateIfMissingAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
+    {
+        bool hasFile = !string.IsNullOrWhiteSpace((string)doc.documenturl);
+        bool hasContent = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS(
+                SELECT 1 FROM DocumentVersions
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1
+                  AND Content IS NOT NULL AND Content <> ''
+            );", new { input.DocumentId, CompanyId = companyId }, transaction);
+
+        // Already has a template from Request Creation time -- nothing to do here.
+        if (hasFile || hasContent)
+            return;
+
+        int? templateType = await _common.ExecuteScalarAsync<int?>(@"
+            SELECT TemplateType FROM Templates
+            WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
+              AND IsActive = TRUE AND IsDeleted = FALSE
+            LIMIT 1;", new { DocumentTypeCode = (string)doc.documenttypecode, CompanyId = companyId }, transaction);
+
+        bool expectsFile = templateType == 1 || templateType == 2; // 1 = PDF, 2 = Word
+        bool expectsContent = templateType == 3;                    // 3 = HTML
+
+        bool fileProvided = input.DocumentFile != null && input.DocumentFile.Length > 0;
+        bool contentProvided = !string.IsNullOrWhiteSpace(input.ProposedContent);
+
+        // No Template configured for this DocumentType at all -- don't block submission over a
+        // setup gap that isn't the caller's fault; accept whichever of the two was actually sent.
+        if (templateType == null)
+        {
+            expectsFile = fileProvided;
+            expectsContent = !fileProvided && contentProvided;
+        }
+
+        if (expectsFile)
+        {
+            if (!fileProvided)
+                throw new CustomException("A document file is required before this document can be submitted.", 400);
+
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+            if (!Directory.Exists(uploadsRoot))
+                Directory.CreateDirectory(uploadsRoot);
+
+            var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await input.DocumentFile.CopyToAsync(stream);
+            }
+
+            var documentUrl = $"/uploads/documents/{fileName}";
+
+            await _common.ExecuteAsync(@"
+                UPDATE Documents
+                SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+        }
+        else if (expectsContent)
+        {
+            if (!contentProvided)
+                throw new CustomException("Document content is required before this document can be submitted.", 400);
+
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions
+                SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
+                new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+        }
+        else
+        {
+            throw new CustomException("A document template (file or content) is required before this document can be submitted.", 400);
         }
     }
 
