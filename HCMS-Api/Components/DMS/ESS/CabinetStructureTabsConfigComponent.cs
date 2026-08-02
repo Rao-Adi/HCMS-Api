@@ -49,7 +49,7 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -59,7 +59,7 @@ public class CabinetStructureTabsConfigComponent
             SELECT COUNT(1)
             FROM CabinetStructureTabsConfig
             WHERE Name = '{input.Name.Replace("'", "''")}')
-              AND IsDeleted = FALSE";
+              AND IsDeleted = FALSE AND CompanyId = {CompanyId}";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -100,7 +100,7 @@ public class CabinetStructureTabsConfigComponent
                    FROM CabinetStructureTabsConfig cst
                    LEFT JOIN Companies c
                    ON cst.CompanyId = c.Id
-            WHERE cst.Id = {newId}";
+            WHERE cst.Id = {newId} AND cst.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -135,7 +135,7 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -150,7 +150,7 @@ public class CabinetStructureTabsConfigComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("CabinetStructureTabsConfig not found", 200);
+                throw new CustomException("CabinetStructureTabsConfig not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -158,7 +158,7 @@ public class CabinetStructureTabsConfigComponent
                 SET IsDeleted = False
                     , LastModifiedAt = NOW()
                     , LastModifiedBy = '{empCode.Replace("'", "''")}'    
-                WHERE ID = {id}";
+                WHERE ID = {id} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -173,9 +173,11 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE cst.IsDeleted = False 
-                  AND cst.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE cst.IsDeleted = False AND cst.CompanyId = " + CompanyId;
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -193,6 +195,10 @@ public class CabinetStructureTabsConfigComponent
             {
                 "NAME" => "cst.Name",
                 "CODE" => "cst.ID",
+                "CREATEDAT" => "cst.CreatedAt",
+                "CREATEDBY" => "cst.CreatedBy",
+                "LASTMODIFIEDAT" => "cst.LastModifiedAt",
+                "LASTMODIFIEDBY" => "cst.LastModifiedBy",
                 "ISACTIVE" => "cst.IsActive",
                 _ => "cst.ID"
             };
@@ -202,10 +208,22 @@ public class CabinetStructureTabsConfigComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
+                        SELECT cst.*, c.Id AS CompanyId, c.Name AS Company,
+                        -- 🔹 Audit Fields
+                         COALESCE(e.EmployeeName, cst.CreatedBy::text) AS CreatedByName,
+ 
+                         COALESCE(m.EmployeeName, cst.LastModifiedBy::text) AS LastModifiedByName
+  
                         FROM CabinetStructureTabsConfig cst
                         LEFT JOIN Companies c
                                ON cst.CompanyId = c.Id
+                           -- 🔹 Created By Employee
+                        LEFT JOIN Vw_EmployeeNames e
+                            ON e.CleanEmpCode = LTRIM(cst.CreatedBy::text, '0')
+
+                        -- 🔹 Last Modified By Employee
+                        LEFT JOIN Vw_EmployeeNames m 
+                            ON m.CleanEmpCode = LTRIM(cst.LastModifiedBy::text, '0')
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -240,9 +258,12 @@ public class CabinetStructureTabsConfigComponent
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    CreatedByName = row.Field<string>("CreatedByName"),
+                    
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    LastModifiedByName = row.Field<string>("LastModifiedByName")
                 })
                 .ToList();
 
@@ -269,12 +290,15 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = @"
             SELECT ID, Name
             FROM CabinetStructureTabsConfig
             WHERE IsActive = True
               AND IsDeleted = False
-            ORDER BY Id";
+              AND CompanyId = " + CompanyId + " ORDER BY Id";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -299,19 +323,23 @@ public class CabinetStructureTabsConfigComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT cst.*, c.Id AS CompanyId, c.Name AS Company
                         FROM CabinetStructureTabsConfig cst
                         LEFT JOIN Companies c
                         ON cst.CompanyId = c.Id
                 WHERE cst.ID = {id}
+                  AND cst.CompanyId = {CompanyId}
                   AND cst.IsActive = True
                   AND cst.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("CabinetStructureTabsConfig not found", 200);
+                throw new CustomException("CabinetStructureTabsConfig not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -340,7 +368,7 @@ public class CabinetStructureTabsConfigComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -354,7 +382,7 @@ public class CabinetStructureTabsConfigComponent
                 string existsQuery = $@"
                     SELECT COUNT(1)
                     FROM CabinetStructureTabsConfig
-                    WHERE Id = {input.Id} AND IsDeleted = FALSE";
+                    WHERE Id = {input.Id} AND CompanyId = {CompanyId} AND IsDeleted = FALSE";
 
                 exists = Convert.ToInt32(_common.ExecuteScalarQuery(existsQuery));
             }
@@ -398,7 +426,7 @@ public class CabinetStructureTabsConfigComponent
                             IsActive = {(input.IsActive ? "TRUE" : "FALSE")}, 
                             LastModifiedAt = NOW(),
                             LastModifiedBy = '{empCode.Replace("'", "''")}' 
-                        WHERE ID = '{input.Id}'";
+                        WHERE ID = '{input.Id}' AND CompanyId = {CompanyId}";
 
                 bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -416,7 +444,7 @@ public class CabinetStructureTabsConfigComponent
                             c.Name AS Company
                         FROM CabinetStructureTabsConfig cst
                         LEFT JOIN Companies c ON cst.CompanyId = c.Id
-                        WHERE cst.Id = {finalId}";
+                        WHERE cst.Id = {finalId} AND cst.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -437,7 +465,7 @@ public class CabinetStructureTabsConfigComponent
                 CreatedBy = row.Field<string>("CreatedBy"),
                 LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
                 LastModifiedBy = row.Field<string>("LastModifiedBy")
-            }; 
+            };
 
         }
         catch

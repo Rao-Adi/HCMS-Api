@@ -6,6 +6,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using System.Data;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -37,7 +38,7 @@ public class DocumentAttributeComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
 
 
@@ -46,7 +47,7 @@ public class DocumentAttributeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -56,14 +57,16 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE ControlLabel = '{input.ControlLabel}' 
+            WHERE ControlLabel = '{input.ControlLabel}'
+              AND DocumentTypeCode = '{input.DocumentTypeCode}'
+              AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists > 0)
                 throw new CustomException("DocumentAttribute already exists", 409);
- 
+
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO DocumentAttributes
@@ -110,7 +113,7 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-            WHERE da.Id = '{newId}'";
+            WHERE da.Id = '{newId}' AND da.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -153,7 +156,7 @@ public class DocumentAttributeComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -162,13 +165,13 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentAttributes
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId ={CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentAttribute not found", 200);
+                throw new CustomException("DocumentAttribute not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -176,7 +179,7 @@ public class DocumentAttributeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -191,9 +194,11 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE da.IsDeleted = False 
-                  AND da.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE da.IsDeleted = False AND da.CompanyId = "+CompanyId + @" AND da.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -211,6 +216,10 @@ public class DocumentAttributeComponent
             {
                 "NAME" => "da.DocumentTypeCode",
                 "CODE" => "da.Id",
+                "CREATEDAT" => "da.CreatedAt",
+                "CREATEDBY" => "da.CreatedBy",
+                "LASTMODIFIEDAT" => "da.LastModifiedAt",
+                "LASTMODIFIEDBY" => "da.LastModifiedBy",
                 "ISACTIVE" => "da.IsActive",
                 _ => "da.DocumentTypeCode"
             };
@@ -298,8 +307,8 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
-            int CompanyId = int.Parse(_CompanyId); 
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
 
 
             var query = $@"SELECT 
@@ -323,7 +332,7 @@ public class DocumentAttributeComponent
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable divisionsTable = ds.Tables[0];
-          
+
 
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentAttributeReadDto2
@@ -368,7 +377,10 @@ public class DocumentAttributeComponent
     public async Task<List<DocumentAttributeReadDto>> GetAllByDocumentTypeAsync(string documentTypeCode)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                         SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -379,12 +391,12 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                         WHERE da.DocumentTypeCode = '{documentTypeCode}'
+                         WHERE da.DocumentTypeCode = '{documentTypeCode}' AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
-            DataTable divisionsTable = ds.Tables[0];  
+            DataTable divisionsTable = ds.Tables[0];
 
             var documentAttributes = divisionsTable.AsEnumerable()
                 .Select(row => new DocumentAttributeReadDto
@@ -424,11 +436,15 @@ public class DocumentAttributeComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Id, DocumentTypeCode
             FROM DocumentAttributes
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY DocumentTypeCode";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -454,6 +470,9 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -464,14 +483,14 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                WHERE da.Id = {id}
+                WHERE da.Id = {id} AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentAttribute not found", 200);
+                throw new CustomException("DocumentAttribute not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -508,6 +527,9 @@ public class DocumentAttributeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
@@ -518,14 +540,14 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-                WHERE DocumentTypeCode = '{dCode}'
+                WHERE DocumentTypeCode = '{dCode}' AND da.CompanyId = {CompanyId}
                   AND da.IsActive = True
                   AND da.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentAttribute not found", 200);
+                throw new CustomException("DocumentAttribute not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -558,12 +580,12 @@ public class DocumentAttributeComponent
     }
 
 
-    public async Task<DocumentAttributeReadDto> UpdateAsync(DocumentAttributeUpdateDto input)
+    public async Task<List<DocumentAttributeReadDto>> UpdateAsync(DocumentAttributeUpdateDto input)
     {
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -572,13 +594,13 @@ public class DocumentAttributeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentAttributes
-            WHERE Id = '{input.Id}'
+            WHERE Id = '{input.Id}' AND CompanyId ={CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentAttribute not found", 200);
+                throw new CustomException("DocumentAttribute not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -591,16 +613,15 @@ public class DocumentAttributeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
             if (!updated)
                 throw new Exception("Update failed");
 
-            // Return updated record
             string selectQuery = $@"
-                    SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
+                        SELECT da.*, dt.Code AS DocumentTypeCode, dt.Name AS DocumentType ,c.Id AS CompanyId, c.Name Company,
                          ct.Name AS ControlType
                          FROM DocumentAttributes da
                               LEFT JOIN DocumentTypes dt
@@ -609,33 +630,40 @@ public class DocumentAttributeComponent
                               ON da.CompanyId = c.Id
 	                          LEFT JOIN ControlTypes ct
 	                          ON da.ControlTypeId = ct.Id
-            WHERE da.Id = '{input.Id}'";
+                         WHERE da.DocumentTypeCode = '{input.DocumentTypeCode}' AND da.CompanyId = {CompanyId}
+                  AND da.IsActive = True
+                  AND da.IsDeleted = False";
 
-            DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
-            if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch updated division");
 
-            DataRow row = dt.Rows[0];
+            DataSet ds = await _common.ExecuteSqlQueryMultiple(selectQuery);
+            DataTable divisionsTable = ds.Tables[0];
 
-            return new DocumentAttributeReadDto
-            {
-                Id = row.Field<int>("Id"),
-                CompanyId = row.Field<int>("CompanyId"),
-                Company = row.Field<string>("Company"),
-                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
-                ControlLabel = row.Field<string>("ControlLabel"),
-                ControlTypeId = row.Field<int>("ControlTypeId"),
-                ControlType = row.Field<string>("ControlType"),
-                ListValues = row.Field<string>("ListValues"),
-                IsMandatory = row.Field<bool>("IsMandatory"),
-                IsDeleted = row.Field<bool>("IsDeleted"),
-                IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
-            };
+            var documentAttributes = divisionsTable.AsEnumerable()
+                .Select(row => new DocumentAttributeReadDto
+                {
+                    Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
+                    CompanyId = row.Field<int>("CompanyId"),
+                    Company = row.Field<string>("Company"),
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
+                    DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    ControlLabel = row.Table.Columns.Contains("ControlLabel") ? row.Field<string>("ControlLabel") : string.Empty,
+                    ControlType = row.Table.Columns.Contains("ControlType") ? row.Field<string>("ControlType") : string.Empty,
+                    ControlTypeId = row.Table.Columns.Contains("ControlTypeId") ? row.Field<int>("ControlTypeId") : 0,
+                    ListValues = row.Table.Columns.Contains("ListValues") ? row.Field<string>("ListValues") : string.Empty,
+                    IsMandatory = row.Table.Columns.Contains("IsMandatory") ? row.Field<bool>("IsMandatory") : false,
+                    IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
+                    IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
+                    CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                }).ToList();
+
+
+            return documentAttributes;
         }
         catch (Exception ex)
         {

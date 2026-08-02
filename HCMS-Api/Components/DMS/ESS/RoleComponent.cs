@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -56,7 +56,8 @@ public class RoleComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Roles
-            WHERE (Name = '{input.Name.Replace("'", "''")}' 
+            WHERE Name = '{input.Name.Replace("'", "''")}' 
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -79,7 +80,7 @@ public class RoleComponent
             )
             VALUES
             (
-                '{input.CompanyId}', 
+                {CompanyId}, 
                 '{input.Name.Replace("'", "''")}', 
                 '{input.Description}',
                 TRUE,
@@ -99,7 +100,7 @@ public class RoleComponent
             FROM Roles r
             LEFT JOIN Companies c
             ON r.CompanyId = c.Id
-            WHERE r.Id = {newId}";
+            WHERE r.Id = {newId} AND r.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -143,13 +144,14 @@ public class RoleComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Roles
-                WHERE Name = {code}
+                WHERE Name = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Role not found", 200);
+                throw new CustomException("Role not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -158,7 +160,7 @@ public class RoleComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Name = {code}";
+                WHERE Name = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -173,11 +175,15 @@ public class RoleComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Id, Name
             FROM Roles
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Id";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -203,8 +209,12 @@ public class RoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE r.IsDeleted = False 
+                  AND r.CompanyId = " + CompanyId + @"
                   AND r.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -224,6 +234,10 @@ public class RoleComponent
                 "NAME" => "r.Name",
                 "DESCRIPTION" => "r.Description",
                 "ISACTIVE" => "r.IsActive",
+                "CREATEDAT" => "r.CreatedAt",
+                "CREATEDBY" => "r.CreatedBy",
+                "LASTMODIFIEDAT" => "r.LastModifiedAt",
+                "LASTMODIFIEDBY" => "r.LastModifiedBy",
                 _ => "r.Name"
             };
 
@@ -299,19 +313,23 @@ public class RoleComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT r.*, c.Id AS CompanyId, c.Name AS Company
                     FROM Roles r
                     LEFT JOIN Companies c
                     ON r.CompanyId = c.Id
-                WHERE r.Name = {code}
+                WHERE r.Name = '{code}'
+                  AND r.CompanyId = {CompanyId}
                   AND r.IsActive = True
                   AND r.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Role not found", 200);
+                throw new CustomException("Role not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -355,12 +373,13 @@ public class RoleComponent
             SELECT COUNT(1)
             FROM Roles
             WHERE Name = '{input.Name.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Role not found", 200);
+                throw new CustomException("Role not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -371,7 +390,7 @@ public class RoleComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Name = '{input.Name.Replace("'", "''")}'";
+            WHERE Name = '{input.Name.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -384,7 +403,7 @@ public class RoleComponent
                 FROM Roles r
                 LEFT JOIN Companies c
                 ON r.CompanyId = c.Id
-            WHERE r.Name = '{input.Name.Replace("'", "''")}'";
+            WHERE r.Name = '{input.Name.Replace("'", "''")}' AND r.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

@@ -46,10 +46,8 @@ public class ControlTypeComponent
     public async Task<ControlTypeReadDto> CreateAsync(ControlTypeCreateDto input)
     {
         try
-        {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        { 
             var clientIp = _clientContextService.GetClientIP(); 
-            int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
@@ -60,8 +58,8 @@ public class ControlTypeComponent
             string duplicateCheckQuery = $@"
                             SELECT COUNT(1)
                             FROM ControlTypes
-                            WHERE Name = '{input.Name.Replace("'", "''")}'
-                              AND IsDeleted = FALSE";
+                            WHERE Name = '{input.Name.Replace("'", "''")}' 
+                            AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
 
@@ -130,10 +128,8 @@ public class ControlTypeComponent
     public async Task<bool> DeleteAsync(int id)
     {
         try
-        {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
-            int CompanyId = int.Parse(_CompanyId);
+        { 
+            var clientIp = _clientContextService.GetClientIP();  
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
@@ -147,7 +143,7 @@ public class ControlTypeComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("ControlType not found", 200);
+                throw new CustomException("ControlType not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -191,6 +187,10 @@ public class ControlTypeComponent
             {
                 "NAME" => "d.Name",
                 "CODE" => "d.Id",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 "ISACTIVE" => "d.IsActive",
                 _ => "d.Name"
             };
@@ -303,7 +303,7 @@ public class ControlTypeComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("ControlType not found", 200);
+                throw new CustomException("ControlType not found", 404);
 
             DataRow row = dt.Rows[0];
 

@@ -1,4 +1,4 @@
-﻿﻿using HCMS_Api.Common;
+﻿using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -91,6 +91,68 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    [HttpPost("export-my-pending-document-request")]
+    public async Task<IActionResult> ExportMyInboxRequestsAsync(GetPendingRequestDto input)
+    {
+        try
+        {
+            var fileBytes = await _documentRequestComponent.ExportMyInboxRequestsAsync(input);
+
+            if (fileBytes == null || fileBytes.Length == 0)
+            {
+                return NotFound(new HttpApiResponse<object>
+                {
+                    Success = false,
+                    Message = "No data available to export.",
+                    Code = 404
+                });
+            }
+
+            string fileName = $"Pending_Requests_{DateTime.Now:yyyyMMddHHmmss}.csv";
+            return File(fileBytes, "text/csv", fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-my-request-counts")]
+    public async Task<IActionResult> GetMyRequestCounts()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<dynamic>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetMyRequestCountsAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
 
     [HttpPost("get-my-document-requests-for-approval")]
     public async Task<IActionResult> GetMyDocumentRequestsForApproval(MyRequestFilterDto input)
@@ -118,6 +180,35 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
+    [HttpGet("get-my-document-requests-for-approval-count")]
+    public async Task<IActionResult> GetMyRequestsPendingApprovalCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<dynamic>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetMyRequestsPendingApprovalCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
 
 
     [HttpGet("get-document-observation-details")]
@@ -158,6 +249,35 @@ public class DMSDocumentRequestController : Controller
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetWorkflowDetailsAsync(requestId, entityType),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+
+    [HttpGet("get-document-revision-history")]
+    public async Task<IActionResult> GetDocumentRevisionHistory(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<IEnumerable<RevisionHistoryItemDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetDocumentRevisionHistoryAsync(documentId),
                 Message = "Success",
                 Code = 200
             });
@@ -300,7 +420,7 @@ public class DMSDocumentRequestController : Controller
             var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
             if (!provider.TryGetContentType(filePath, out var contentType))
             {
-                contentType = "application/octet-stream"; 
+                contentType = "application/octet-stream";
             }
 
             var fileName = Path.GetFileName(filePath);
@@ -567,6 +687,75 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    // UC-22: Revision-only counterpart to submit-draft-document-request. Submits an existing
+    // Revision draft (DocumentRequestTypeCode == "Revision") and starts its workflow.
+    [HttpPost("submit-revision-document-request")]
+    public async Task<IActionResult> SubmitRevisionDocumentRequest(SubmitRevisionDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<bool>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.SubmitRevisionDocumentRequestAsync(input),
+                Message = "Revision Request submitted successfully.",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    // UC-22: Revision-only counterpart to create-and-submit-document-request. Requires
+    // ParentDocumentId and validates content differs from that document before starting the workflow.
+    [HttpPost("create-and-submit-revision-document-request")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> CreateAndSubmitRevisionDocumentRequest([FromForm] DraftDocumentRequestDto input)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            return Ok(new HttpApiResponse<long>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.CreateAndSubmitRevisionDocumentRequestAsync(input),
+                Message = "Revision Request submitted successfully.",
+                Code = 201
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
 
     [HttpGet("get-effective-documents-details-by-id")]
     public async Task<IActionResult> GetEffectiveDocumentDetailsForRevision(int documentId)
@@ -596,15 +785,42 @@ public class DMSDocumentRequestController : Controller
     }
 
 
-    [HttpPost("get-effective-documents-for-revision")]
-    public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    //[HttpPost("get-effective-documents-for-revision")]
+    //public async Task<IActionResult> GetEffectiveDocumentsForRevision(GetDocumentDto input)
+    //{
+    //    try
+    //    {
+    //        return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+    //        {
+    //            Success = true,
+    //            Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+    //            Message = "Success",
+    //            Code = 200
+    //        });
+    //    }
+    //    catch (CustomException ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, ex.Message);
+    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+    //        return StatusCode(response.Code, response);
+    //    }
+    //}
+
+    [HttpGet("get-draft-documents-count")]
+    public async Task<IActionResult> GetDraftDocumentCount()
     {
         try
         {
-            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+            return Ok(new HttpApiResponse<dynamic>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetEffectiveDocumentsForRevisionAsync(input),
+                Data = await _documentRequestComponent.GetDraftDocumentCountAsync(),
                 Message = "Success",
                 Code = 200
             });
@@ -619,6 +835,35 @@ public class DMSDocumentRequestController : Controller
         {
             _logger.LogError(ex, ex.Message);
             var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-request-created-by-user-list")]
+    public async Task<IActionResult> GetRequestCreatedByUserList()
+    {
+        try
+        {
+            var selectList = await _documentRequestComponent.GetRequestCreatedByUserListAsync();
+            return Ok(new HttpApiResponse<IList<SelectListDto>>()
+            {
+                Success = true,
+                Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
             return StatusCode(response.Code, response);
         }
     }

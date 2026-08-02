@@ -57,8 +57,8 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE DocumentTypeCode = '{input.DocumentTypeCode}'
-              AND IsDeleted = FALSE";
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
+             AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
@@ -98,11 +98,22 @@ public class TrainingPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@" 
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
-            FROM TrainingPolicies t
+             SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+             -- 🔹 Audit Fields
+              COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+ 
+              COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+             FROM TrainingPolicies t 
             LEFT JOIN Companies c
-            ON t.CompanyId = c.Id
-            WHERE Id = {newId}";
+                    ON t.CompanyId = c.Id
+                -- 🔹 Created By Employee
+             LEFT JOIN Vw_EmployeeNames e
+                 ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+
+             -- 🔹 Last Modified By Employee
+             LEFT JOIN Vw_EmployeeNames m 
+                 ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
+            WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -134,7 +145,7 @@ public class TrainingPolicyComponent
     }
 
 
-    public async Task<bool> DeleteAsync(string code)
+    public async Task<bool> DeleteAsync(int code)
     {
         try
         {
@@ -148,13 +159,13 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM TrainingPolicies
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TrainingPolicy not found", 200);
+                throw new CustomException("TrainingPolicy not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -163,7 +174,7 @@ public class TrainingPolicyComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -178,8 +189,11 @@ public class TrainingPolicyComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE t.IsDeleted = False 
+                WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @"
                   AND t.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -199,6 +213,10 @@ public class TrainingPolicyComponent
                 "DocumentTypeCode" => "t.DocumentTypeCode",
                 "Id" => "t.Id",
                 "ISACTIVE" => "t.IsActive",
+                "CREATEDAT" => "t.CreatedAt",
+                "CREATEDBY" => "t.CreatedBy",
+                "LASTMODIFIEDAT" => "t.LastModifiedAt",
+                "LASTMODIFIEDBY" => "t.LastModifiedBy",
                 _ => "t.Id"
             };
 
@@ -207,10 +225,21 @@ public class TrainingPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company
-                        FROM TrainingPolicies t
+                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                         -- 🔹 Audit Fields
+                          COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+ 
+                          COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+                         FROM TrainingPolicies t 
                         LEFT JOIN Companies c
-                        ON t.CompanyId = c.Id
+                                ON t.CompanyId = c.Id
+                            -- 🔹 Created By Employee
+                         LEFT JOIN Vw_EmployeeNames e
+                             ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+
+                         -- 🔹 Last Modified By Employee
+                         LEFT JOIN Vw_EmployeeNames m 
+                             ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -247,9 +276,11 @@ public class TrainingPolicyComponent
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
                                 ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                    CreatedByName = row.Table.Columns.Contains("CreatedByName") ? row.Field<string>("CreatedByName") : string.Empty,
                     LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
                                      ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                    LastModifiedByName = row.Table.Columns.Contains("LastModifiedByName") ? row.Field<string>("LastModifiedByName") : string.Empty,
                 })
                 .ToList();
 
@@ -271,23 +302,37 @@ public class TrainingPolicyComponent
         }
     }
 
-    public async Task<TrainingPolicyReadDto> GetByIdAsync(string code)
+    public async Task<TrainingPolicyReadDto> GetByIdAsync(int id)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
-                SELECT t.*, c.Id AS CompanyId, c.Name AS Company
-                    FROM TrainingPolicies t
+                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                     -- 🔹 Audit Fields
+                      COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+ 
+                      COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+                     FROM TrainingPolicies t 
                     LEFT JOIN Companies c
-                    ON t.CompanyId = c.Id
-                WHERE t.Id = {code}
+                            ON t.CompanyId = c.Id
+                        -- 🔹 Created By Employee
+                     LEFT JOIN Vw_EmployeeNames e
+                         ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+
+                     -- 🔹 Last Modified By Employee
+                     LEFT JOIN Vw_EmployeeNames m 
+                         ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
+                WHERE t.Id = {id} AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
                   AND t.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("TrainingPolicy not found", 200);
+                throw new CustomException("TrainingPolicy not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -301,10 +346,74 @@ public class TrainingPolicyComponent
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                CreatedByName = row.Table.Columns.Contains("CreatedByName") ? row.Field<string>("CreatedByName") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                LastModifiedByName = row.Table.Columns.Contains("LastModifiedByName") ? row.Field<string>("LastModifiedByName") : string.Empty,
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<TrainingPolicyReadDto> GetByDocumentTypeAsync(string dtCode)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
+                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                     -- 🔹 Audit Fields
+                      COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+ 
+                      COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+                     FROM TrainingPolicies t 
+                    LEFT JOIN Companies c
+                            ON t.CompanyId = c.Id
+                        -- 🔹 Created By Employee
+                     LEFT JOIN Vw_EmployeeNames e
+                         ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+
+                     -- 🔹 Last Modified By Employee
+                     LEFT JOIN Vw_EmployeeNames m 
+                         ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
+                WHERE t.DocumentTypeCode = '{dtCode}' AND t.CompanyId = {CompanyId}
+                  AND t.IsActive = True
+                  AND t.IsDeleted = False";
+
+            DataTable dt = await _common.ExecuteSqlQuery(query);
+
+            if (dt.Rows.Count == 0)
+                throw new CustomException("TrainingPolicy not found", 404);
+
+            DataRow row = dt.Rows[0];
+
+            return new TrainingPolicyReadDto
+            {
+                Id = row.Field<int>("Id"),
+                CompanyId = row.Field<int>("CompanyId"),
+                Company = row.Field<string>("Company"),
+                DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                TrainingRequired = row.Field<bool>("TrainingRequired"),
+                MinimumScore = row.Field<int>("MinimumScore"),
+                IsDeleted = row.Field<bool>("IsDeleted"),
+                IsActive = row.Field<bool>("IsActive"),
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                CreatedByName = row.Table.Columns.Contains("CreatedByName") ? row.Field<string>("CreatedByName") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                LastModifiedByName = row.Table.Columns.Contains("LastModifiedByName") ? row.Field<string>("LastModifiedByName") : string.Empty,
             };
         }
         catch (Exception)
@@ -331,23 +440,24 @@ public class TrainingPolicyComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("TrainingPolicy not found", 200);
+                throw new CustomException("TrainingPolicy not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE TrainingPolicies
             SET 
                 DocumentTypeCode = '{input.DocumentTypeCode}',
-                IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
+                MinimumScore = '{input.MinimumScore}',
+                TrainingRequired = {(input.TrainingRequired ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -356,11 +466,22 @@ public class TrainingPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-            SELECT t.*, c.Id AS CompanyId, c.Name AS Company
-            FROM TrainingPolicies t
-            LEFT JOIN Companies c
-            ON t.CompanyId = c.Id
-            WHERE Id = '{input.Id}'";
+             SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                 -- 🔹 Audit Fields
+                  COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+ 
+                  COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+                 FROM TrainingPolicies t 
+                LEFT JOIN Companies c
+                        ON t.CompanyId = c.Id
+                    -- 🔹 Created By Employee
+                 LEFT JOIN Vw_EmployeeNames e
+                     ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+
+                 -- 🔹 Last Modified By Employee
+                 LEFT JOIN Vw_EmployeeNames m 
+                     ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
+            WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -379,10 +500,14 @@ public class TrainingPolicyComponent
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
-                CreatedAt = row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = row.Field<string>("CreatedBy"),
-                LastModifiedAt = row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = row.Field<string>("LastModifiedBy")
+                CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
+                                ? row.Field<DateTime>("CreatedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                CreatedBy = row.Table.Columns.Contains("CreatedBy") ? row.Field<string>("CreatedBy") : string.Empty,
+                CreatedByName = row.Table.Columns.Contains("CreatedByName") ? row.Field<string>("CreatedByName") : string.Empty,
+                LastModifiedAt = (row.Table.Columns.Contains("LastModifiedAt") && !row.IsNull("LastModifiedAt"))
+                                     ? row.Field<DateTime>("LastModifiedAt").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                LastModifiedBy = row.Table.Columns.Contains("LastModifiedBy") ? row.Field<string>("LastModifiedBy") : string.Empty,
+                LastModifiedByName = row.Table.Columns.Contains("LastModifiedByName") ? row.Field<string>("LastModifiedByName") : string.Empty,
             };
         }
         catch

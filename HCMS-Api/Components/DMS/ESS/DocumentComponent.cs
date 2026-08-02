@@ -1,4 +1,4 @@
-﻿﻿using Dapper;
+using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
@@ -7,7 +7,8 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
-using System.Data;
+using OfficeOpenXml; 
+using System.Data; 
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -50,6 +51,11 @@ public class DocumentComponent
         _peoplePartnersComponent = peoplePartnersComponent;
         _workflowStepComponent = workflowStepComponent;
     }
+    static DocumentComponent()
+    {
+        // Required for EPPlus in non-Windows environments or when running in certain contexts.
+        ExcelPackage.License.SetNonCommercialPersonal("DMS");
+    }
 
 
     public async Task<DocumentReadDto> CreateAsync(DocumentCreateDto input)
@@ -80,7 +86,7 @@ public class DocumentComponent
 
         // 3️⃣ Create unique filename
         var fileExtension = Path.GetExtension(input.DocumentFile.FileName);
-        var fileName = $"{Guid.NewGuid()}{fileExtension}";
+        var fileName = $"{input.DocumentFile.FileName}";
         var filePath = Path.Combine(uploadsRoot, fileName);
 
         // 4️⃣ Save file to disk
@@ -96,54 +102,55 @@ public class DocumentComponent
         try
         {
             // Check duplicate by DocumentNumber OR Title
-            string checkDuplicateQuery = @"
+            int exists = await _common.QueryFirstOrDefaultAsync<int>(@"
                 SELECT COUNT(1)
                 FROM Documents
-                WHERE (Title = @Title OR DocumentNumber = @DocumentNumber)
-                  AND IsDeleted = FALSE";
-
-            int exists = await _common.ExecuteScalarAsync<int>(checkDuplicateQuery, new { input.Title, input.DocumentNumber }, tx);
+                WHERE Title = @Title OR DocumentNumber = @DocumentNumber
+                  AND IsDeleted = FALSE;",
+                    new { Title = input.DocumentName, DocumentNumber = input.DocumentNumber }, tx);
 
             if (exists > 0)
                 throw new CustomException("Document Title or Document Number already exists.", 409);
 
-            // Insert Document
-            string insertQuery = @"
+
+            var newId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
-                (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
-                    SubDepartmentCode, BusinessDomainCode, Title, NextReviewdate, DocumentURL, EffectiveDate,
-                    IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                ( 
+                    CompanyId, DocumentNumber, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
+                    SubDepartmentCode, BusinessDomainCode, DocumentURL, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
-                    @SubDepartmentCode, @BusinessDomainCode, @Title, @NextReviewDate, @DocumentUrl, NOW(),
-                    TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                    @CompanyId, @DocumentNumber, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, 
+                    @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
                 )
-                RETURNING Id;";
-
-            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
+                RETURNING Id
+                ", new
             {
                 CompanyId,
-                input.DocumentNumber,
-                input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode,
-                input.Title,
-                input.NextReviewDate,
+                DocumentNumber = input.DocumentNumber,
+                DocumentTypeCode = input.DocumentTypeCode,
+                Title = input.DocumentName,
+                NextReviewDate = input.NextReviewDate,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
                 DocumentUrl = documentUrl,
                 UserId = empCode
             }, tx);
 
             // UC-32: Active Archival - Insert initial effective version
-            string versionQuery = @"
-                INSERT INTO DocumentVersions
-                (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt)
-                VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW());"; // VersionType 2 = Effective
-
-            await _common.ExecuteAsync(versionQuery, new
+            await _common.ExecuteAsync(@"
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, @Version, 1, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+            )
+            ", new
             {
                 CompanyId,
                 DocumentId = newId,
@@ -151,34 +158,25 @@ public class DocumentComponent
                 UserId = empCode
             }, tx);
 
-            // UC-32: Active Archival - Insert State History (State 4 = EFFECTIVE)
-            string stateQuery = @"
-                INSERT INTO DocumentStateHistory
-                (CompanyId, DocumentId, ToStateId, ChangedBy, Comments, ChangedAt)
-                VALUES (@CompanyId, @DocumentId, 4, @UserId, 'Legacy Document Uploaded', NOW());";
-
-            await _common.ExecuteAsync(stateQuery, new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
+            //-----------------------------------------
+            // 4️⃣ Insert Draft State
+            //-----------------------------------------
+            await _common.ExecuteAsync(@"
+            INSERT INTO DocumentStateHistory
+            (
+                CompanyId, DocumentId, ToStateId, ChangedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, 1, @UserId
+            )
+            ", new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
 
             await tx.CommitAsync();
 
             // Fetch inserted record
             string selectQuery = $@"
-            SELECT doc.*, dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            SELECT doc.* from vw_documents doc
             WHERE doc.Id = {newId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
@@ -196,13 +194,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -211,9 +209,9 @@ public class DocumentComponent
                 Title = row.Field<string>("Title"),
                 Version = row.Table.Columns.Contains("Version") && !row.IsNull("Version") ? row.Field<string>("Version") : string.Empty,
 
-                NextReviewDate = row.Table.Columns.Contains("NextReviewdate") && !row.IsNull("NextReviewdate")
-                    ? row.Field<DateTime>("NextReviewdate").ToString("yyyy-MM-dd HH:mm:ss")
-                    : (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate") ? row.Field<DateTime>("NextReviewDate").ToString("yyyy-MM-dd HH:mm:ss") : string.Empty),
+                NextReviewDate = (row.Table.Columns.Contains("NextReviewDate") && !row.IsNull("NextReviewDate"))
+                                ? row.Field<DateOnly>("NextReviewDate").ToString("yyyy-MM-dd") : string.Empty,
+
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -237,6 +235,7 @@ public class DocumentComponent
         {
             var whereClause = @"
                 WHERE doc.IsDeleted = False 
+                  AND doc.RequestId IS NULL
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -245,8 +244,12 @@ public class DocumentComponent
                 var search = input.SearchText.Replace("'", "''").ToUpper();
                 whereClause += $@"
                 AND (
-                    UPPER(doc.Name) LIKE '%{search}%'
-                    OR UPPER(doc.Id) LIKE '%{search}%'
+                    UPPER(doc.Title) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentNumber) LIKE '%{search}%' 
+                    OR UPPER(doc.Division) LIKE '%{search}%'
+                    OR UPPER(doc.Department) LIKE '%{search}%'
+                    OR UPPER(doc.SubDepartment) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentType) LIKE '%{search}%' 
                 )";
             }
 
@@ -260,6 +263,10 @@ public class DocumentComponent
                 "SubDepartmentCode" => "doc.SubDepartmentCode",
                 "BusinessDomainCode" => "doc.BusinessDomainCode",
                 "Title" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 "ISACTIVE" => "doc.IsActive",
                 _ => "doc.DocumentNumber"
             };
@@ -269,28 +276,14 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+                        SELECT doc.*
+                        FROM VW_Documents doc 
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
 
                         SELECT COUNT(1)
-                        FROM Documents doc
+                        FROM VW_Documents doc
                         {whereClause};
                     ";
 
@@ -317,16 +310,16 @@ public class DocumentComponent
 
                     DocumentNumber = row.Table.Columns.Contains("DocumentNumber") ? row.Field<string>("DocumentNumber") : string.Empty,
 
-                    //DocumentType = row.Table.Columns.Contains("DocumentTypeName") ? row.Field<string>("DocumentTypeName") : string.Empty,
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
 
-                    Division = row.Table.Columns.Contains("DivisionName") ? row.Field<string>("DivisionName") : string.Empty,
+                    Division = row.Table.Columns.Contains("Division") ? row.Field<string>("Division") : string.Empty,
                     DivisionCode = row.Table.Columns.Contains("DivisionCode") ? row.Field<string>("DivisionCode") : string.Empty,
 
-                    Department = row.Table.Columns.Contains("DepartmentName") ? row.Field<string>("DepartmentName") : string.Empty,
+                    Department = row.Table.Columns.Contains("Department") ? row.Field<string>("Department") : string.Empty,
                     DepartmentCode = row.Table.Columns.Contains("DepartmentCode") ? row.Field<string>("DepartmentCode") : string.Empty,
 
-                    SubDepartment = row.Table.Columns.Contains("SubDepartmentName") ? row.Field<string>("SubDepartmentName") : string.Empty,
+                    SubDepartment = row.Table.Columns.Contains("SubDepartment") ? row.Field<string>("SubDepartment") : string.Empty,
                     SubDepartmentCode = row.Table.Columns.Contains("SubDepartmentCode") ? row.Field<string>("SubDepartmentCode") : string.Empty,
 
                     BusinessDomain = row.Table.Columns.Contains("BusinessDomain") ? row.Field<string>("BusinessDomain") : string.Empty,
@@ -404,23 +397,7 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            string query = $@"SELECT doc.* from vw_documents doc
                 WHERE doc.DocumentNumber = {documentNumber}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -428,7 +405,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -442,13 +419,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -476,23 +453,7 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
+            string query = $@"SELECT doc.* from vw_documents doc
                 WHERE doc.Id = {id}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -500,7 +461,7 @@ public class DocumentComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -514,13 +475,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -528,7 +489,7 @@ public class DocumentComponent
 
                 Title = row.Field<string>("Title"),
 
-                NextReviewDate = row.Field<string>("NextReviewDate"),
+                NextReviewDate = row.Field<DateOnly?>("NextReviewDate")?.ToString("yyyy-MM-dd") ?? string.Empty,
                 DocumentURL = row.Field<string>("DocumentURL"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
                 IsActive = row.Field<bool>("IsActive"),
@@ -549,31 +510,15 @@ public class DocumentComponent
     {
         try
         {
-            string query = $@"
-                SELECT doc.*,dt.Name AS DocumentTypeName, div.Name AS DivisionName,
-                        dep.Name AS DepartmentName, subd.Name AS SubDepartmentName, bd.Name AS BusinessDomain,
-                        c.Id AS CompanyId, c.Name AS Company
-                        FROM Documents doc
-                        LEFT JOIN DocumentTypes dt
-                        ON doc.DocumentTypeCode = dt.Code
-                        LEFT JOIN Divisions div
-                        ON doc.DivisionCode = div.Code
-                        LEFT JOIN Departments dep
-                        ON doc.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd
-                        ON doc.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd
-                        ON doc.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c
-                        ON doc.CompanyId = c.Id
-                WHERE doc.DivisionCode = {dCode}
+            string query = $@"SELECT doc.* from vw_documents doc
+                WHERE doc.DivisionCode = '{dCode}'
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Documents not found", 200);
+                throw new CustomException("Documents not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -587,13 +532,13 @@ public class DocumentComponent
                 DocumentNumber = row.Field<string>("DocumentNumber"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
 
-                Division = row.Field<string>("DivisionName"),
+                Division = row.Field<string>("Division"),
                 DivisionCode = row.Field<string>("DivisionCode"),
 
-                Department = row.Field<string>("DepartmentName"),
+                Department = row.Field<string>("Department"),
                 DepartmentCode = row.Field<string>("DepartmentCode"),
 
-                SubDepartment = row.Field<string>("SubDepartmentName"),
+                SubDepartment = row.Field<string>("SubDepartment"),
                 SubDepartmentCode = row.Field<string>("SubDepartmentCode"),
 
                 BusinessDomain = row.Field<string>("BusinessDomain"),
@@ -644,8 +589,15 @@ public class DocumentComponent
             new { input.DocumentId, CompanyId }, transaction);
 
             if (doc == null)
-                throw new Exception("Document not found.");
+                throw new CustomException("Document not found.", 404);
 
+            //-------------------------------------------------
+            // Attach Template, only if one wasn't already provided at Document Request
+            // creation time (i.e. Documents.DocumentURL is still empty and the Draft
+            // DocumentVersions row still has no Content).
+            //-------------------------------------------------
+
+            await AttachTemplateIfMissingAsync(input, doc, CompanyId, empCode, transaction);
 
             //-------------------------------------------------
             // Validate & Save Attributes (NEW METHOD)
@@ -654,33 +606,40 @@ public class DocumentComponent
             await ValidateAndSaveAttributesAsync(input, doc, transaction);
 
             //-------------------------------------------------
+            // Validate & Save Training Users
+            //-------------------------------------------------
+            await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction);
+
+            //-------------------------------------------------
             // 2️⃣ Resolve Correct Workflow Policy
             //-------------------------------------------------
 
-            var policyId = await _common.ExecuteScalarAsync<long?>(@"
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+
+            var policyId = await _common.ExecuteScalarAsync<int?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = 'Document'
                 AND DocumentTypeCode = @DocType
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
                 AND IsActive = TRUE
                 AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 DocType = doc.documenttypecode,
-                DivisionCode = doc.divisioncode,
-                DepartmentCode = doc.departmentcode,
-                SubDepartmentCode = doc.subdepartmentcode,
-                BusinessDomainCode = doc.businessdomaincode
+                DivisionCode = Normalize(Convert.ToString(doc.divisioncode)),
+                DepartmentCode = Normalize(Convert.ToString(doc.departmentcode)),
+                SubDepartmentCode = Normalize(Convert.ToString(doc.subdepartmentcode)),
+                BusinessDomainCode = Normalize(Convert.ToString(doc.businessdomaincode))
             }, transaction);
 
             if (policyId == null)
-                throw new Exception("No workflow policy defined for selected Cabinet Scope.");
+                throw new CustomException("No workflow policy defined for selected Cabinet Scope.", 404);
 
             //-------------------------------------------------
             // 3️⃣ Resolve Active Policy Version
@@ -700,7 +659,7 @@ public class DocumentComponent
             }, transaction);
 
             if (versionId == null)
-                throw new Exception("Workflow policy not defined for Document.");
+                throw new CustomException("Workflow policy not defined for Document.", 404);
 
             //-------------------------------------------------
             // 4️⃣ Promote Version (Rework Case)
@@ -747,10 +706,22 @@ public class DocumentComponent
             {
                 if (stepDef.userid != null)
                 {
+                    string actualUserId = stepDef.userid;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers 
+                        WHERE EmployeeFrom = @EmpFrom 
+                        AND CompanyId = @CompanyId AND Status = 2 
+                        AND EffectiveDateFrom <= CURRENT_DATE 
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                        ORDER BY Id DESC LIMIT 1;",
+                        new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = stepDef.userid, StepOrder = runningStepOrder }, transaction);
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
                     runningStepOrder++;
                     inserted++;
                 }
@@ -768,14 +739,26 @@ public class DocumentComponent
                         new { CompanyId, RoleId = (int?)stepDef.roleid, DesignationId = (int?)stepDef.designationid }, transaction);
 
                     if (!employees.Any())
-                        throw new Exception("Workflow misconfigured — no active employees found for a configured Role/Designation step.");
+                        throw new CustomException("Workflow misconfigured — no active employees found for a configured Role/Designation step.", 404);
 
                     foreach (var emp in employees)
                     {
+                        string actualUserId = emp;
+                        var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                            SELECT EmployeeTo FROM ResponsibilityTransfers 
+                            WHERE EmployeeFrom = @EmpFrom 
+                            AND CompanyId = @CompanyId AND Status = 2 
+                            AND EffectiveDateFrom <= CURRENT_DATE 
+                            AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
+                            ORDER BY Id DESC LIMIT 1;",
+                            new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                        if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
                         await _common.ExecuteAsync(@"
                             INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                             VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = emp, StepOrder = runningStepOrder }, transaction);
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
                         runningStepOrder++;
                         inserted++;
                     }
@@ -783,7 +766,7 @@ public class DocumentComponent
             }
 
             if (inserted < 1)
-                throw new Exception("Workflow misconfigured — no steps copied.");
+                throw new CustomException("Workflow misconfigured — no steps copied.", 404);
 
             //-------------------------------------------------
             // 7️⃣ Activate First Step
@@ -812,7 +795,7 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 1, 2, @ExecutionId, @empCode
+                    @CompanyId, @DocumentId, 1, (SELECT Id FROM DocumentStates WHERE Code = 'PENDING_APPROVAL'), @ExecutionId, @empCode
                 );",
             new
             {
@@ -843,16 +826,16 @@ public class DocumentComponent
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)firstStepInfo.steporder, transaction);
             }
 
-            await transaction.CommitAsync();
-
             if (approvers.Any())
             {
                 var placeholders = new Dictionary<string, string> { { "Doc Name", docTitle }, { "V#", docVersion } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingDocumentApproval, CompanyId, input.DocumentId, approver, placeholders, transaction);
                 }
             }
+
+            await transaction.CommitAsync();
 
             return true;
         }
@@ -860,6 +843,106 @@ public class DocumentComponent
         {
             await transaction.RollbackAsync();
             throw;
+        }
+    }
+
+    // Uploaded file names sometimes arrive with the extension duplicated (e.g. a browser-downloaded
+    // template gets re-saved by the OS/browser as "Template.docx.docx" before being re-uploaded here).
+    // Collapses exactly one trailing repeat back to the original name.
+    private static string SanitizeDuplicatedExtension(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+            return fileName;
+
+        var ext = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(ext) &&
+            fileName.Length > ext.Length * 2 &&
+            fileName.EndsWith(ext + ext, StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = fileName.Substring(0, fileName.Length - ext.Length);
+        }
+
+        return fileName;
+    }
+
+    // A Document created from an approved Request may not have had its template attached yet
+    // (the Request Creation form allows submitting without one). This lets it be attached here,
+    // at Document Creation/Submission time, instead. Which input is expected depends entirely on
+    // the DocumentType's configured Template: a file-based template (PDF/Word, TemplateType 1/2)
+    // expects DocumentFile; an HTML template (TemplateType 3) expects ProposedContent.
+    private async Task AttachTemplateIfMissingAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
+    {
+        bool hasFile = !string.IsNullOrWhiteSpace((string)doc.documenturl);
+        bool hasContent = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS(
+                SELECT 1 FROM DocumentVersions
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1
+                  AND Content IS NOT NULL AND Content <> ''
+            );", new { input.DocumentId, CompanyId = companyId }, transaction);
+
+        // Already has a template from Request Creation time -- nothing to do here.
+        if (hasFile || hasContent)
+            return;
+
+        int? templateType = await _common.ExecuteScalarAsync<int?>(@"
+            SELECT TemplateType FROM Templates
+            WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
+              AND IsActive = TRUE AND IsDeleted = FALSE
+            LIMIT 1;", new { DocumentTypeCode = (string)doc.documenttypecode, CompanyId = companyId }, transaction);
+
+        bool expectsFile = templateType == 1 || templateType == 2; // 1 = PDF, 2 = Word
+        bool expectsContent = templateType == 3;                    // 3 = HTML
+
+        bool fileProvided = input.DocumentFile != null && input.DocumentFile.Length > 0;
+        bool contentProvided = !string.IsNullOrWhiteSpace(input.ProposedContent);
+
+        // No Template configured for this DocumentType at all -- don't block submission over a
+        // setup gap that isn't the caller's fault; accept whichever of the two was actually sent.
+        if (templateType == null)
+        {
+            expectsFile = fileProvided;
+            expectsContent = !fileProvided && contentProvided;
+        }
+
+        if (expectsFile)
+        {
+            if (!fileProvided)
+                throw new CustomException("A document file is required before this document can be submitted.", 400);
+
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+            if (!Directory.Exists(uploadsRoot))
+                Directory.CreateDirectory(uploadsRoot);
+
+            var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await input.DocumentFile.CopyToAsync(stream);
+            }
+
+            var documentUrl = $"/uploads/documents/{fileName}";
+
+            await _common.ExecuteAsync(@"
+                UPDATE Documents
+                SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+        }
+        else if (expectsContent)
+        {
+            if (!contentProvided)
+                throw new CustomException("Document content is required before this document can be submitted.", 400);
+
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions
+                SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
+                new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+        }
+        else
+        {
+            throw new CustomException("A document template (file or content) is required before this document can be submitted.", 400);
         }
     }
 
@@ -979,6 +1062,46 @@ public class DocumentComponent
         }
     }
 
+    private async Task ValidateAndSaveTrainingUsersAsync(List<TraningUsers> TrainingUsers, int documentId, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction)
+    {
+        // 1. Check if Training is required for this DocumentType
+        var tp = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT TrainingRequired 
+            FROM TrainingPolicies 
+            WHERE CompanyId = @CompanyId 
+              AND DocumentTypeCode = @DocTypeCode 
+              AND IsActive = TRUE;",
+            new { CompanyId = companyId, DocTypeCode = (string)documentInfo.documenttypecode }, transaction);
+
+        bool requiresTraining = tp != null && tp.trainingrequired == true;
+
+        if (requiresTraining)
+        {
+            // UC Requirement: Users must be attached if Training = True
+            // Note: Ensure your 'SubmitDocument' DTO contains: public List<string>? TrainingUserIds { get; set; }
+            if (TrainingUsers == null || TrainingUsers.Count == 0)
+                throw new CustomException("Training is required for this document type. Please select users for training.", 400);
+
+            // Clear any existing training users (useful in case of rework/resubmission)
+            await _common.ExecuteAsync(@"
+                DELETE FROM DocumentUserTraining 
+                WHERE DocumentId = @DocumentId 
+                  AND CompanyId = @CompanyId;",
+                new { DocumentId = documentId, CompanyId = companyId }, transaction);
+
+            // Insert new explicitly attached training users
+            foreach (var uid in TrainingUsers)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentUserTraining
+                    (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                    VALUES
+                    (@CompanyId, @DocumentId, @EmployeeCode, @TrainingMode, 0, '', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = uid.EmployeeCode, TrainingMode = uid.TrainingMode, UserId = empCode }, transaction);
+            }
+        }
+    }
+
     public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
     {
         try
@@ -1021,7 +1144,7 @@ public class DocumentComponent
                 throw new Exception("No valid document content found to promote.");
 
             //-----------------------------------------
-            // 3️⃣ Promote 0.1 → 1.0
+            // 3️⃣ Promote 1.0 → 1.0
             //-----------------------------------------
             var newVersion = "1.0";
 
@@ -1035,7 +1158,7 @@ public class DocumentComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, '0.1', 1, @Content, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, '1.0', 1, @Content, @CreatedBy, @LastModifiedBy
             )
             ", new
             {
@@ -1163,7 +1286,10 @@ public class DocumentComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @DocumentId, 2, 3, @ExecutionId, @empCode
+                        @CompanyId, @DocumentId,
+                        (SELECT Id FROM DocumentStates WHERE Code = 'PENDING_APPROVAL'),
+                        (SELECT Id FROM DocumentStates WHERE Code = 'APPROVED'),
+                        @ExecutionId, @empCode
                     );",
                 new
                 {
@@ -1179,15 +1305,15 @@ public class DocumentComponent
                 await HandlePostApprovalAsync(CompanyId, input.DocumentId, empCode, transaction);
             }
 
-            await transaction.CommitAsync();
-
             if (nextStepApprovers.Any() && docInfo != null)
             {
                 foreach (var approver in nextStepApprovers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders, transaction);
                 }
             }
+
+            await transaction.CommitAsync();
 
             return true;
         }
@@ -1244,7 +1370,7 @@ public class DocumentComponent
             //-----------------------------------------
             // Activate Final Version
             //-----------------------------------------
-            
+
             // 1. Archive previous effective versions (Critical for UC-22 Revisions)
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions 
@@ -1253,7 +1379,7 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId 
                   AND VersionType = 2 
                   AND CompanyId = @CompanyId;", new { companyId, documentId }, transaction);
-                  
+
             // 2. Promote the current Draft version to Effective
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions
@@ -1273,7 +1399,10 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 3, 4, @UserId
+                    @CompanyId, @DocumentId,
+                    (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                    (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'),
+                    @UserId
                 )",
             new { CompanyId = companyId, DocumentId = documentId, UserId = empCode }, transaction);
 
@@ -1301,7 +1430,7 @@ public class DocumentComponent
             if (initiatorId != string.Empty)
             {
                 var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("yyyy-MM-dd") } };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders, transaction);
             }
 
             return true;
@@ -1332,10 +1461,10 @@ public class DocumentComponent
                 u.Email,
                 d.Title
             FROM DocumentUserTraining dut
-            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode
+            JOIN tblEmployee u ON u.empcode = dut.EmployeeCode AND u.CompanyId = @CompanyId
             JOIN Documents d ON d.Id = dut.DocumentId
             WHERE dut.CompanyId = @CompanyId
-              AND dut.DocumentId = @DocumentId
+              AND dut.DocumentId = @DocumentId              
               AND dut.TrainingStatus = 0
               AND dut.IsActive = TRUE
               AND dut.IsDeleted = FALSE;
@@ -1343,46 +1472,19 @@ public class DocumentComponent
 
         foreach (var user in users)
         {
-            //-----------------------------------------
-            // 1️⃣ INSERT PORTAL NOTIFICATION
-            //-----------------------------------------
-
-            await _common.ExecuteAsync(@"
-                INSERT INTO Notifications
-                (
-                    CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId
-                )
-                VALUES
-                (
-                    @CompanyId, @UserId, @Title, @Message, @Type, 'Document', @DocumentId
-                );",
-            new
+            var placeholders = new Dictionary<string, string>
             {
-                CompanyId = companyId,
-                UserId = Convert.ToString(user.employeecode),
-                Title = "New SOP Training Assigned",
-                Message = $"Training is required for Document: {user.title}",
-                Type = 2, // e.g. Training Notification
-                DocumentId = documentId
-            }, tx);
+                { "Doc Name", (string)user.title },
+                { "V#", "Latest" }
+            };
 
-            //-----------------------------------------
-            // 2️⃣ SEND EMAIL
-            //-----------------------------------------
-
-            //await _emailService.SendAsync(
-            //    user.Email,
-            //    "New SOP Training Assigned",
-            //    $@"
-            //A new effective document requires your training.
-
-            //Document: {user.Title}
-
-            //Please login to DMS portal and complete the required training.
-
-            //Regards,
-            //DMS Team
-            //");
+            // Utilize the central notification engine to broadcast SignalR, save to DB, and send Email
+            await _notificationComponent.TriggerNotificationAsync(
+                NotificationScenario.TrainingProofRequired,
+                companyId,
+                documentId,
+                Convert.ToString(user.employeecode),
+                placeholders, tx);
         }
     }
 
@@ -1465,7 +1567,7 @@ public class DocumentComponent
 
             // 1. Fetch document type and training policy rules
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT doc.DocumentTypeCode, tp.TrainingRequired, tp.MinimumScore
+                SELECT doc.DocumentTypeCode, doc.CreatedBy, tp.TrainingRequired, tp.MinimumScore
                 FROM Documents doc
                 LEFT JOIN TrainingPolicies tp 
                     ON tp.DocumentTypeCode = doc.DocumentTypeCode 
@@ -1484,35 +1586,30 @@ public class DocumentComponent
 
                 // 2. If Training is required, Transition to TRAINING_PENDING
                 var stateId = await _common.QueryFirstOrDefaultAsync<int?>(@"SELECT Id FROM DocumentStates WHERE Code = 'TRAINING_PENDING'", tx);
-                int trainingPendingStateId = stateId ?? 6;
+                if (stateId == null)
+                    throw new Exception("DocumentStates is missing the 'TRAINING_PENDING' code.");
 
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
-                    VALUES (@CompanyId, @DocumentId, 3, @ToStateId, @UserId, NOW());",
-                    new { CompanyId = companyId, DocumentId = documentId, ToStateId = trainingPendingStateId, UserId = userId }, tx);
+                    VALUES (@CompanyId, @DocumentId,
+                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                        @ToStateId, @UserId, NOW());",
+                    new { CompanyId = companyId, DocumentId = documentId, ToStateId = stateId, UserId = userId }, tx);
 
-                // 3. Create the Parent Training Record
+                // 3. Create the Parent Training Record. ReadyForAuthorization starts FALSE — it only
+                // flips to TRUE once AcknowledgeAndSendForAuthorizationAsync actually runs.
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentTraining
                     (CompanyId, DocumentId, TrainingMode,TrainingStatus,TrainingProofURL, AssessmentScore, ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                     VALUES
                     (@CompanyId, @DocumentId, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId);",
-                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+                    new { CompanyId = companyId, DocumentId = documentId, UserId = (string)docInfo.createdby }, tx);
 
-                // 4. Matrix the Training Requirements for Users
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentUserTraining
-                    (CompanyId, DocumentId, EmployeeCode, TrainingMode, TrainingStatus, TrainingProofURL,  AssessmentScore,ValidationStatus, ReadyForAuthorization, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
-                    SELECT
-                        CompanyId, DocumentId, EmployeeCode, 1, 0,'', 0, 0, FALSE, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
-                    FROM DocumentUserDistributions
-                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
-                    new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
-                    
-                // 5. Notify Users about assigned training
+
+                // 4. Notify Users about assigned training (Those already saved during Document Submit)
                 await NotifyPendingUsersAsync(companyId, documentId, tx);
             }
-             
+
         }
         catch (Exception ex)
         {
@@ -1527,7 +1624,7 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -1581,7 +1678,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Cancelled',
+                SET Status = 'Rejected',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
@@ -1598,7 +1695,7 @@ public class DocumentComponent
                 )
                 VALUES
                 (
-                    @CompanyId, @DocumentId, 2, 5, @ExecutionId, @Comments, @empCode
+                    @CompanyId, @DocumentId, 2, (SELECT Id FROM DocumentStates WHERE Code = 'REJECTED'), @ExecutionId, @Comments, @empCode
                 );",
             new
             {
@@ -1700,7 +1797,7 @@ public class DocumentComponent
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutions
-                SET Status = 'Cancelled',
+                SET Status = 'Reworked',
                     CompletedAt = NOW()
                 WHERE Id = @ExecutionId
                 AND CompanyId = @CompanyId;",
@@ -1726,7 +1823,7 @@ public class DocumentComponent
                     @CompanyId,
                     @DocumentId,
                     2,
-                    1,
+                    (SELECT Id FROM DocumentStates WHERE Code = 'DRAFT'),
                     @ExecutionId,
                     @Comments,
                     @empCode
@@ -1827,7 +1924,7 @@ public class DocumentComponent
                     FROM DocumentStateHistory dsh
                     WHERE dsh.CompanyId  = d.CompanyId
                       AND dsh.DocumentId = d.Id
-                    ORDER BY dsh.ChangedAt DESC
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC
                     LIMIT 1
                   ) = 1   -- Draft
 
@@ -1884,7 +1981,7 @@ public class DocumentComponent
                   FROM DocumentStateHistory dsh
                   WHERE dsh.CompanyId = d.CompanyId
                     AND dsh.DocumentId = d.Id
-                  ORDER BY dsh.ChangedAt DESC
+                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC
                   LIMIT 1
               ) = 1; -- Draft Status ID "
             , new { CompanyId = int.Parse(CompanyId), RequestId = requestId });
@@ -1935,6 +2032,9 @@ public class DocumentComponent
                 "TITLE" => "Title",
                 "DOCUMENTNUMBER" => "DocumentNumber",
                 "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "CreatedAt"
             };
 
@@ -2029,11 +2129,11 @@ public class DocumentComponent
                 SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentRequestUserDistributions drd 
-                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode
-                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
                 AND DocumentRequestId = ANY(@RequestIds);",
                 new
@@ -2095,11 +2195,17 @@ public class DocumentComponent
     {
         try
         {
-            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
-
-            string stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING')";
-
+            string stateFilter = "";
+            if (input.ActionType.ToUpper() == "REJECTED")
+            {
+                stateFilter = "IN ('REJECTED')";
+            }
+            else
+            {
+                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING')";
+            }
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
             var whereClause = $@"
@@ -2110,22 +2216,34 @@ public class DocumentComponent
                       FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                   ) {stateFilter}
                   AND (
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
                   )";
 
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+
             // FSD UC-30 Extension: Filter View for SOP vs Other Documents
             if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             {
-                if (input.DocumentCategoryFilter.ToUpper() == "SOP")
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP" || input.DocumentCategoryFilter.ToUpper() == "1")
                 {
-                    whereClause += " AND UPPER(dt.Code) = 'SOP'";
+                    whereClause += " AND UPPER(doc.DocumentType) = 'SOP'";
                 }
-                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "OTHER DOCUMENT")
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "2")
                 {
-                    whereClause += " AND UPPER(dt.Code) != 'SOP'";
+                    whereClause += " AND UPPER(doc.DocumentType) != 'SOP'";
                 }
             }
 
@@ -2140,6 +2258,9 @@ public class DocumentComponent
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
                 "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "doc.CreatedAt"
             };
 
@@ -2148,34 +2269,48 @@ public class DocumentComponent
 
             string dataSql = $@"
                 SELECT Distinct
-                    doc.*, 
-                    dv.Version,
+                    doc.*,  
                     tr.TrainingMode,
                     tr.TrainingProofURL,
-                    doc.CreatedAt,
-                    dv.Version,
-                    tr.TrainingProofURL,
+                    doc.CreatedAt,  
                     LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
                     doc.CreatedAt,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
 
-                FROM VW_Documents doc   
-                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy 
+                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
+                -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(1) 
-                FROM Documents doc 
+                SELECT COUNT(1)
+                FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId };
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2192,6 +2327,311 @@ public class DocumentComponent
         }
     }
 
+    public async Task<PendingAuthorizationCountsDto> GetPendingAuthorizationCountsAsync(GetPendingAuthorization input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
+                  )";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
+            {
+                if (input.DocumentCategoryFilter.ToUpper() == "SOP" || input.DocumentCategoryFilter.ToUpper() == "1")
+                {
+                    whereClause += " AND UPPER(doc.DocumentType) = 'SOP'";
+                }
+                else if (input.DocumentCategoryFilter.ToUpper() == "OTHER" || input.DocumentCategoryFilter.ToUpper() == "2")
+                {
+                    whereClause += " AND UPPER(doc.DocumentType) != 'SOP'";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sql = $@"
+                SELECT 
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                    ) IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING') THEN 1 END) AS PendingCount,
+
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                    ) IN ('EFFECTIVE', 'AUTHORIZED') THEN 1 END) AS AuthorizedCount,
+
+                    COUNT(CASE WHEN (
+                        SELECT ds.Code 
+                        FROM DocumentStateHistory dsh 
+                        JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                        WHERE dsh.DocumentId = doc.Id 
+                        ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                    ) IN ('REJECTED') THEN 1 END) AS RejectedCount
+                FROM VW_Documents doc
+                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
+
+            var result = await _common.QuerySingleAsync<PendingAuthorizationCountsDto>(sql, queryParams);
+            return result ?? new PendingAuthorizationCountsDto();
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
+
+    public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(GetDocumentsPendingApprovalDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            // UC-33: Filter to show only documents in the pipeline (Not Draft, Effective, Rejected, or Obsolete)
+            var whereClause = @"
+            WHERE doc.CompanyId = @CompanyId 
+              AND doc.IsDeleted = FALSE
+              AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+              AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+              AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+              AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+              AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)
+              AND (
+                  SELECT ds.Code 
+                  FROM DocumentStateHistory dsh 
+                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                  WHERE dsh.DocumentId = doc.Id 
+                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            string dataSql = $@"
+            SELECT DISTINCT
+                doc.*,
+                dv.Version,
+                (SELECT ds.Name 
+                 FROM DocumentStateHistory dsh 
+                 JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                 WHERE dsh.DocumentId = doc.Id 
+                 ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
+                -- Resolve the current workflow authority dynamically
+                COALESCE(
+                    (SELECT STRING_AGG(
+                        COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
+                    )
+                    FROM WorkflowExecutionSteps wes
+                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId  AND r.CompanyId = @CompanyId
+                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId  AND des.CompanyId = @CompanyId
+                    WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
+                    'Pending Training/Authorization'
+                ) AS CurrentWorkflowAuthority,
+                doc.CreatedAt,
+                prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                    prevdoc.CreatedBy
+                )::character varying AS PreviousVersionCreatedBy
+            FROM Vw_Documents doc
+            LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+            LEFT JOIN LATERAL (
+                SELECT Version FROM DocumentVersions
+                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
+                ORDER BY CreatedAt DESC LIMIT 1
+            ) dv ON TRUE
+            LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+            -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
+            LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+            -- The earlier document this one is a revision of (only present for revisions)
+            LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+            LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+            {whereClause}
+            ORDER BY {sortColumn} {sortDirection}
+            OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+            SELECT COUNT(1) 
+            FROM Documents doc 
+            {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DocumentTypeCode = input.DocumentTypeCode,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode
+            };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            throw;
+        }
+    }
+
+    //public async Task<PaginationResult<dynamic>> GetDocumentsPendingApprovalAsync(TableFiltersDto input)
+    //{
+    //    try
+    //    {
+    //        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+    //        int CompanyId = int.Parse(_CompanyId);
+
+    //        // UC-33: Filter to show only documents in the pipeline (Not Draft, Effective, Rejected, or Obsolete)
+    //        var whereClause = @"
+    //            WHERE doc.CompanyId = @CompanyId 
+    //              AND doc.IsDeleted = FALSE
+    //              AND (
+    //                  SELECT ds.Code 
+    //                  FROM DocumentStateHistory dsh 
+    //                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+    //                  WHERE dsh.DocumentId = doc.Id 
+    //                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+    //              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+
+    //        if (!string.IsNullOrWhiteSpace(input.SearchText))
+    //        {
+    //            var search = input.SearchText.Replace("'", "''").ToUpper();
+    //            whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+    //        }
+
+    //        string sortColumn = input.SortColumn?.ToUpper() switch
+    //        {
+    //            "DOCUMENTNUMBER" => "doc.DocumentNumber",
+    //            "TITLE" => "doc.Title",
+    //            "CREATEDAT" => "doc.CreatedAt",
+    //            "CREATEDBY" => "doc.CreatedBy",
+    //            "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+    //            "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+    //            _ => "doc.CreatedAt"
+    //        };
+
+    //        string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+    //        int offset = (input.PageNumber - 1) * input.PageSize;
+
+    //        string dataSql = $@"
+    //            SELECT DISTINCT
+    //                doc.*,
+    //                dv.Version,
+    //                (SELECT ds.Name 
+    //                 FROM DocumentStateHistory dsh 
+    //                 JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+    //                 WHERE dsh.DocumentId = doc.Id 
+    //                 ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
+    //                -- Resolve the current workflow authority dynamically
+    //                COALESCE(
+    //                    (SELECT STRING_AGG(
+    //                        COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
+    //                    )
+    //                    FROM WorkflowExecutionSteps wes
+    //                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+    //                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
+    //                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
+    //                    WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
+    //                    'Pending Training/Authorization'
+    //                ) AS CurrentWorkflowAuthority,
+    //                doc.CreatedAt
+    //            FROM Vw_Documents doc
+    //            LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+    //            LEFT JOIN LATERAL (
+    //                SELECT Version FROM DocumentVersions 
+    //                WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE 
+    //                ORDER BY CreatedAt DESC LIMIT 1
+    //            ) dv ON TRUE
+    //            LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
+    //            {whereClause}
+    //            ORDER BY {sortColumn} {sortDirection}
+    //            OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+    //        string countSql = $@"
+    //            SELECT COUNT(1) 
+    //            FROM Documents doc 
+    //            {whereClause};";
+
+    //        var queryParams = new { CompanyId = CompanyId };
+
+    //        var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+    //        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+    //        return new PaginationResult<dynamic>
+    //        {
+    //            Items = items,
+    //            TotalCount = totalCount
+    //        };
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        throw;
+    //    }
+    //}
+
     public async Task<bool> AuthorizeDocumentPostTrainingAsync(AuthorizeDocumentDto input)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -2205,73 +2645,182 @@ public class DocumentComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            if (string.IsNullOrWhiteSpace(input.Action))
+                throw new CustomException("An action (Approve/Reject) is required.", 400);
 
-            if (string.IsNullOrWhiteSpace(input.Observation))
-                throw new Exception("Observation comment is mandatory for final authorization.");
+            // Get current state for history. Ties on ChangedAt (multiple transitions can land in the
+            // same DB transaction, and NOW() is fixed per-transaction in Postgres) are broken by Id so
+            // this always reflects the truly latest transition, not an arbitrary one.
+            var currentState = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT dsh.ToStateId, ds.Code
+                FROM DocumentStateHistory dsh
+                JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                WHERE dsh.DocumentId = @DocumentId
+                ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1",
+                new { input.DocumentId }, transaction);
 
-            // 1. Update Document Effective Date
-            // Depending on policy, you might set a future effective date here, 
-            // but for immediate enforcement, NOW() is used.
-            //await _common.ExecuteAsync(@"
-            //    UPDATE Documents 
-            //    SET 
-            //        EffectiveDate = NOW(), 
-            //        LastModifiedAt = NOW(), 
-            //        LastModifiedBy = @empCode 
-            //    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-            //    new { input.DocumentId, CompanyId, empCode }, transaction);
+            if (currentState == null)
+                throw new CustomException("Document has no recorded state.", 404);
 
-            // 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
-            await _common.ExecuteAsync(@"
-                UPDATE DocumentVersions 
-                SET VersionType = 3, 
-                    IsActive = FALSE 
-                WHERE DocumentId = @DocumentId 
-                  AND VersionType = 2 
-                  AND CompanyId = @CompanyId;",
-                new { input.DocumentId, CompanyId }, transaction);
+            int fromStateId = (int)currentState.tostateid;
+            string currentStateCode = (string)currentState.code;
 
-            // 3. Mark the current pending version as Effective
-            await _common.ExecuteAsync(@"
-                UPDATE DocumentVersions 
-                SET VersionType = 2 
-                WHERE DocumentId = @DocumentId 
-                  AND VersionType = 1 
-                  AND CompanyId = @CompanyId;",
-                new { input.DocumentId, CompanyId }, transaction);
+            if (input.Action.Equals("APPROVED", StringComparison.OrdinalIgnoreCase))
+            {
+                // Final authorization is only valid once the document is actually Authorization
+                // Pending, or Approved with no training requirement (so it never went through
+                // Authorization Pending to begin with). This is the same "ready" definition
+                // GetPendingAuthorizationsAsync already uses for what it shows as pending authorization.
+                bool trainingRequired = await _common.ExecuteScalarAsync<bool>(@"
+                    SELECT EXISTS(SELECT 1 FROM DocumentTraining WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsActive = TRUE);",
+                    new { input.DocumentId, CompanyId }, transaction);
 
-            // 4. Update Document State History to 'EFFECTIVE'
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
-                SELECT @CompanyId, @DocumentId, 
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
-                       @empCode, @Observation, NOW();",
-                new { CompanyId, input.DocumentId, empCode, input.Observation }, transaction);
+                bool readyForFinalAuthorization = currentStateCode == "AUTHORIZATION_PENDING"
+                    || (!trainingRequired && currentStateCode == "APPROVED");
+
+                if (!readyForFinalAuthorization)
+                    throw new CustomException($"Document cannot be authorized from its current state ('{currentStateCode}'). Training must be acknowledged (or not required) first.", 409);
+
+                // 1. Archive previous effective versions
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE 
+                    WHERE DocumentId = @DocumentId AND VersionType = 2 AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                // 2. Mark the current pending version as Effective
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentVersions SET VersionType = 2 
+                    WHERE DocumentId = @DocumentId AND VersionType = 1 AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                // 3. Update Document State History to 'EFFECTIVE'
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), @empCode, @Observation, NOW());",
+                    new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
+
+                // 4. Trigger DCA Notification for physical copy retrieval
+                var dcaUsers = await _common.QueryAsync<string>(@"
+                    SELECT TRIM(e.empcode) FROM public.tblempjobprofile ejp 
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
+                    INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
+                    INNER JOIN DocumentUserDistributions dud ON dud.EmployeeCode = e.Empcode
+                    WHERE sd.smsid = 189 AND e.CompanyId = @CompanyId AND dud.DocumentId = @DocumentId
+                    AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE",
+                    new { CompanyId, input.DocumentId }, transaction);
+
+                var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
+                var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+
+                foreach (var dcaUser in dcaUsers)
+                {
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+                }
+            }
+            else if (input.Action.Equals("REJECTED", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. Update Document State History to 'REJECTED'
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                    VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'REJECTED'), @empCode, @Observation, NOW());",
+                    new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
+
+                // 2. Notify the document creator about the rejection
+                var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT d.Title, d.CreatedBy, dv.Version 
+                    FROM Documents d 
+                    JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
+                    WHERE d.Id = @DocumentId ORDER BY dv.CreatedAt DESC LIMIT 1",
+                    new { input.DocumentId }, transaction);
+
+                if (docInfo != null && !string.IsNullOrEmpty(docInfo.createdby))
+                {
+                    var placeholders = new Dictionary<string, string>
+                    {
+                        { "Doc Name", (string)docInfo!.title ?? "Document" },
+                        { "V#", (string)docInfo.version ?? "Latest" },
+                        { "Approver", empCode },
+                        { "Observation", input.Observation }
+                    };
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, docInfo.createdby, placeholders, transaction);
+                }
+            }
+            else
+            {
+                throw new CustomException("Invalid action specified. Must be 'APPROVE' or 'REJECTE'.", 400);
+            }
 
             await transaction.CommitAsync();
 
-            // 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
-            var dcaUsers = await _common.QueryAsync<string>(@"
-                SELECT TRIM(e.empcode) 
-                FROM public.tblempjobprofile ejp 
-                INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
-                INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
-                WHERE sd.Name = 'DCA' 
-                  AND sd.smsid = 189 
-                  AND e.CompanyId = @CompanyId 
-                  AND COALESCE(e.Active, 1) = 1 
-                  AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId });
-
-            var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId });
-            var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
-
-            foreach (var dcaUser in dcaUsers)
-            {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders);
-            }
-
             return true;
+
+
+            //if (string.IsNullOrWhiteSpace(input.Observation))
+            //    throw new Exception("Observation comment is mandatory for final authorization.");
+
+            //// 1. Update Document Effective Date
+            //// Depending on policy, you might set a future effective date here, 
+            //// but for immediate enforcement, NOW() is used.
+            ////await _common.ExecuteAsync(@"
+            ////    UPDATE Documents 
+            ////    SET 
+            ////        EffectiveDate = NOW(), 
+            ////        LastModifiedAt = NOW(), 
+            ////        LastModifiedBy = @empCode 
+            ////    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            ////    new { input.DocumentId, CompanyId, empCode }, transaction);
+
+            //// 2. Archive previous effective versions (e.g., VersionType 2 = Effective, 3 = Archived)
+            //await _common.ExecuteAsync(@"
+            //    UPDATE DocumentVersions 
+            //    SET VersionType = 3, 
+            //        IsActive = FALSE 
+            //    WHERE DocumentId = @DocumentId 
+            //      AND VersionType = 2 
+            //      AND CompanyId = @CompanyId;",
+            //    new { input.DocumentId, CompanyId }, transaction);
+
+            //// 3. Mark the current pending version as Effective
+            //await _common.ExecuteAsync(@"
+            //    UPDATE DocumentVersions 
+            //    SET VersionType = 2 
+            //    WHERE DocumentId = @DocumentId 
+            //      AND VersionType = 1 
+            //      AND CompanyId = @CompanyId;",
+            //    new { input.DocumentId, CompanyId }, transaction);
+
+            //// 4. Update Document State History to 'EFFECTIVE'
+            //await _common.ExecuteAsync(@"
+            //    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+            //    SELECT @CompanyId, @DocumentId, 
+            //           (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+            //           (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), 
+            //           @empCode, @Observation, NOW();",
+            //    new { CompanyId, input.DocumentId, empCode, input.Observation }, transaction);
+
+            //// 5. Trigger DCA Notification (Physical Copy Retrieval / Obsoletion Task)
+            //var dcaUsers = await _common.QueryAsync<string>(@"
+            //    SELECT TRIM(e.empcode) 
+            //    FROM public.tblempjobprofile ejp 
+            //    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
+            //    INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
+            //    WHERE sd.Name = 'DCA' 
+            //      AND sd.smsid = 189 
+            //      AND e.CompanyId = @CompanyId 
+            //      AND COALESCE(e.Active, 1) = 1 
+            //      AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId }, transaction);
+
+            //var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
+            //var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
+
+            //foreach (var dcaUser in dcaUsers)
+            //{
+            //    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+            //}
+
+            //await transaction.CommitAsync();
+
+            //return true;
         }
         catch
         {
@@ -2286,22 +2835,33 @@ public class DocumentComponent
         {
             string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             // UC-31: Fetch historical documents where the *current user* was the one 
             // who transitioned the document to 'EFFECTIVE' or 'AUTHORIZED'
             var whereClause = @"
                 WHERE doc.CompanyId = @CompanyId 
                   AND doc.IsDeleted = FALSE
-                  AND EXISTS (
-                      SELECT 1 
-                      FROM DocumentStateHistory dsh 
+                  AND EXISTS (SELECT 1 FROM DocumentStateHistory dsh 
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
+                      WHERE dsh.DocumentId = doc.Id
                         AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED')
                         AND dsh.ChangedBy = @UserId
                   )";
+
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -2313,8 +2873,12 @@ public class DocumentComponent
             {
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
-                "DATEOFAUTHORIZATION" => "DateOfAuthorization",
+                "DATEOFAUTHORIZATION" => "doc.DateOfAuthorization",
                 "VERSION" => "dv.Version",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "DateOfAuthorization"
             };
 
@@ -2336,7 +2900,7 @@ public class DocumentComponent
                      WHERE dsh2.DocumentId = doc.Id 
                        AND ds2.Code IN ('EFFECTIVE', 'AUTHORIZED') 
                        AND dsh2.ChangedBy = @UserId 
-                     ORDER BY dsh2.ChangedAt DESC LIMIT 1) AS DateOfAuthorization
+                     ORDER BY dsh2.ChangedAt DESC, dsh2.Id DESC LIMIT 1) AS DateOfAuthorization
                 FROM Documents doc
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
@@ -2349,7 +2913,16 @@ public class DocumentComponent
                 FROM Documents doc 
                 {whereClause};";
 
-            var queryParams = new { CompanyId = CompanyId, UserId = input.UserId };
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                UserId = empCode,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2371,24 +2944,23 @@ public class DocumentComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"
-                WHERE doc.CompanyId = @CompanyId 
-                  --AND doc.CreatedBy = @UserId
-                  AND tr.ReadyForAuthorization = FALSE
+                WHERE doc.CompanyId = @CompanyId
                   AND doc.IsDeleted = FALSE
+                  AND dut.TrainingMode = @TrainingMode
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
                   AND (
-                      SELECT ds.Code 
-                      FROM DocumentStateHistory dsh 
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC LIMIT 1
-                  ) IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')
-                  AND tr.ReadyForAuthorization = FALSE";
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
 
             //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             //{
@@ -2424,6 +2996,9 @@ public class DocumentComponent
                 "DOCUMENTNUMBER" => "doc.DocumentNumber",
                 "TITLE" => "doc.Title",
                 "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
                 _ => "doc.CreatedAt"
             };
 
@@ -2431,38 +3006,51 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string dataSql = $@"
-                SELECT
+                SELECT DISTINCT
                     doc.*, 
                     dv.Version,
-                    tr.TrainingMode,
+                    dut.TrainingMode AS TrainingMode,
                     tr.TrainingProofURL,
                     doc.CreatedAt,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore
-                FROM Vw_Documents doc  
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.IsDeleted = FALSE) AS TotalAssigned,
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS TotalCompleted,
+                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS AverageScore,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
+                FROM Vw_Documents doc
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
+                -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
             string countSql = $@"
-                SELECT COUNT(1) 
+                SELECT COUNT(DISTINCT doc.Id) 
                 FROM Documents doc 
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code
-                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE 
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
                 {whereClause};";
 
-            var queryParams = new 
-            { 
-                CompanyId = CompanyId, 
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
                 UserId = empCode,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
                 SubDepartmentCode = input.SubDepartmentCode,
                 BusinessDomainCode = input.BusinessDomainCode,
-                DocumentTypeCode = input.DocumentTypeCode
+                DocumentTypeCode = input.DocumentTypeCode,
+                TrainingMode = input.Requeststatus == "Classroom" ? 1 : 2
             };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
@@ -2480,23 +3068,1362 @@ public class DocumentComponent
         }
     }
 
+    /// <summary>
+    /// Lightweight companion to GetDocumentsPendingTrainingAcknowledgmentAsync (same "list" +
+    /// "list-counts" pattern as GetPendingAuthorizationsAsync / GetPendingAuthorizationCountsAsync)
+    /// for badge counts (e.g. the sidebar's Training for SOP Documents entry) that only need a
+    /// number, not the full paginated dataset with its per-document training-progress joins.
+    /// Unlike the list endpoint, this ignores Requeststatus/TrainingMode and counts documents
+    /// pending training across both Classroom and Online — a document is deduplicated (counted
+    /// once) even if it has assignees in both modes.
+    /// </summary>
+    public async Task<int> GetDocumentsPendingTrainingCountAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId
+                  AND doc.IsDeleted = FALSE
+                  AND dut.TrainingMode = @TrainingMode
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
+                  AND (
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string countSql = $@"
+                SELECT COUNT(DISTINCT doc.Id)
+                FROM Vw_Documents doc
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode,
+                TrainingMode = input.Requeststatus == "Classroom" ? 1 : 2
+            };
+
+            return await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    // Same scope/filters as GetDocumentsPendingTrainingCountAsync, but returns both tabs'
+    // counts (plus their total) in one query instead of requiring one call per TrainingMode --
+    // for populating both tab badges on the SOP Document Training screen from a single request.
+    public async Task<DocumentsPendingTrainingCountsDto> GetDocumentsPendingTrainingCountsAsync(GetDocumentsPendingTrainingDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId
+                  AND doc.IsDeleted = FALSE
+                  AND (tr.ReadyForAuthorization IS NULL OR tr.ReadyForAuthorization = FALSE)
+                  AND (
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'TRAINING_PENDING'";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            string countSql = $@"
+                SELECT
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE dut.TrainingMode = 1) AS ClassroomCount,
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE dut.TrainingMode = 2) AS OnlineCount,
+                    COUNT(DISTINCT doc.Id) AS TotalCount
+                FROM Vw_Documents doc
+                INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode
+            };
+
+            var result = await _common.QuerySingleAsync<DocumentsPendingTrainingCountsDto>(countSql, queryParams);
+            return result ?? new DocumentsPendingTrainingCountsDto();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    public async Task<PaginationResult<dynamic>> GetApprovedEffectiveDocumentsAsync(GetApprovedDocumentsFilterDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            // Base condition: Document is not deleted and its current state is 'EFFECTIVE'
+            var whereClause = @"
+                WHERE doc.CompanyId = @CompanyId 
+                  AND doc.IsDeleted = FALSE
+                  AND (
+                      SELECT ds.Code 
+                      FROM DocumentStateHistory dsh 
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = doc.Id 
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) = 'EFFECTIVE'";
+
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND doc.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND doc.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND doc.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND doc.BusinessDomainCode = @BusinessDomainCode";
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
+
+            // 1. Keyword Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+            }
+
+            // 2. Date Range Filters
+            if (!string.IsNullOrWhiteSpace(input.ApprovedFromDate) && !string.IsNullOrWhiteSpace(input.ApprovedToDate))
+            {
+                whereClause += @" AND EXISTS (
+                        SELECT 1 FROM DocumentStateHistory dshDate 
+                        JOIN DocumentStates dsDate ON dsDate.Id = dshDate.ToStateId
+                        WHERE dshDate.DocumentId = doc.Id 
+                          AND dsDate.Code = 'EFFECTIVE'
+                          AND dshDate.ChangedAt::date >= @ApprovedFromDate::date AND dshDate.ChangedAt::date <= @ApprovedToDate::date
+                    )";
+            }
+
+            if (!string.IsNullOrWhiteSpace(input.RequestCreatedFromDate) && !string.IsNullOrWhiteSpace(input.RequestCreatedToDate))
+            {
+                whereClause += " AND (doc.CreatedAt::date >= @RequestCreatedFromDate::date AND doc.CreatedAt::date <= @RequestCreatedToDate::date)";
+            }
+            if (!string.IsNullOrWhiteSpace(input.RequestCreatedBy) && !string.IsNullOrWhiteSpace(input.RequestCreatedBy))
+            {
+                whereClause += " AND doc.CreatedBy = @RequestCreatedBy";
+            }
+
+            if (input.DateFrom.HasValue && input.DateTo.HasValue)
+            {
+                if (!string.IsNullOrWhiteSpace(input.DateFilterType) && input.DateFilterType.Equals("CreationDate", StringComparison.OrdinalIgnoreCase))
+                {
+                    whereClause += " AND (doc.CreatedAt::date >= @DateFrom::date AND doc.CreatedAt::date <= @DateTo::date)";
+                }
+                else
+                {
+                    // Default to Approval/Authorization Date filter
+                    whereClause += @" AND EXISTS (
+                        SELECT 1 FROM DocumentStateHistory dshDate 
+                        JOIN DocumentStates dsDate ON dsDate.Id = dshDate.ToStateId
+                        WHERE dshDate.DocumentId = doc.Id 
+                          AND dsDate.Code = 'EFFECTIVE'
+                          AND dshDate.ChangedAt::date >= @DateFrom::date AND dshDate.ChangedAt::date <= @DateTo::date
+                    )";
+                }
+            }
+
+            // 3. Sorting
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "TITLE" => "doc.Title",
+                "DATEOFAUTHORIZATION" => "doc.DateOfAuthorization",
+                "VERSION" => "dv.Version",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+                _ => "DateOfAuthorization"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            // 4. Data Query
+            string dataSql = $@"
+                SELECT
+                    Distinct doc.*,
+                    (SELECT dsh2.ChangedAt
+                     FROM DocumentStateHistory dsh2
+                     JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
+                     WHERE dsh2.DocumentId = doc.Id
+                       AND ds2.Code = 'EFFECTIVE'
+                     ORDER BY dsh2.ChangedAt DESC, dsh2.Id DESC LIMIT 1) AS DateOfAuthorization,
+                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevdoc.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
+                FROM VW_Documents doc
+                LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.VersionType = 2 AND dv.IsActive = TRUE
+                -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
+                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                -- The earlier document this one is a revision of (only present for revisions)
+                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            string countSql = $@"
+                SELECT COUNT(Distinct doc.Id) 
+                FROM VW_Documents doc 
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId = CompanyId,
+                DateFrom = input.DateFrom,
+                DateTo = input.DateTo,
+                ApprovedFromDate = input.ApprovedFromDate,
+                ApprovedToDate = input.ApprovedToDate,
+                RequestCreatedFromDate = input.RequestCreatedFromDate,
+                RequestCreatedToDate = input.RequestCreatedToDate,
+                DivisionCode = input.DivisionCode,
+                DepartmentCode = input.DepartmentCode,
+                SubDepartmentCode = input.SubDepartmentCode,
+                BusinessDomainCode = input.BusinessDomainCode,
+                DocumentTypeCode = input.DocumentTypeCode,
+                RequestCreatedBy = input.RequestCreatedBy
+            };
+
+            var documents = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            if (!documents.Any())
+            {
+                return new PaginationResult<dynamic> { Items = new List<dynamic>(), TotalCount = 0 };
+            }
+
+            // 5. Fetch Distribution Lists for the retrieved documents
+            var documentIds = documents.Select(x => (int)x.id).ToArray();
+
+            var roleDistributions = (await _common.QueryAsync<dynamic>(@"
+                SELECT drd.DocumentId, r.Name AS RoleName, div.Name AS Division, dep.Name AS Department
+                FROM DocumentRoleDistributions drd
+                LEFT JOIN Roles r ON drd.RoleId = r.Id 
+                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code 
+                LEFT JOIN Departments dep ON drd.DepartmentCode = dep.Code
+                WHERE drd.CompanyId = @CompanyId AND drd.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            var userDistributions = (await _common.QueryAsync<dynamic>(@"
+                SELECT dud.DocumentId, e.empCode AS EmployeeCode, 
+                       LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
+                FROM DocumentUserDistributions dud
+                LEFT JOIN tblEmployee e on LPAD(dud.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                WHERE dud.CompanyId = @CompanyId AND dud.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            // 6. Map Distributions back to their respective documents
+            var finalResult = documents.Select(doc =>
+            {
+                var docDict = (IDictionary<string, object>)doc;
+                int currentDocId = (int)docDict["id"];
+
+                docDict["RoleDistributions"] = roleDistributions.Where(r => (int)r.documentid == currentDocId).ToList();
+                docDict["UserDistributions"] = userDistributions.Where(u => (int)u.documentid == currentDocId).ToList();
+
+                return docDict;
+            }).ToList<dynamic>();
+
+            return new PaginationResult<dynamic>
+            {
+                Items = finalResult,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    private class ParsedRow
+    {
+        public int RowNumber { get; set; }
+        public string[] Columns { get; set; } = Array.Empty<string>();
+    }
+
+    public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile excelFile)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        //LogToFile($"[BULK IMPORT] Starting import. ClientIP: {clientIp}, EmpId: {empId}, EmpCode: {empCode}, CompanyId: {CompanyId}");
+
+        var results = new List<string>();
+        if (excelFile == null || excelFile.Length == 0)
+        {
+            //LogToFile("[BULK IMPORT] Error: No file provided or file length is 0.");
+            results.Add("Error: No file provided.");
+            return results;
+        }
+
+        var parsedRows = new List<ParsedRow>();
+        var fileExtension = Path.GetExtension(excelFile.FileName).ToLower();
+        //LogToFile($"[BULK IMPORT] File name: '{excelFile.FileName}', extension: '{fileExtension}', length: {excelFile.Length} bytes.");
+
+        if (fileExtension == ".xlsx" || fileExtension == ".xls")
+        {
+            try
+            {
+                //LogToFile("[BULK IMPORT] Opening file as Excel package...");
+                using var stream = excelFile.OpenReadStream();
+                using var package = new ExcelPackage(stream);
+                var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null || worksheet.Dimension == null)
+                {
+                    //LogToFile("[BULK IMPORT] Error: Excel worksheet or dimension is null.");
+                    results.Add("Error: Excel worksheet is empty or invalid.");
+                    return results;
+                }
+
+                int totalRows = worksheet.Dimension.End.Row;
+                int totalCols = worksheet.Dimension.End.Column;
+                //LogToFile($"[BULK IMPORT] Excel sheet loaded. Rows: {totalRows}, Columns: {totalCols}");
+
+                if (totalRows < 1)
+                {
+                    //LogToFile("[BULK IMPORT] Error: Excel totalRows < 1.");
+                    results.Add("Error: Excel file has no rows.");
+                    return results;
+                }
+
+                // Row 1 is header, data starts from Row 2
+                for (int row = 2; row <= totalRows; row++)
+                {
+                    bool isRowBlank = true;
+                    int maxCol = Math.Max(11, totalCols);
+                    var cols = new string[maxCol];
+                    for (int col = 1; col <= maxCol; col++)
+                    {
+                        var cellValue = worksheet.Cells[row, col].Text?.Trim() ?? worksheet.Cells[row, col].Value?.ToString()?.Trim() ?? "";
+                        cols[col - 1] = cellValue;
+                        if (!string.IsNullOrWhiteSpace(cellValue))
+                        {
+                            isRowBlank = false;
+                        }
+                    }
+
+                    if (!isRowBlank)
+                    {
+                        parsedRows.Add(new ParsedRow { RowNumber = row, Columns = cols });
+                    }
+                }
+                //LogToFile($"[BULK IMPORT] Excel parsing complete. Found {parsedRows.Count} non-empty rows.");
+            }
+            catch (Exception ex)
+            {
+                //LogToFile($"[BULK IMPORT] Exception during Excel read: {ex}");
+                results.Add($"Error reading Excel file: {ex.Message}");
+                return results;
+            }
+        }
+        else if (fileExtension == ".csv")
+        {
+            try
+            {
+                //LogToFile("[BULK IMPORT] Opening file as CSV...");
+                using var reader = new StreamReader(excelFile.OpenReadStream());
+                var header = await reader.ReadLineAsync();
+
+                if (string.IsNullOrWhiteSpace(header))
+                {
+                    //LogToFile("[BULK IMPORT] Error: CSV header is empty.");
+                    results.Add("Error: CSV file is empty or has an invalid header.");
+                    return results;
+                }
+
+                int rowCount = 1;
+                while (!reader.EndOfStream)
+                {
+                    rowCount++;
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    var cols = System.Text.RegularExpressions.Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
+                                                                   .Select(x => x.Trim('"', ' ')).ToArray();
+                    parsedRows.Add(new ParsedRow { RowNumber = rowCount, Columns = cols });
+                }
+                //LogToFile($"[BULK IMPORT] CSV parsing complete. Found {parsedRows.Count} non-empty rows.");
+            }
+            catch (Exception ex)
+            {
+                //LogToFile($"[BULK IMPORT] Exception during CSV read: {ex}");
+                results.Add($"Error reading CSV file: {ex.Message}");
+                return results;
+            }
+        }
+        else
+        {
+            //LogToFile($"[BULK IMPORT] Error: Invalid file format extension: '{fileExtension}'.");
+            results.Add("Error: Invalid file format. Please upload an .xlsx, .xls or .csv file.");
+            return results;
+        }
+
+        foreach (var parsedRow in parsedRows)
+        {
+            int row = parsedRow.RowNumber;
+            var cols = parsedRow.Columns;
+
+            //LogToFile($"[BULK IMPORT] Row {row}: Starting processing. Cols count: {cols.Length}");
+            await using var tx = await _common.BeginTransactionAsync();
+            try
+            {
+                if (cols.Length < 11)
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Insufficient columns ({cols.Length} < 11). Skipped.");
+                    results.Add($"Row {row}: Skipped. Insufficient columns (expected 11, found {cols.Length}).");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                // New Column Order Mapping
+                var docNum = cols[1].Trim();
+                var title = cols[2].Trim();
+                var initiatorName = cols[3].Trim();
+                var version = string.IsNullOrWhiteSpace(cols[4]) ? "1.0" : cols[4].Trim();
+                var docTypeName = cols[5].Trim();
+                var divName = cols[6].Trim();
+                var deptName = cols[7].Trim();
+                var subDeptName = cols[8].Trim();
+                var nextReviewDateStr = cols[9].Trim();
+                var expectedFileName = cols[10].Trim();
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Mapping: DocNum='{docNum}', Title='{title}', Initiator='{initiatorName}', Version='{version}', DocType='{docTypeName}', Div='{divName}', Dept='{deptName}', SubDept='{subDeptName}', NextReviewStr='{nextReviewDateStr}', ExpectedFile='{expectedFileName}'");
+
+                if (string.IsNullOrWhiteSpace(docNum) && string.IsNullOrWhiteSpace(title))
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Both DocNum and Title are empty. Skipped.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                // --- Data Validation and Lookups ---
+
+                if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Invalid Next Review Date: '{nextReviewDateStr}'. Skipped.");
+                    results.Add($"Row {row}: Skipped. Invalid Next Review Date '{nextReviewDateStr}'.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Document Type Code where Name='{docTypeName}'");
+                var docTypeCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM DocumentTypes WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = docTypeName }, tx);
+                if (string.IsNullOrEmpty(docTypeCode))
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Document Type '{docTypeName}' not found. Skipped.");
+                    results.Add($"Row {row}: Skipped. Document Type '{docTypeName}' not found.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Division Code where Name='{divName}'");
+                var divCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Divisions WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = divName }, tx);
+                if (string.IsNullOrEmpty(divCode))
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Division '{divName}' not found. Skipped.");
+                    results.Add($"Row {row}: Skipped. Division '{divName}' not found.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Department Code where Name='{deptName}' and DivCode='{divCode}'");
+                var deptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Departments WHERE CompanyId = @CompanyId AND Name = @Name AND DivisionCode = @DivCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = deptName, DivCode = divCode }, tx);
+                if (string.IsNullOrEmpty(deptCode))
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Department '{deptName}' not found in Division '{divName}'. Skipped.");
+                    results.Add($"Row {row}: Skipped. Department '{deptName}' not found in Division '{divName}'.");
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for SubDepartment Code where Name='{subDeptName}' and DeptCode='{deptCode}'");
+                //var subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
+                //if (string.IsNullOrEmpty(subDeptCode))
+                //{
+                //    //LogToFile($"[BULK IMPORT] Row {row}: Sub-Department '{subDeptName}' not found in Department '{deptName}'. Skipped.");
+                //    results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
+                //    await tx.RollbackAsync();
+                //    continue;
+                //}
+
+
+
+                string? subDeptCode = null;
+                if (!string.IsNullOrWhiteSpace(subDeptName) &&
+                    (subDeptName.Trim().Equals("N/A", StringComparison.OrdinalIgnoreCase) ||
+                     subDeptName.Trim().Equals("NA", StringComparison.OrdinalIgnoreCase)))
+                {
+                    subDeptCode = null;
+                }
+                else
+                {
+                    subDeptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM SubDepartments WHERE CompanyId = @CompanyId AND Name = @Name AND DepartmentCode = @DeptCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = subDeptName, DeptCode = deptCode }, tx);
+                    if (string.IsNullOrEmpty(subDeptCode))
+                    {
+                        results.Add($"Row {row}: Skipped. Sub-Department '{subDeptName}' not found in Department '{deptName}'.");
+                        await tx.RollbackAsync();
+                        continue;
+                    }
+                }
+
+                // --- Database Insertion / Update ---
+
+                //LogToFile($"[BULK IMPORT] Row {row}: Checking if document with Title='{title}' exists...");
+                var existingDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT Id, DocumentNumber FROM Documents WHERE Title = @Title AND CompanyId = @CompanyId AND IsDeleted = FALSE LIMIT 1",
+                    new { Title = title, CompanyId }, tx);
+
+                if (existingDoc != null)
+                {
+                    var docDict = (IDictionary<string, object>)existingDoc;
+                    int existingId = Convert.ToInt32(docDict["id"]);
+                    string existingDocNum = docDict["documentnumber"]?.ToString() ?? "";
+                    //LogToFile($"[BULK IMPORT] Row {row}: Existing document found. ID: {existingId}, DocNum: '{existingDocNum}'. Performing UPDATE.");
+
+                    await _common.ExecuteAsync(@"
+                        UPDATE Documents
+                        SET DocumentTypeCode = @DocumentTypeCode,
+                            DivisionCode = @DivisionCode,
+                            DepartmentCode = @DepartmentCode,
+                            SubDepartmentCode = @SubDepartmentCode,
+                            NextReviewdate = @NextReviewDate,
+                            DocumentURL = @ExpectedFileName,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE Id = @Id AND CompanyId = @CompanyId;", new
+                    {
+                        CompanyId,
+                        Id = existingId,
+                        DocumentTypeCode = docTypeCode,
+                        DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
+                        DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
+                        SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
+                        NextReviewDate = nextReviewDate,
+                        ExpectedFileName = expectedFileName,
+                        UserId = empCode
+                    }, tx);
+
+                    //LogToFile($"[BULK IMPORT] Row {row}: UPDATE on Documents table succeeded. Checking if version '{version}' exists...");
+                    int versionExists = await _common.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM DocumentVersions WHERE DocumentId = @DocumentId AND Version = @Version AND CompanyId = @CompanyId AND IsActive = TRUE",
+                        new { DocumentId = existingId, Version = version, CompanyId }, tx);
+
+                    if (versionExists == 0)
+                    {
+                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' does not exist. Inserting into DocumentVersions.");
+                        await _common.ExecuteAsync(@"
+                            INSERT INTO DocumentVersions
+                            (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
+                            VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
+                            new { CompanyId, DocumentId = existingId, Version = version, UserId = empCode }, tx);
+                    }
+                    else
+                    {
+                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' already exists.");
+                    }
+
+                    await tx.CommitAsync();
+                    //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (UPDATE).");
+                    // Log success physically but do not return in skipped/error list
+                    LogToFile($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
+                }
+                else
+                {
+                    //LogToFile($"[BULK IMPORT] Row {row}: Document not found. Performing INSERT.");
+                    int newId = await _common.ExecuteScalarAsync<int>(@"
+                        INSERT INTO Documents
+                        (   CompanyId, DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                            SubDepartmentCode, Title, NextReviewdate, DocumentURL,
+                            IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                        )
+                        VALUES
+                        (
+                            @CompanyId, @DocumentNumber, @DocumentTypeCode, @DivisionCode, @DepartmentCode,
+                            @SubDepartmentCode, @Title, @NextReviewDate, @ExpectedFileName,
+                            TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                        )
+                        RETURNING Id;", new
+                    {
+                        CompanyId,
+                        DocumentNumber = docNum,
+                        DocumentTypeCode = docTypeCode,
+                        DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
+                        DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
+                        SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
+                        Title = title,
+                        NextReviewDate = nextReviewDate,
+                        ExpectedFileName = expectedFileName,
+                        UserId = empCode
+                    }, tx);
+
+                    //LogToFile($"[BULK IMPORT] Row {row}: INSERT on Documents table succeeded. New ID: {newId}. Inserting into DocumentVersions...");
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO DocumentVersions
+                        (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
+                        VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
+                        new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
+
+                    await tx.CommitAsync();
+                    //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (INSERT).");
+                    // Log success physically but do not return in skipped/error list
+                    LogToFile($"Row {row}: Successfully imported metadata for '{docNum}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                //LogToFile($"[BULK IMPORT] Row {row}: Exception caught: {ex}");
+                await tx.RollbackAsync();
+                results.Add($"Row {row}: Skipped. An unexpected error occurred: {ex.Message}. StackTrace: {ex.StackTrace}");
+            }
+        }
+
+        return results;
+    }
+
+    private void LogToFile(string message)
+    {
+        try
+        {
+            Console.WriteLine(message);
+            var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
+            if (!Directory.Exists(logDirectory))
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
+            var logPath = Path.Combine(logDirectory, "bulk_import_log.txt");
+            var logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}";
+            File.AppendAllText(logPath, logLine);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[BULK IMPORT LOGGER ERROR] {ex.Message}");
+        }
+    }
+
+    public async Task<List<string>> BulkUploadDocumentFilesAsync(List<IFormFile> files)
+    {
+        var results = new List<string>();
+        if (files == null || !files.Any())
+        {
+            results.Add("No files provided.");
+            return results;
+        }
+
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+        if (!Directory.Exists(uploadsRoot))
+            Directory.CreateDirectory(uploadsRoot);
+
+        foreach (var file in files)
+        {
+            if (file.Length == 0)
+            {
+                results.Add($"File {file.FileName}: Empty file.");
+                continue;
+            }
+
+            try
+            {
+                var safeFileName = Path.GetFileName(file.FileName);
+                var fileExtension = Path.GetExtension(safeFileName).ToLower();
+
+                // 1. Hybrid processing: Handle Zip archives containing legacy documents of various types
+                if (fileExtension == ".zip")
+                {
+                    using var stream = file.OpenReadStream();
+                    using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+
+                    foreach (var entry in archive.Entries)
+                    {
+                        if (string.IsNullOrEmpty(entry.Name)) continue; // Skip directories
+
+                        var entryExt = Path.GetExtension(entry.Name);
+                        var entryNameWithoutExt = Path.GetFileNameWithoutExtension(entry.Name);
+
+                        // Find matching document metadata by exact file name or base name
+                        var docId = await _common.ExecuteScalarAsync<int?>(@"
+                            SELECT Id 
+                            FROM Documents 
+                            WHERE CompanyId = @CompanyId 
+                              AND (DocumentURL = @FileName OR DocumentURL = @FileNameWithoutExt)
+                              AND IsDeleted = FALSE 
+                            ORDER BY Id DESC 
+                            LIMIT 1;",
+                            new { CompanyId, FileName = entry.Name, FileNameWithoutExt = entryNameWithoutExt });
+
+                        if (docId == null || docId == 0)
+                        {
+                            results.Add($"Zip Entry {entry.Name}: No matching metadata record found.");
+                            continue;
+                        }
+
+                        var newFileName = $"{Guid.NewGuid()}{entryExt}";
+                        var filePath = Path.Combine(uploadsRoot, newFileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            using var entryStream = entry.Open();
+                            await entryStream.CopyToAsync(fileStream);
+                        }
+
+                        var documentUrl = $"/uploads/documents/{newFileName}";
+
+                        await _common.ExecuteAsync(@"
+                            UPDATE Documents 
+                            SET DocumentURL = @DocumentUrl,
+                                LastModifiedAt = NOW(),
+                                LastModifiedBy = @UserId
+                            WHERE Id = @DocumentId;",
+                            new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = docId });
+
+                        results.Add($"Zip Entry {entry.Name}: Successfully attached to Document ID {docId}.");
+                    }
+                }
+                else
+                {
+                    // 2. Hybrid processing: Handle individual files of any type (Word, PDF, PNG, etc.)
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(safeFileName);
+
+                    var documentId = await _common.ExecuteScalarAsync<int?>(@"
+                        SELECT Id 
+                        FROM Documents 
+                        WHERE CompanyId = @CompanyId 
+                          AND (DocumentURL = @FileName OR DocumentURL = @FileNameWithoutExt)
+                          AND IsDeleted = FALSE 
+                        ORDER BY Id DESC 
+                        LIMIT 1;",
+                        new { CompanyId, FileName = safeFileName, FileNameWithoutExt = fileNameWithoutExt });
+
+                    if (documentId == null || documentId == 0)
+                    {
+                        results.Add($"File {safeFileName}: No matching metadata record found.");
+                        continue;
+                    }
+
+                    var newFileName = $"{file.FileName}{fileExtension}";
+                    var filePath = Path.Combine(uploadsRoot, newFileName);
+
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    var documentUrl = $"/uploads/documents/{newFileName}";
+
+                    await _common.ExecuteAsync(@"
+                        UPDATE Documents 
+                        SET DocumentURL = @DocumentUrl,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE Id = @DocumentId;",
+                        new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = documentId });
+
+
+                    results.Add($"File {safeFileName}: Successfully attached to Document ID {documentId}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                results.Add($"File {file.FileName}: Error - {ex.Message}");
+            }
+        }
+
+        return results;
+    }
+
+    public async Task<object> GetMyDocumentCountsAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // Query 1: Counts for documents CREATED BY the current user
+            var myDocumentsQuery = @"
+                WITH LatestStates AS (
+                    SELECT
+                        dsh.DocumentId,
+                        ds.Code AS StateCode,
+                        ROW_NUMBER() OVER(PARTITION BY dsh.DocumentId ORDER BY dsh.ChangedAt DESC, dsh.Id DESC) as rn
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.CompanyId = @CompanyId
+                )
+                SELECT
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'DRAFT') AS Draft,
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'PENDING_APPROVAL') AS InReview,
+                    COUNT(1) FILTER (WHERE ls.StateCode IN ('APPROVED', 'TRAINING_PENDING', 'EFFECTIVE')) AS Approved,
+                    COUNT(1) FILTER (WHERE ls.StateCode = 'REJECTED') AS Rejected
+                FROM Documents d
+                JOIN LatestStates ls ON d.Id = ls.DocumentId AND ls.rn = 1
+                WHERE d.CompanyId = @CompanyId
+                  AND d.CreatedBy = @empCode
+                  AND d.IsDeleted = FALSE;";
+
+            var myDocumentsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myDocumentsQuery, new { CompanyId, empCode });
+
+            // Query 2: Counts for documents in the current user's INBOX (for approval)
+            var myInboxQuery = @"
+            SELECT
+                COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
+                COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
+                COUNT(1) FILTER (WHERE we.Status = 'Rejected' AND wes.Decision = 'Rejected') AS Rejected,
+                COUNT(1) FILTER (WHERE we.Status = 'Reworked' AND wes.Decision = 'Reworked') AS Reworked
+            FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+            JOIN Vw_Documents d ON d.Id = we.EntityId AND d.CompanyId = we.CompanyId
+            -- 👇 This JOIN is the final piece of the puzzle to match the function's logic
+            LEFT JOIN DocumentRequests dr ON d.RequestId = dr.Id
+            WHERE wes.CompanyId = @CompanyId 
+              AND we.EntityType = 'Document'
+              AND (
+                wes.AssignedUserId = @empCode
+                OR 
+                wes.AssignedRoleId IN (
+                    SELECT ejp.roleid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+                OR 
+                wes.AssignedDesignationId IN (
+                    SELECT ejp.dsgid
+                    FROM public.tblempjobprofile ejp
+                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
+                    WHERE e.CompanyId = @CompanyId 
+                      AND TRIM(e.empcode) = @empCode 
+                      AND ejp.Active = TRUE
+                )
+              );";
+
+            var myInboxCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
+
+            return new
+            {
+                MyDocuments = myDocumentsCounts,
+                MyInbox = new
+                {
+                    pending = myInboxCounts?.pending ?? 0,
+                    approved = myInboxCounts?.approved ?? 0,
+                    rejectedorreverted = (myInboxCounts?.rejected ?? 0) + (myInboxCounts?.reworked ?? 0)
+                }
+            };
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+
+
+    public async Task<byte[]> ExportMyDocumentsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = "WHERE 1=1";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(DocumentName) LIKE '%{search}%'
+                    OR UPPER(RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "Title",
+                "DOCUMENTNUMBER" => "DocumentNumber",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
+                _ => "CreatedAt"
+            };
+
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+
+
+            var dataSql = $@"SELECT * FROM fn_get_my_inbox_documents(
+                    @CompanyId,
+                    @UserId,
+                    @RequestStatus,
+                    @DivisionCode,
+                    @DepartmentCode,
+                    @SubDepartmentCode,
+                    @BusinessDomainCode,
+                    @DocumentTypeCode
+                )
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection} ;";
+
+            var queryParams = new
+            {
+                CompanyId,
+                UserId = empCode,
+                input.RequestStatus,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+
+            var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
+            if (!requests.Any())
+            {
+                return Array.Empty<byte>();
+            }
+
+            var sb = new System.Text.StringBuilder();
+
+            // Add header row matching Angular model columns
+            var headers = new List<string>
+            {
+                "ExecutionId", "Id", "documentId", "stepId", "stepOrder", "ExecutionStatus",
+                "documentType", "documentTypeCode", "documentName", "company", "proposedDocumentNumber", "proposedVersionNumber",
+                "division", "department", "departmentId", "subDepartment", "subDepartmentId", "businessDomain", "businessDomainId",
+                "proposedContent", "draftFileUrl", "requestCreatedBy", "dateOfCreation", "requestCreatedOn", "startedAt",
+                "previsousVersionCreatedBy", "previousVersionCreatedOn", "observation", "requestedBy", "dateOfApproval", "approvalHistory"
+            };
+            sb.AppendLine(string.Join(",", headers));
+
+            // Add data rows
+            foreach (var row in requests)
+            {
+                var values = new List<string>
+                {
+                    row.ExecutionId.ToString(),
+                    row.Id.ToString(),
+                    row.Id.ToString(), // documentId
+                    row.StepId.ToString(),
+                    row.StepOrder.ToString(),
+                    row.ExecutionStatus ?? "Unknown",
+                    row.DocumentType ?? "",
+                    row.DocumentTypeCode ?? "",
+                    row.Title ?? "",
+                    row.Company ?? "",
+                    row.DocumentNumber ?? "",
+                    row.ProposedVersionNumber ?? "1.0",
+                    row.Division ?? "",
+                    row.Department ?? "",
+                    row.DepartmentCode ?? "",
+                    row.SubDepartment ?? "",
+                    row.SubDepartmentCode ?? "",
+                    row.BusinessDomain ?? "",
+                    row.BusinessDomainCode ?? "",
+                    row.VersionContent ?? "",
+                    row.DraftFileURL ?? "",
+                    row.RequestCreatedBy ?? "",
+                    row.CreatedAt ?? "",
+                    row.RequestCreatedAt ?? "",
+                    row.StartedAt ?? "",
+                    row.RequestCreatedBy ?? "", // previsousVersionCreatedBy
+                    row.RequestCreatedAt ?? "", // previousVersionCreatedOn
+                    "", // observation (not present, defaults to empty)
+                    row.CreatedBy ?? "", // requestedBy
+                    "", // dateOfApproval (not present)
+                    ""  // approvalHistory (not present)
+                };
+
+                // Escape commas and quotes for standard CSV formatting
+                var escapedValues = values.Select(value => $"\"{value.Replace("\"", "\"\"")}\"");
+                sb.AppendLine(string.Join(",", escapedValues));
+            }
+
+            return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            // In a real application, you'd log this exception
+            throw new CustomException("Failed to export data.", 500);
+        }
+    }
+
+
+
+
+    public async Task<PaginationResult<EffectiveDocumentDetailsDto>> GetEffectiveDocumentsForRevisionAsync(TableFiltersDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            var whereClause = @"
+                WHERE d.CompanyId = @CompanyId 
+                  AND d.IsDeleted = FALSE 
+                  AND d.IsActive = TRUE
+                  AND EXISTS (SELECT 1 FROM DocumentStateHistory dsh 
+			       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+			       WHERE dsh.DocumentId = d.Id
+			         AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED') 
+			     )";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(d.Title) LIKE '%{search}%'
+                    OR UPPER(d.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "d.DocumentNumber",
+                "DOCUMENTNAME" => "d.Title",
+                "TITLE" => "d.Title",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
+                _ => "d.Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"
+                SELECT DISTINCT d.*
+                FROM Vw_Documents d
+                INNER JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.CompanyId = d.CompanyId AND dv.VersionType = 2 
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"
+                SELECT COUNT(DISTINCT d.Id)
+                FROM Vw_Documents d
+                INNER JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.CompanyId = d.CompanyId AND dv.VersionType = 2
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId
+            };
+
+            var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId });
+
+
+            var requests = new List<EffectiveDocumentDetailsDto>();
+            foreach (var row in dynamicRequests)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                requests.Add(new EffectiveDocumentDetailsDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    DocumentNumber = GetValue<string>(dict, "documentnumber"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    RequestId = GetValue<int>(dict, "requestid"),
+                    Version = GetValue<string>(dict, "version"),
+                    VersionType = GetValue<string>(dict, "versiontype"),
+                    NextReviewDate = GetValue<string>(dict, "nextreviewdate"),
+                    ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
+                    DocumentId = GetValue<int>(dict, "documentid"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    DocumentName = GetValue<string>(dict, "title"),
+                    DocumentURL = GetValue<string>(dict, "documenturl"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
+                    CreatedByName = GetValue<string>(dict, "createdbyname"),
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                });
+            }
+
+            if (!requests.Any())
+                return new PaginationResult<EffectiveDocumentDetailsDto>
+                {
+                    Items = new List<EffectiveDocumentDetailsDto>(),
+                    TotalCount = 0
+                };
+
+
+            //-------------------------------------------------
+            // 2️⃣ Extract Ids
+            //-------------------------------------------------
+
+            var requestIds = requests.Select(x => x.Id).ToArray();
+
+            //-------------------------------------------------
+            // 3️⃣ Get Role Distributions
+            //-------------------------------------------------
+
+            var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
+                SELECT dl.*,
+                       div.Name AS Division,
+                       dep.Name AS Department,
+                       subd.Name AS SubDepartment,
+                       bd.Name AS BusinessDomain,
+	                   dt.Name AS DistributionType
+                   FROM DocumentRequestRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
+                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id 
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+                WHERE dl.CompanyId = @CompanyId
+                AND dl.DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 4️⃣ Get User Distributions
+            //-------------------------------------------------
+
+            var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
+                FROM DocumentRequestUserDistributions drd 
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
+                WHERE drd.CompanyId = @CompanyId
+                AND DocumentRequestId = ANY(@RequestIds);",
+                new
+                {
+                    CompanyId = CompanyId,
+                    RequestIds = requestIds
+                })).ToList();
+
+            //-------------------------------------------------
+            // 5️⃣ Map Distributions Into Each Request
+            //-------------------------------------------------
+
+            foreach (var request in requests)
+            {
+                request.DistributionList = roleDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .Select(x => new DistributionListReadDto
+                    {
+                        Id = x.Id,
+                        DocumentRequestId = x.DocumentRequestId,
+                        CompanyId = x.CompanyId,
+                        Company = x.Company,
+                        RoleId = x.RoleId,
+                        Role = x.Role,
+                        DistributionTypeId = x.DistributionTypeId,
+                        DistributionType = x.DistributionType,
+                        Division = x.Division,
+                        DivisionCode = x.DivisionCode,
+                        Department = x.Department,
+                        DepartmentCode = x.DepartmentCode,
+                        SubDepartment = x.SubDepartment,
+                        SubDepartmentCode = x.SubDepartmentCode,
+                        BusinessDomain = x.BusinessDomain,
+                        BusinessDomainCode = x.BusinessDomainCode,
+                    }).ToList();
+
+                request.UserList = userDistributions
+                    .Where(x => x.DocumentRequestId == request.Id)
+                    .ToList();
+            }
+
+            return new PaginationResult<EffectiveDocumentDetailsDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
+
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
+
+
+    // Helper method to safely get values from the dynamic row
+    private static T GetValue<T>(IDictionary<string, object> row, string columnName)
+    {
+        if (row.ContainsKey(columnName) && row[columnName] != null && row[columnName] != DBNull.Value)
+        {
+            try
+            {
+                var value = row[columnName];
+
+                // Handle type conversions
+                if (typeof(T) == typeof(int?) || typeof(T) == typeof(int))
+                {
+                    if (value is int intValue)
+                        return (T)(object)intValue;
+                    if (value is long longValue)
+                        return (T)(object)(int)longValue;
+                    if (value is decimal decimalValue)
+                        return (T)(object)(int)decimalValue;
+                }
+
+                if (typeof(T) == typeof(string) && value != null)
+                    return (T)(object)value.ToString();
+
+                return (T)value;
+            }
+            catch
+            {
+                return default(T);
+            }
+        }
+        return default(T);
+    }
+
+
 }
 
 public class AuthorizeDocumentDto
 {
     public int DocumentId { get; set; }
     public string Observation { get; set; }
+    public string Action { get; set; } // "APPROVE" or "REJECT"
 }
 
 public class GetPendingAuthorization : TableFiltersDto
 {
     public string? DocumentCategoryFilter { get; set; }
     public bool IsAuthorized { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
+    public string? ActionType { get; set; }
 }
 
+public class GetDocumentsPendingApprovalDto : TableFiltersDto
+{
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
+
+}
 public class GetAuthorizedDocumentsDto : TableFiltersDto
 {
-    public string UserId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
 }
 
 public class GetDocumentsPendingTrainingDto : TableFiltersDto
@@ -2508,4 +4435,41 @@ public class GetDocumentsPendingTrainingDto : TableFiltersDto
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
+    public string? Requeststatus { get; set; }
+}
+
+public class DocumentsPendingTrainingCountsDto
+{
+    public int ClassroomCount { get; set; }
+    public int OnlineCount { get; set; }
+    public int TotalCount { get; set; }
+}
+
+public class GetApprovedDocumentsFilterDto : TableFiltersDto
+{
+    public DateTime? DateFrom { get; set; }
+    public DateTime? DateTo { get; set; }
+
+    /// <summary>
+    /// Accepts "ApprovalDate" or "CreationDate"
+    /// </summary>
+    public string? DateFilterType { get; set; }
+
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+    public string? DocumentTypeCode { get; set; }
+    public string? ApprovedFromDate { get; set; }
+    public string? ApprovedToDate { get; set; }
+    public string? RequestCreatedFromDate { get; set; }
+    public string? RequestCreatedToDate { get; set; }
+    public string? RequestCreatedBy { get; set; }
+}
+
+public class PendingAuthorizationCountsDto
+{
+    public int PendingCount { get; set; }
+    public int AuthorizedCount { get; set; }
+    public int RejectedCount { get; set; }
 }

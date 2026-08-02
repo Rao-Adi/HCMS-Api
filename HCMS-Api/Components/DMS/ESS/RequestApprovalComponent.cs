@@ -71,7 +71,7 @@ public class RequestApprovalComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentRequestId}',
                 '{input.WorkflowStepId}',
                 '{input.ApproverUserId}',
@@ -94,8 +94,8 @@ public class RequestApprovalComponent
             SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
                      LEFT JOIN Companies c
-                     ON d.CompanyId = c.Id
-            WHERE ra.Id = {newId}";
+                     ON ra.CompanyId = c.Id
+            WHERE ra.Id = {newId} AND ra.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -107,7 +107,7 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -144,13 +144,13 @@ public class RequestApprovalComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM RequestApprovals
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("RequestApproval not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -158,7 +158,7 @@ public class RequestApprovalComponent
                 SET IsDeleted = True, 
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -173,9 +173,11 @@ public class RequestApprovalComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE ra.IsDeleted = False 
-                  AND ra.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE ra.IsDeleted = False AND ra.CompanyId = " + CompanyId + @" AND ra.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -194,6 +196,10 @@ public class RequestApprovalComponent
                 "NAME" => "ra.DocumentRequestId",
                 "CODE" => "ra.Id",
                 "ISACTIVE" => "ra.IsActive",
+                "CREATEDAT" => "ra.CreatedAt",
+                "CREATEDBY" => "ra.CreatedBy",
+                "LASTMODIFIEDAT" => "ra.LastModifiedAt",
+                "LASTMODIFIEDBY" => "ra.LastModifiedBy",
                 _ => "ra.DocumentRequestId"
             };
 
@@ -232,7 +238,7 @@ public class RequestApprovalComponent
                 .Select(row => new RequestApprovalReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentRequestId = row.Table.Columns.Contains("DocumentRequestId") ? row.Field<int>("DocumentRequestId") :0,
                     WorkflowStepId = row.Table.Columns.Contains("WorkflowStepId") ? row.Field<int>("WorkflowStepId") : 0,
@@ -275,26 +281,29 @@ public class RequestApprovalComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
                      LEFT JOIN Companies c
                      ON d.CompanyId = c.Id
-                WHERE ra.Id = {code}
+                WHERE ra.Id = {code} AND ra.CompanyId = {CompanyId}
                   AND ra.IsActive = True
                   AND ra.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("RequestApproval not found", 404);
 
             DataRow row = dt.Rows[0];
 
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),
@@ -334,13 +343,13 @@ public class RequestApprovalComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM RequestApprovals
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("RequestApproval not found", 200);
+                throw new CustomException("RequestApproval not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -350,7 +359,7 @@ public class RequestApprovalComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -362,8 +371,8 @@ public class RequestApprovalComponent
                  SELECT ra.*, c.Id AS CompanyId, c.Name AS Company
                      FROM RequestApprovals ra
                      LEFT JOIN Companies c
-                     ON d.CompanyId = c.Id
-            WHERE ta.Id = '{input.Id}'";
+                     ON ra.CompanyId = c.Id
+            WHERE ra.Id = {input.Id} AND ra.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -375,7 +384,7 @@ public class RequestApprovalComponent
             return new RequestApprovalReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentRequestId = row.Field<int>("DocumentRequestId"),
                 WorkflowStepId = row.Field<int>("WorkflowStepId"),

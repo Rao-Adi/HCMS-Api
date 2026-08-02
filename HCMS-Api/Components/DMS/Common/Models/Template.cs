@@ -73,9 +73,7 @@ public class TemplateReadDto : AuditableEntity
 
 public class TemplateCreateDto
 {
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+     
 
     public string DocumentTypeCode { get; set; }
 
@@ -83,7 +81,7 @@ public class TemplateCreateDto
     public string TemplateName { get; set; } = null!;
 
     [MaxLength(500)]
-    public string TemplateFileUrl { get; set; } = null!;
+    public string? TemplateFileUrl { get; set; } = null!;
 
     public int TemplateType { get; set; }
      
@@ -104,9 +102,7 @@ public class TemplateCreateDto
 public class TemplateUpdateDto
 { 
     public int Id { get; set; }
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; } 
+     
 
     public string DocumentTypeCode { get; set; }
 

@@ -189,7 +189,7 @@ public class DMSDocumentAttributeController : Controller
             {
                 Success = true,
                 Data = await _documentAttributeComponent.CreateAsync(input),
-                Message = "Document Approval created successfully.",
+                Message = "Document Attribute added successfully.",
                 Code = 200
             });
         }
@@ -212,11 +212,11 @@ public class DMSDocumentAttributeController : Controller
     {
         try
         {
-            return Ok(new HttpApiResponse<DocumentAttributeReadDto>()
+            return Ok(new HttpApiResponse<List<DocumentAttributeReadDto>>()
             {
                 Success = true,
                 Data = await _documentAttributeComponent.UpdateAsync(input),
-                Message = "Document Approval updated successfully.",
+                Message = "Document Attribute updated successfully.",
                 Code = 200
             });
         }
@@ -246,7 +246,7 @@ public class DMSDocumentAttributeController : Controller
                 {
                     Success = false,
                     Data = new { },
-                    Message = "Document Approval not found",
+                    Message = "Document Attribute not found",
                     Code = 404
                 });
             }
@@ -255,7 +255,7 @@ public class DMSDocumentAttributeController : Controller
             {
                 Success = true,
                 Data = await _documentAttributeComponent.DeleteAsync(code),
-                Message = "Document Approval deleted successfully.",
+                Message = "Document Attribute deleted successfully.",
                 Code = 200
             });
         }

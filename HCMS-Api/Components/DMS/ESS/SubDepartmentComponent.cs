@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -52,23 +52,24 @@ public class SubDepartmentComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Sub-Department name is required.", 200);
+                throw new CustomException("Sub-Department name is required.", 400);
 
             if (string.IsNullOrWhiteSpace(input.DepartmentCode))
-                throw new CustomException("Department code is required.", 200);
+                throw new CustomException("Department code is required.", 400);
 
             // 🔍 Validate parent Department exists
             string departmentCheckQuery = $@"
                         SELECT COUNT(1)
                         FROM Departments
                         WHERE Code = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int departmentExists =
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentCheckQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Parent Department not found", 200);
+                throw new CustomException("Parent Department not found", 404);
 
             // 🚫 Prevent duplicate Sub-Department name PER Department
             string duplicateCheckQuery = $@"
@@ -76,6 +77,7 @@ public class SubDepartmentComponent
                         FROM SubDepartments
                         WHERE Name = '{input.Name.Replace("'", "''")}'
                           AND DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int exists =
@@ -83,13 +85,14 @@ public class SubDepartmentComponent
 
             if (exists > 0)
                 throw new CustomException(
-                    "Sub-Department already exists in this Department", 200);
+                    "Sub-Department already exists in this Department", 409);
 
             // 🔢 Generate next SCT code PER Department
             string lastCodeQuery = $@"
                         SELECT Code
                         FROM SubDepartments
                         WHERE DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND Code IS NOT NULL
                         ORDER BY Id DESC
                         LIMIT 1";
@@ -164,7 +167,7 @@ public class SubDepartmentComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(s.LastModifiedBy::text, '0')
-                    WHERE s.Id = {newId}";
+                    WHERE s.Id = {newId} AND s.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -216,12 +219,13 @@ public class SubDepartmentComponent
                 SELECT COUNT(1)
                 FROM SubDepartments
                 WHERE Code = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -229,7 +233,7 @@ public class SubDepartmentComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}'";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -244,8 +248,12 @@ public class SubDepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE subd.IsDeleted = False 
+                WHERE subd.IsDeleted = False AND subd.IsActive = True 
+                  AND subd.CompanyId = " + CompanyId + @"
                   AND subd.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -265,6 +273,10 @@ public class SubDepartmentComponent
                 "NAME" => "subd.Name",
                 "CODE" => "subd.Code",
                 "ISACTIVE" => "subd.IsActive",
+                "CREATEDAT" => "subd.CreatedAt",
+                "CREATEDBY" => "subd.CreatedBy",
+                "LASTMODIFIEDAT" => "subd.LastModifiedAt",
+                "LASTMODIFIEDBY" => "subd.LastModifiedBy",
                 _ => "subd.Name"
             };
 
@@ -360,11 +372,15 @@ public class SubDepartmentComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM SubDepartments
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -390,6 +406,9 @@ public class SubDepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"SELECT s.*, c.Name AS Company, d.Name AS Department,
                 -- 🔹 Audit Fields
                  COALESCE(e.EmployeeName, s.CreatedBy::text) AS CreatedByName,
@@ -410,14 +429,15 @@ public class SubDepartmentComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(s.LastModifiedBy::text, '0')
-                WHERE subd.Code = '{code}'
-                  AND subd.IsActive = True
-                  AND subd.IsDeleted = False";
+                WHERE s.Code = '{code}'
+                  AND s.CompanyId = {CompanyId}
+                  AND s.IsActive = True
+                  AND s.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -452,6 +472,9 @@ public class SubDepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"SELECT s.*, c.Name AS Company, d.Name AS Department,
                 -- 🔹 Audit Fields
                  COALESCE(e.EmployeeName, s.CreatedBy::text) AS CreatedByName,
@@ -472,9 +495,10 @@ public class SubDepartmentComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(s.LastModifiedBy::text, '0')
-                WHERE subd.DepartmentCode = '{departmentCode}'
-                  AND subd.IsActive = True
-                  AND subd.IsDeleted = False";
+                WHERE s.DepartmentCode = '{departmentCode}'
+                  AND s.CompanyId = {CompanyId}
+                  AND s.IsActive = True
+                  AND s.IsDeleted = False";
 
             DataSet ds = await _common.ExecuteSqlQueryMultiple(query);
             DataTable subDepartmentTable = ds.Tables[0];  // your first result set (paged data)
@@ -482,7 +506,7 @@ public class SubDepartmentComponent
                                                       // ✅ SAFETY CHECKS
             if (subDepartmentTable == null || subDepartmentTable.Rows.Count == 0)
             {
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
             }
 
             var divisions = subDepartmentTable.AsEnumerable()
@@ -540,26 +564,28 @@ public class SubDepartmentComponent
                         SELECT COUNT(1)
                         FROM SubDepartments
                         WHERE Code = '{input.Code.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int subDeptExists =
                 Convert.ToInt32(_common.ExecuteScalarQuery(subDeptExistsQuery));
 
             if (subDeptExists == 0)
-                throw new CustomException("Sub-Department not found", 200);
+                throw new CustomException("Sub-Department not found", 404);
 
             // 🔍 Validate parent Department exists
             string departmentExistsQuery = $@"
                         SELECT COUNT(1)
                         FROM Departments
                         WHERE Code = '{input.DepartmentCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int departmentExists =
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Parent Department not found", 200);
+                throw new CustomException("Parent Department not found", 404);
 
             // 🚫 Prevent duplicate name PER Department
             string duplicateNameQuery = $@"
@@ -568,6 +594,7 @@ public class SubDepartmentComponent
                         WHERE Name = '{input.Name.Replace("'", "''")}'
                           AND DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}'
                           AND Code <> '{input.Code.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int duplicate =
@@ -586,7 +613,7 @@ public class SubDepartmentComponent
                         IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                         LastModifiedAt = NOW(),
                         LastModifiedBy = '{empCode.Replace("'", "''")}'
-                    WHERE Code = '{input.Code.Replace("'", "''")}'";
+                    WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -614,7 +641,7 @@ public class SubDepartmentComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(s.LastModifiedBy::text, '0')
-                    WHERE s.Code = '{input.Code.Replace("'", "''")}'";
+                    WHERE s.Code = '{input.Code.Replace("'", "''")}' AND s.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -653,10 +680,13 @@ public class SubDepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM SubDepartments 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

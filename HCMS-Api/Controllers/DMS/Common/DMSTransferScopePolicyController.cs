@@ -35,7 +35,7 @@ public class DMSTransferScopePolicyController : Controller
     }
 
     [HttpPost("get-all-transfer-scope-policies")]
-    public async Task<IActionResult> GetAllTrainingPolicies(TableFiltersDto input)
+    public async Task<IActionResult> GetAllTransferScopePolicies(TableFiltersDto input)
     {
         try
         {

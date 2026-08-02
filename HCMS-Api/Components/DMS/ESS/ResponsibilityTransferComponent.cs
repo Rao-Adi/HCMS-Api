@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -45,7 +45,7 @@ public class ResponsibilityTransferComponent
     }
 
 
-    public async Task<ResponsibilityTransferReadDto> CreateAsync(ResponsibilityTransferCreateDto input)
+    public async Task<bool> CreateAsync(ResponsibilityTransferCreateDto input)
     {
         try
         {
@@ -68,30 +68,69 @@ public class ResponsibilityTransferComponent
             }
 
             // FSD UC-16 Post-condition: Route to Division Head for approval.
+            //var empFromDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            //    SELECT DivisionCode, DepartmentCode 
+            //    FROM UserAccessLevels 
+            //    WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
+            //      AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeFrom });
             var empFromDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT DivisionCode, DepartmentCode 
-                FROM UserAccessLevels 
-                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
-                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeFrom });
+                SELECT 
+                    e.empcode, 
+                    e.firstname || ' ' || e.midname || ' ' || e.lastname AS FullName,
+                    -- Division details
+                    div.Name AS DivisionName,
+                    div.sdlid AS DivisionId,
+                    -- Department details (Using mdptid)
+                    dept.Name AS DepartmentName,
+                    dept.code AS DepartmentCode
+                FROM public.tblemployee e
+                -- Join for Division using divid
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON e.divid = div.sdlid 
+                    AND div.smsid = 70 
+                -- Join for Department using mdptid (As per your data analysis)
+                LEFT JOIN public.tblsetupsdetail dept 
+                    ON e.mdptid = dept.sdlid 
+                    AND dept.smsid = 84
+                WHERE e.empcode = @EmpCode
+                  AND e.companyid = @CompanyId;", 
+                  new { EmpCode = input.EmployeeFrom, CompanyId });
 
             var empToDetails = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT DivisionCode, DepartmentCode 
-                FROM UserAccessLevels 
-                WHERE LTRIM(RTRIM(EmployeeCode), '0') = LTRIM(RTRIM(@EmpCode), '0') 
-                  AND IsActive = TRUE LIMIT 1", new { EmpCode = input.EmployeeTo });
+                SELECT 
+                    e.empcode, 
+                    e.firstname || ' ' || e.midname || ' ' || e.lastname AS FullName,
+                    -- Division details
+                    div.Name AS DivisionName,
+                    div.sdlid AS DivisionId,
+                    -- Department details (Using mdptid)
+                    dept.Name AS DepartmentName,
+                    dept.code AS DepartmentCode
+                FROM public.tblemployee e
+                -- Join for Division using divid
+                LEFT JOIN public.tblsetupsdetail div 
+                    ON e.divid = div.sdlid 
+                    AND div.smsid = 70 
+                -- Join for Department using mdptid (As per your data analysis)
+                LEFT JOIN public.tblsetupsdetail dept 
+                    ON e.mdptid = dept.sdlid 
+                    AND dept.smsid = 84
+                WHERE e.empcode = @EmpCode
+                  AND e.companyid = @CompanyId;", 
+                  new { EmpCode = input.EmployeeTo, CompanyId });
             
-            if (empFromDetails == null || string.IsNullOrWhiteSpace(empFromDetails.departmentcode))
+            if (empFromDetails == null)
             {
                 throw new CustomException("Cannot determine the department for the 'Employee From'.", 400);
             }
 
-            if (empToDetails == null || string.IsNullOrWhiteSpace(empToDetails.departmentcode))
+            if (empToDetails == null)
             {
                 throw new CustomException("Cannot determine the department for the 'Employee To'.", 400);
             }
 
             // UC-16 Business Rule: Initial transfers must be contained within the same Department.
-            if (!string.Equals((string)empFromDetails.departmentcode, (string)empToDetails.departmentcode, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals((string)empFromDetails.DepartmentCode, (string)empToDetails.DepartmentCode, StringComparison.OrdinalIgnoreCase))
             {
                 throw new CustomException("Transfers must be contained within the same Department for operational control.", 400);
             }
@@ -100,38 +139,57 @@ public class ResponsibilityTransferComponent
             var policy = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT ApprovalUserId, ApprovalRoleId 
                 FROM TransferWorkflowPolicies 
-                WHERE DivisionCode = @DivCode AND IsActive = TRUE", new { DivCode = empFromDetails.divisioncode });
+                WHERE DivisionCode::Integer = @DivCode AND IsActive = TRUE AND CompanyId = @CompanyId", new { DivCode = empFromDetails.divisionid, CompanyId = CompanyId });
 
-            int approverId = policy?.approvaluserid ?? 0;
-            int approvalRoleId = policy?.approvalroleid ?? 0;
+            string approverId = policy?.approvaluserid ?? string.Empty;
+            string approvalRoleId = policy?.approvalroleid ?? string.Empty;
 
-            if (approverId == 0 && approvalRoleId > 0)
+            if (approverId == string.Empty && approvalRoleId != string.Empty)
             {
                 // Resolve role to specific user using Job Profiles
-                approverId = await _common.ExecuteScalarAsync<int>(@"
-                    SELECT e.empid 
+                approverId = await _common.ExecuteScalarAsync<string>(@"
+                    SELECT e.empCode 
                     FROM public.tblEmployee e
-                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE 
                     INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 LIMIT 1",
-                    new { DivCode = empFromDetails.divisioncode, RoleId = approvalRoleId });
+                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId LIMIT 1",
+                    new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId, CompanyId = CompanyId });
             }
 
-            if (approverId == 0)
+            if (approverId == string.Empty)
             {
                 // UC-18 Default Routing: Automatically route to default generic Division Head role
-                var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
-                    SELECT e.empid 
-                    FROM public.tblEmployee e
-                    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
-                    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
-                    new { DivCode = empFromDetails.divisioncode });
+                //var defaultDivHead = await _common.QueryFirstOrDefaultAsync<int?>(@"
+                //    SELECT e.empid 
+                //    FROM public.tblEmployee e
+                //    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+                //    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
+                //    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                //    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
+                //    new { DivCode = empFromDetails.divisioncode });
+                var defaultDivHead = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT 
+                        e.empid, 
+                        e.empcode, 
+                        e.firstname, 
+                        e.lastname, 
+                        dsg.name AS Designation
+                    FROM public.tblemployee e
+                    JOIN public.tblsetupsdetail dsg ON e.dsgid = dsg.sdlid
+                    WHERE e.divid = @DivCode AND e.CompanyId = @CompanyId
+                    ORDER BY 
+                        CASE 
+                            WHEN dsg.name LIKE '%Sr. Director%' THEN 1
+                            WHEN dsg.name LIKE '%Director%' THEN 2
+                            WHEN dsg.name LIKE '%Sr. General Manager%' THEN 3
+                            WHEN dsg.name LIKE '%General Manager%' THEN 4
+                            ELSE 5 
+                        END ASC
+                    LIMIT 1",
+                    new { DivCode = empFromDetails.divisionid, CompanyId = CompanyId });
+                approverId = defaultDivHead.empcode;
 
-                approverId = defaultDivHead ?? 0;
-
-                if (approverId == 0)
+                if (approverId == string.Empty)
                     throw new CustomException("Approval routing policy not found, and no default Division Head could be identified.", 400);
             }
 
@@ -144,7 +202,7 @@ public class ResponsibilityTransferComponent
                     Directory.CreateDirectory(uploadsRoot);
 
                 var fileExtension = Path.GetExtension(input.Attachment.FileName);
-                var fileName = $"{Guid.NewGuid()}{fileExtension}"; // Unique filename
+                var fileName = input.Attachment.FileName; 
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -193,49 +251,51 @@ public class ResponsibilityTransferComponent
             };
 
             int newId = await _common.ExecuteScalarAsync<int>(insertQuery, insertParams);
+            return newId > 0 ? true : false;
 
-            // Parameterized SELECT query
-            string selectQuery = @"
-            SELECT rt.*, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
-            FROM ResponsibilityTransfers rt
-            LEFT JOIN Companies c
-            ON rt.CompanyId = c.Id
-            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
-            WHERE rt.Id = @Id";
+            //// Parameterized SELECT query
+            //string selectQuery = @"
+            //SELECT rt.*, c.Name AS Company, uf.firstname || ' ' || uf.midname || ' ' || uf.lastname AS EmployeeFromName, 
+            //    ut.firstname || ' ' || ut.midname || ' ' || ut.lastname AS EmployeeToName
+            //    FROM ResponsibilityTransfers rt
+            //    LEFT JOIN Companies c
+            //    ON rt.CompanyId = c.Id
+            //    LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
+            //    LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+            //WHERE rt.Id = @Id";
 
-            var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
+            //var newRecord = await _common.QueryFirstOrDefaultAsync<dynamic>(selectQuery, new { Id = newId });
 
-            if (newRecord == null)
-                throw new Exception("Failed to fetch created responsibility transfer request.");
+            //if (newRecord == null)
+            //    throw new Exception("Failed to fetch created responsibility transfer request.");
 
-            // Map dynamic object to DTO
-            return new ResponsibilityTransferReadDto
-            {
-                Id = newRecord.id,
-                CompanyId = newRecord.companyid,
-                Company = newRecord.company,
-                EmployeeFrom = newRecord.employeefrom,
-                EmployeeTo = newRecord.employeeto,
-                EmployeeFromName = newRecord.employeefromname,
-                EmployeeToName = newRecord.employeetoname,
-                ReasonForTransfer = newRecord.reasonfortransfer,
-                EffectiveDateFrom = newRecord.effectivedatefrom,
-                EffectiveDateTo = newRecord.effectivedateto ?? null, // Handle nullable DateOnly
-                PermanentTransfer = newRecord.permanenttransfer ?? false, // Handle nullable bool
-                Attachment = newRecord.attachment,
-                Remarks = newRecord.remarks,
-                Status = newRecord.status,
-                ApproverId = newRecord.approverid,
-                Observation = newRecord.observation,
-                ActionDate = newRecord.actiondate,
-                IsDeleted = newRecord.isdeleted,
-                IsActive = newRecord.isactive,
-                CreatedAt = newRecord.createdat.ToString("yyyy-MM-dd HH:mm:ss"),
-                CreatedBy = newRecord.createdby,
-                LastModifiedAt = newRecord.lastmodifiedat.ToString("yyyy-MM-dd HH:mm:ss"),
-                LastModifiedBy = newRecord.lastmodifiedby
-            };
+            //// Map dynamic object to DTO
+            //return new ResponsibilityTransferReadDto
+            //{
+            //    Id = newRecord.id,
+            //    CompanyId = newRecord.companyid,
+            //    Company = newRecord.company,
+            //    EmployeeFrom = newRecord.employeefrom,
+            //    EmployeeTo = newRecord.employeeto,
+            //    EmployeeFromName = newRecord.employeefromname,
+            //    EmployeeToName = newRecord.employeetoname,
+            //    ReasonForTransfer = newRecord.reasonfortransfer,
+            //    EffectiveDateFrom = newRecord.effectivedatefrom.ToString("yyyy-MM-dd"),
+            //    EffectiveDateTo = newRecord.effectivedateto.ToString("yyyy-MM-dd") ?? null, // Handle nullable DateOnly
+            //    PermanentTransfer = newRecord.permanenttransfer ?? false, // Handle nullable bool
+            //    Attachment = newRecord.attachment,
+            //    Remarks = newRecord.remarks,
+            //    Status = newRecord.status,
+            //    ApproverId = newRecord.approverid,
+            //    Observation = newRecord.observation,
+            //    ActionDate = newRecord.actiondate ?? null,
+            //    IsDeleted = newRecord.isdeleted,
+            //    IsActive = newRecord.isactive,
+            //    CreatedAt = newRecord.createdat.ToString("yyyy-MM-dd HH:mm:ss"),
+            //    CreatedBy = newRecord.createdby,
+            //    LastModifiedAt = newRecord.lastmodifiedat.ToString("yyyy-MM-dd HH:mm:ss"),
+            //    LastModifiedBy = newRecord.lastmodifiedby
+            //};
         }
         catch
         {
@@ -258,13 +318,13 @@ public class ResponsibilityTransferComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM ResponsibilityTransfers
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("ResponsibilityTransfers not found", 200);
+                throw new CustomException("ResponsibilityTransfers not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -273,7 +333,7 @@ public class ResponsibilityTransferComponent
                     IsActive = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -288,9 +348,11 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE rt.IsDeleted = False 
-                  AND rt.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE rt.IsDeleted = False AND rt.CompanyId = " + CompanyId + @" AND rt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Add status filter
             whereClause += $" AND rt.Status = {input.StatusId}";
@@ -316,6 +378,10 @@ public class ResponsibilityTransferComponent
                 "EFFECTIVEDATETO" => "rt.EffectiveDateTo",
                 "REMARKS" => "rt.Remarks", 
                 "ISACTIVE" => "rt.IsActive",
+                "CREATEDAT" => "rt.CreatedAt",
+                "CREATEDBY" => "rt.CreatedBy",
+                "LASTMODIFIEDAT" => "rt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "rt.LastModifiedBy",
                 _ => "rt.EMPLOYEEFROM"
             };
 
@@ -327,8 +393,8 @@ public class ResponsibilityTransferComponent
                          SELECT rt.*, c.Id AS CompanyId, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                             FROM ResponsibilityTransfers rt
                             LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode
-                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode
+                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -408,19 +474,22 @@ public class ResponsibilityTransferComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                  SELECT rt.*, c.Id AS CompanyId, c.Name AS Company
                     FROM ResponsibilityTransfers rt
                     LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
-                WHERE rt.Id = {code}
+                WHERE rt.Id = {code} AND rt.CompanyId = {CompanyId}
                   AND rt.IsActive = True
                   AND rt.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("ResponsibilityTransfers not found", 200);
+                throw new CustomException("ResponsibilityTransfers not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -477,13 +546,13 @@ public class ResponsibilityTransferComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM ResponsibilityTransfers
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("ResponsibilityTransfers not found", 200);
+                throw new CustomException("ResponsibilityTransfers not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -500,13 +569,14 @@ public class ResponsibilityTransferComponent
                 IsActive = @IsActive,
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = @Id";
+            WHERE Id = @Id AND CompanyId = @CompanyId";
 
             var updateParams = new
             {
                 input.EmployeeFrom, input.EmployeeTo, input.ReasonForTransfer, input.EffectiveDateFrom,
                 input.EffectiveDateTo, input.PermanentTransfer, input.Attachment, input.Remarks,
-                IsActive = input.IsActive, Id = input.Id
+                IsActive = input.IsActive, Id = input.Id,
+                CompanyId
             };
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
@@ -520,7 +590,7 @@ public class ResponsibilityTransferComponent
                     FROM ResponsibilityTransfers rt
                     LEFT JOIN Companies c
                     ON rt.CompanyId = c.Id
-            WHERE rt.Id = '{input.Id}'";
+            WHERE rt.Id = {input.Id} AND rt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -578,7 +648,7 @@ public class ResponsibilityTransferComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"
-                WHERE rt.IsDeleted = FALSE 
+                WHERE rt.IsDeleted = FALSE AND rt.CompanyId = " + CompanyId + @"
                   AND rt.ApproverId = @ApproverId 
                   AND rt.Status = @Status";
 
@@ -610,8 +680,8 @@ public class ResponsibilityTransferComponent
                 LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.lastname, ''))) AS EmployeeToName
                 FROM ResponsibilityTransfers rt
                 LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -621,7 +691,7 @@ public class ResponsibilityTransferComponent
                 FROM ResponsibilityTransfers rt
                 {whereClause};";
 
-            var queryParams = new { ApproverId = empCode, Status = input.Status };
+            var queryParams = new { ApproverId = empCode, Status = input.Status, CompanyId = CompanyId };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -674,8 +744,8 @@ public class ResponsibilityTransferComponent
                     ActionDate = NOW(),
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
-                WHERE Id = @Id;", 
-                new { Status = newStatus, input.Observation, empCode, Id = input.TransferId }, tx);
+                WHERE Id = @Id AND CompanyId = @CompanyId;", 
+                new { Status = newStatus, input.Observation, UserId = empCode, Id = input.TransferId, CompanyId = CompanyId }, tx);
 
             // UC-17: Workflow Transfer Logic
             if (newStatus == 2)
@@ -684,8 +754,9 @@ public class ResponsibilityTransferComponent
                     UPDATE WorkflowExecutionSteps
                     SET AssignedUserId = @EmpToCode
                     WHERE AssignedUserId = @EmpFromCode
-                    AND Decision IS NULL;",
-                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom }, tx);
+                    AND Decision IS NULL
+                    AND CompanyId = @CompanyId;",
+                    new { EmpToCode = transfer.employeeto, EmpFromCode = transfer.employeefrom, CompanyId = CompanyId }, tx);
 
                 // Send notifications to both parties
                 var placeholders = new Dictionary<string, string> {
@@ -695,8 +766,8 @@ public class ResponsibilityTransferComponent
                     { "Date To", transfer.effectivedateto != null ? transfer.effectivedateto.ToString("yyyy-MM-dd") : "Permanent" }
                 };
                  
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeefrom, placeholders);
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeeto, placeholders);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeefrom, placeholders, tx);
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.TransferRequestApproval, CompanyId, input.TransferId, transfer.employeeto, placeholders, tx);
             }
 
             await tx.CommitAsync();

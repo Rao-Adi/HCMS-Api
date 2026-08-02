@@ -1,12 +1,12 @@
-﻿﻿﻿﻿using Dapper;
+﻿using Dapper;
 using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
-using HCMS_Api.Components.DMS.Common.Models; 
-using System.Data; 
+using HCMS_Api.Components.DMS.Common.Models;
+using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -38,9 +38,9 @@ public class WorkflowStepComponent
         _configuration = configuration;
         _clientContextService = clientContextService;
         _dapperService = dapper;
-        _common = common; 
+        _common = common;
     }
-     
+
 
     public async Task<bool> DeleteAsync(string code)
     {
@@ -56,13 +56,13 @@ public class WorkflowStepComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM WorkflowStepDefinitions
-                WHERE Id = {code}
+                WHERE Id = {code} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("WorkflowStepDefinitions not found", 200);
+                throw new CustomException("WorkflowStepDefinitions not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -70,7 +70,7 @@ public class WorkflowStepComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode}'
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -85,8 +85,11 @@ public class WorkflowStepComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE ws.IsDeleted = False 
+                WHERE ws.IsDeleted = False AND ws.CompanyId = " + CompanyId + @"
                   AND ws.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -105,6 +108,10 @@ public class WorkflowStepComponent
             {
                 "ID" => "ws.ID",
                 "ISACTIVE" => "ws.IsActive",
+                "CREATEDAT" => "ws.CreatedAt",
+                "CREATEDBY" => "ws.CreatedBy",
+                "LASTMODIFIEDAT" => "ws.LastModifiedAt",
+                "LASTMODIFIEDBY" => "ws.LastModifiedBy",
                 _ => "ws.Id"
             };
 
@@ -197,95 +204,89 @@ public class WorkflowStepComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
-            int CompanyId = Convert.ToInt32(_CompanyId);
+            int CompanyId = Convert.ToInt32(_CompanyId); 
 
-            //string query = $@"
-            //    SELECT ws.*
-            //    FROM Vw_WorkflowStepDefinitions ws
-            //    JOIN WorkflowPolicies wp
-            //        ON wp.Id = ws.WorkflowPolicyId
-            //        AND wp.CompanyId = ws.CompanyId
-            //    WHERE wp.CompanyId = @CompanyId
-            //    AND wp.EntityType = @EntityType
-            //    AND wp.DocumentTypeCode = @DocumentTypeCode
-            //    -- Allow filtering by specific policy name or ID
-            //    AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-            //    AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-            //    AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-            //    AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-            //    AND ws.IsActive = TRUE
-            //    AND ws.IsDeleted = FALSE
-            //    ORDER BY ws.StepOrder, ws.employeecode ASC;";
             string query = $@"
-                SELECT 
-                    wsd.Id AS id, 
-                    wsd.CompanyId AS companyid, 
-                    c.Name AS company,
-                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
-                    wp.Id AS workflowpolicyid, 
-                    wp.Name AS workflowpolicyname,
-                    wsd.StepOrder AS steporder, 
-                    wsd.StepGroup AS stepgroup, 
-                    wsd.StepType AS steptype,
-                    wsd.RoleId AS roleid, 
-                    wsd.DesignationId AS designationid, 
-                    wsd.UserId AS userid, 
-                    --wsd.ApprovalLevel AS approvallevel, 
-                    wsd.RequiresAllApprovals AS requiresallapprovals,
-                    wsd.RequiresAllApprovals AS isparallelapproval,
-                    FALSE AS canedit,
-                    FALSE AS requirecrossfunctionalhead,
-                    e.empcode AS employeecode, 
-                    e.firstname, e.midname, e.lastname,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
-                    COALESCE(r_step.name, r_emp.name) AS role, 
-                    COALESCE(r_step.name, r_emp.name) AS userrole, 
-                    COALESCE(des_step.name, des_fallback.name) AS designation,
-                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
-                    wp.DocumentTypeCode AS documenttypecode, 
-                    dt.Name AS documenttype,
-                    wsd.IsActive AS isactive, 
-                    wsd.IsDeleted AS isdeleted, 
-                    wsd.CreatedAt AS createdat, 
-                    wsd.CreatedBy AS createdby, 
-                    wsd.LastModifiedAt AS lastmodifiedat, 
-                    wsd.LastModifiedBy AS lastmodifiedby
-                FROM WorkflowStepDefinitions wsd
-                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
-                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0')
-                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
-                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
-                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
-                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
-                WHERE wp.CompanyId = @CompanyId
-                AND wp.EntityType = @EntityType
-                AND wp.DocumentTypeCode = @DocumentTypeCode
-                -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-                AND wsd.IsActive = TRUE
-                AND wsd.IsDeleted = FALSE
-                ORDER BY wsd.StepOrder, e.empcode ASC;
-                ";
+                    WITH SetupsLookup AS (
+                        SELECT sdlid, name, code 
+                        FROM tblsetupsdetail
+                    )
+                    SELECT DISTINCT
+                        wsd.Id AS id, 
+                        wsd.CompanyId AS companyid, 
+                        c.Name AS company,
+                        wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                        wp.Id AS workflowpolicyid, 
+                        wp.Name AS workflowpolicyname,
+                        wsd.StepOrder AS steporder, 
+                        wsd.StepGroup AS stepgroup, 
+                        wsd.StepType AS steptype,
+                        wsd.RoleId AS roleid, 
+                        wsd.DesignationId AS designationid, 
+                        wsd.UserId AS userid, 
+                        wsd.RequiresAllApprovals AS requiresallapprovals,
+                        wsd.RequiresAllApprovals AS isparallelapproval,
+                        FALSE AS canedit,
+                        FALSE AS requirecrossfunctionalhead,
+                        e.empcode AS employeecode, 
+                        e.firstname, e.midname, e.lastname,
+                        TRIM(CONCAT(e.firstname, ' ', e.midname, ' ', e.lastname)) AS employeename,
+                        COALESCE(r_step.name, r_emp.name) AS role, 
+                        COALESCE(r_step.name, r_emp.name) AS userrole, 
+                        COALESCE(des_step.name, des_fallback.name) AS designation,
+                        COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                        wp.DocumentTypeCode AS documenttypecode, 
+                        wp.DivisionCode,
+                        wp.DepartmentCode,
+                        wp.SubDepartmentCode,
+                        wp.BusinessDomainCode,
+                        dt.Name AS documenttype,
+                        wsd.IsActive AS isactive, 
+                        wsd.IsDeleted AS isdeleted, 
+                        wsd.CreatedAt AS createdat, 
+                        wsd.CreatedBy AS createdby, 
+                        wsd.LastModifiedAt AS lastmodifiedat, 
+                        wsd.LastModifiedBy AS lastmodifiedby
+                    FROM WorkflowStepDefinitions wsd
+                    JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                    JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                    LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                    LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+                    LEFT JOIN tblEmployee e ON e.empcode::bigint = wsd.UserId::bigint   AND  e.CompanyId = @CompanyId
+                    LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND ejp.active IS NOT FALSE
+                    LEFT JOIN SetupsLookup r_step ON r_step.sdlid = wsd.RoleId
+                    LEFT JOIN SetupsLookup r_emp ON r_emp.sdlid = ejp.roleid
+                    LEFT JOIN SetupsLookup des_step ON des_step.sdlid = wsd.DesignationId
+                    LEFT JOIN SetupsLookup des_fallback ON des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+                    WHERE wp.CompanyId = @CompanyId
+                    AND wp.EntityType = @EntityType
+                    AND wp.DocumentTypeCode = @DocumentTypeCode
+                    
+                    -- UPDATED: Treats NULL or 0 as an inactive filter, otherwise matches exactly
+                    AND (COALESCE(@WorkflowPolicyId, 0) = 0 OR wp.Id = @WorkflowPolicyId)
+
+                    -- Exact match filters: Treats NULL and empty string '' as identical values, without acting as wildcards
+                    AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode, '')
+                    AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode, '')
+                    AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode, '')
+                    AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode, '')
+
+                    AND wsd.IsActive = TRUE
+                    AND wsd.IsDeleted = FALSE
+                    ORDER BY wsd.StepOrder, e.empcode ASC;";
+
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
             var queryParams = new
             {
                 CompanyId = CompanyId,
                 input.EntityType,
+                input.WorkflowPolicyId,
                 input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode
+                DivisionCode = Normalize(input.DivisionCode),
+                DepartmentCode = Normalize(input.DepartmentCode),
+                SubDepartmentCode = Normalize(input.SubDepartmentCode),
+                BusinessDomainCode = Normalize(input.BusinessDomainCode)
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
@@ -331,7 +332,7 @@ public class WorkflowStepComponent
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
 
                     DocumentType = GetValue<string>(rowDict, "documenttype"),
-                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),                    
+                    DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),
 
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
@@ -348,7 +349,7 @@ public class WorkflowStepComponent
                 });
             }
 
-            return dtos; 
+            return dtos;
         }
         catch (Exception ex)
         {
@@ -361,9 +362,6 @@ public class WorkflowStepComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            //var clientIp = _clientContextService.GetClientIP();
-            //var prefix = _utilities.GetPrefix(clientIp);
-            //var userId = _utilities.GetUserid(prefix);
             int CompanyId = Convert.ToInt32(_CompanyId);
 
             string query = $@"
@@ -375,24 +373,28 @@ public class WorkflowStepComponent
                 WHERE wp.CompanyId = @CompanyId
                 AND wp.EntityType = @EntityType
                 AND wp.DocumentTypeCode = @DocumentTypeCode
+                AND wp.Id = @WorkflowPolicyId
                 -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR wp.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode)
                 AND ws.IsActive = TRUE
                 AND ws.IsDeleted = FALSE
                 ORDER BY ws.StepOrder, ws.employeecode ASC;";
+
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
             var queryParams = new
             {
                 CompanyId = CompanyId,
                 input.EntityType,
                 input.DocumentTypeCode,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode
+                input.WorkflowPolicyId,
+                DivisionCode = Normalize(input.DivisionCode),
+                DepartmentCode = Normalize(input.DepartmentCode),
+                SubDepartmentCode = Normalize(input.SubDepartmentCode),
+                BusinessDomainCode = Normalize(input.BusinessDomainCode)
             };
 
             var results = await _common.QueryAsync<dynamic>(query, queryParams);
@@ -500,6 +502,7 @@ public class WorkflowStepComponent
     {
         try
         {
+
             string query = @"
                 SELECT DISTINCT COALESCE(wes.AssignedUserId, TRIM(e.empcode)) AS ApproverId
                 FROM WorkflowExecutionSteps wes
@@ -531,7 +534,7 @@ public class WorkflowStepComponent
 
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         var clientIp = _clientContextService.GetClientIP();
-        var prefix = _utilities.GetPrefix(clientIp); 
+        var prefix = _utilities.GetPrefix(clientIp);
         //var userId = _utilities.GetUserid(prefix);
         int CompanyId = int.Parse(_CompanyId);
         var empId = _utilities.GetEmpid(clientIp);
@@ -598,9 +601,13 @@ public class WorkflowStepComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                   Select * from Vw_WorkflowStepDefinitions ws 
                 WHERE ws.DocumentTypeCode = '{code}' AND ws.WorkflowPolicyId = {policyId}
+                  AND ws.CompanyId = {CompanyId}
                   AND ws.IsActive = True
                   AND ws.IsDeleted = False";
 
@@ -672,8 +679,8 @@ public class WorkflowStepComponent
                 throw new CustomException("Invalid step ID.", 400);
 
             int exists = await _dapperService.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM WorkflowStepDefinitions WHERE Id = @Id AND IsDeleted = FALSE",
-                new { Id = input.Id });
+                "SELECT COUNT(1) FROM WorkflowStepDefinitions WHERE Id = @Id AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                new { Id = input.Id, CompanyId });
 
             if (exists == 0)
                 throw new CustomException("Workflow Step not found", 404);
@@ -690,7 +697,7 @@ public class WorkflowStepComponent
                     IsActive = @IsActive,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @ModifiedBy
-                WHERE Id = @Id";
+                WHERE Id = @Id AND CompanyId = @CompanyId";
 
             var updateParams = new
             {
@@ -702,7 +709,8 @@ public class WorkflowStepComponent
                 RequiresAllApprovals = input.IsParallelApproval,
                 IsActive = input.IsActive,
                 ModifiedBy = empCode,
-                Id = input.Id
+                Id = input.Id,
+                CompanyId = CompanyId
             };
 
             await _dapperService.ExecuteAsync(updateQuery, updateParams);
@@ -711,9 +719,9 @@ public class WorkflowStepComponent
             string selectQuery = @"
                 SELECT * 
                 FROM Vw_WorkflowStepDefinitions
-                WHERE Id = @Id";
+                WHERE Id = @Id AND CompanyId = @CompanyId";
 
-            var resultList = await _dapperService.QueryAsync<dynamic>(selectQuery, new { Id = input.Id });
+            var resultList = await _dapperService.QueryAsync<dynamic>(selectQuery, new { Id = input.Id, CompanyId });
             var rowDict = resultList.FirstOrDefault() as IDictionary<string, object>;
 
             if (rowDict == null)
@@ -748,7 +756,7 @@ public class WorkflowStepComponent
         {
             throw;
         }
-    } 
+    }
 
     public async Task<List<WorkflowStepDefiniationReadDto>> CreateWorkflowStepsByFilterAsync(WorkFlowStepsFilterDto filters)
     {
@@ -763,6 +771,12 @@ public class WorkflowStepComponent
 
             filters.CompanyId = CompanyId; // Ensure CompanyId is set in filters for downstream queries
 
+            string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
+            string divCode = Normalize(filters.DivisionCode);
+            string depCode = Normalize(filters.DepartmentCode);
+            string subDepCode = Normalize(filters.SubDepartmentCode);
+            string bdCode = Normalize(filters.BusinessDomainCode);
+
             //-----------------------------------------
             // 1️⃣ Resolve WorkflowPolicyId
             //-----------------------------------------
@@ -772,21 +786,23 @@ public class WorkflowStepComponent
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = @EntityType
+                AND Id = @WorkflowPolicyId
                 AND DocumentTypeCode = @DocumentTypeCode
-                AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-                AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-                AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-                AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+                AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+                AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+                AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+                AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
                 AND IsDeleted = FALSE;",
             new
             {
                 CompanyId,
                 filters.EntityType,
                 filters.DocumentTypeCode,
-                filters.DivisionCode,
-                filters.DepartmentCode,
-                filters.SubDepartmentCode,
-                filters.BusinessDomainCode
+                filters.WorkflowPolicyId,
+                DivisionCode = divCode,
+                DepartmentCode = depCode,
+                SubDepartmentCode = subDepCode,
+                BusinessDomainCode = bdCode
             });
 
 
@@ -795,7 +811,7 @@ public class WorkflowStepComponent
             //-----------------------------------------
 
             if (policyId == null)
-            { 
+            {
                 policyId = await _dapperService.ExecuteAsync(@"
                     INSERT INTO WorkflowPolicies
                     (
@@ -804,18 +820,19 @@ public class WorkflowStepComponent
                     )
                     VALUES
                     (
-                        @CompanyId, 'Configured Policy', @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
+                        @CompanyId, @PolicyName, @EntityType, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
                         @DocumentTypeCode, TRUE, FALSE, NOW(), @CreatedBy,  NOW(), @CreatedBy
                     )
                     RETURNING Id;",
                 new
                 {
                     CompanyId,
+                    PolicyName = "System Generated",
                     EntityType = filters.EntityType,
-                    DivisionCode = filters.DivisionCode,
-                    DepartmentCode = filters.DepartmentCode,
-                    SubDepartmentCode = filters.SubDepartmentCode,
-                    BusinessDomainCode = filters.BusinessDomainCode,
+                    DivisionCode = divCode,
+                    DepartmentCode = depCode,
+                    SubDepartmentCode = subDepCode,
+                    BusinessDomainCode = bdCode,
                     DocumentTypeCode = filters.DocumentTypeCode,
                     CreatedBy = empCode
                 });
@@ -860,14 +877,15 @@ public class WorkflowStepComponent
             var nextOrder = await _dapperService.ExecuteScalarAsync<int>(@"
                 SELECT COALESCE(MAX(StepOrder),0) + 1
                 FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new { VersionId = versionId });
+                WHERE WorkflowPolicyVersionId = @VersionId
+                  AND CompanyId = @CompanyId;",
+                new { VersionId = versionId, CompanyId });
 
             //-----------------------------------------
             // 6️⃣ Insert Step
             //-----------------------------------------
 
-            bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) || 
+            bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) ||
                                         (filters.DesignationCodes != null && filters.DesignationCodes.Any());
 
             if (hasRoleOrDesignation)
@@ -878,11 +896,11 @@ public class WorkflowStepComponent
                     {
                         var existingRoleStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
                             SELECT COUNT(1) FROM WorkflowStepDefinitions 
-                            WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND IsDeleted = FALSE;", 
-                            new { VersionId = versionId, RoleId = roleId });
+                            WHERE WorkflowPolicyVersionId = @VersionId AND RoleId = @RoleId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
+                            new { VersionId = versionId, RoleId = roleId, CompanyId });
 
-                        if (existingRoleStepCount > 0)
-                            throw new CustomException("A step for this Role already exists in this workflow.", 409);
+                        //if (existingRoleStepCount > 0)
+                        //    throw new CustomException("A step for this Role already exists in this workflow.", 409);
 
                         await _dapperService.ExecuteAsync(@"
                             INSERT INTO WorkflowStepDefinitions
@@ -902,11 +920,11 @@ public class WorkflowStepComponent
                         {
                             var existingDesigStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
                                 SELECT COUNT(1) FROM WorkflowStepDefinitions 
-                                WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND IsDeleted = FALSE;", 
-                                new { VersionId = versionId, DesignationId = designationId });
+                                WHERE WorkflowPolicyVersionId = @VersionId AND DesignationId = @DesignationId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
+                                new { VersionId = versionId, DesignationId = designationId, CompanyId });
 
-                            if (existingDesigStepCount > 0)
-                                throw new CustomException("A step for this Designation already exists in this workflow.", 409);
+                            //if (existingDesigStepCount > 0)
+                            //    throw new CustomException("A step for this Designation already exists in this workflow.", 409);
 
                             await _dapperService.ExecuteAsync(@"
                                 INSERT INTO WorkflowStepDefinitions
@@ -931,13 +949,14 @@ public class WorkflowStepComponent
                         FROM WorkflowStepDefinitions
                         WHERE WorkflowPolicyVersionId = @VersionId
                         AND UserId = @UserId
+                        AND CompanyId = @CompanyId
                         AND IsDeleted = FALSE;",
-                        new { VersionId = versionId, UserId = user.EmployeeCode });
+                        new { VersionId = versionId, UserId = user.EmployeeCode, CompanyId });
 
-                    if (existingStepCount > 0)
-                    {
-                        throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
-                    }
+                    //if (existingStepCount > 0)
+                    //{
+                    //    throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
+                    //}
 
                     await _dapperService.ExecuteAsync(@"
                         INSERT INTO WorkflowStepDefinitions
@@ -966,77 +985,92 @@ public class WorkflowStepComponent
             //-----------------------------------------
             // 7️⃣ Return Updated Steps
             //-----------------------------------------
-
+             
 
             string query = $@"
-                SELECT 
-                    wsd.Id AS id, 
-                    wsd.CompanyId AS companyid, 
-                    c.Name AS company,
-                    wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
-                    wp.Id AS workflowpolicyid, 
-                    wp.Name AS workflowpolicyname,
-                    wsd.StepOrder AS steporder, 
-                    wsd.StepGroup AS stepgroup, 
-                    wsd.StepType AS steptype,
-                    wsd.RoleId AS roleid, 
-                    wsd.DesignationId AS designationid, 
-                    wsd.UserId AS userid, 
-                    --wsd.ApprovalLevel AS approvallevel, 
-                    wsd.RequiresAllApprovals AS requiresallapprovals,
-                    wsd.RequiresAllApprovals AS isparallelapproval,
-                    FALSE AS canedit,
-                    FALSE AS requirecrossfunctionalhead,
-                    e.empcode AS employeecode, 
-                    e.firstname, e.midname, e.lastname,
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS employeename,
-                    COALESCE(r_step.name, r_emp.name) AS role, 
-                    COALESCE(r_step.name, r_emp.name) AS userrole, 
-                    COALESCE(des_step.name, des_fallback.name) AS designation,
-                    COALESCE(des_step.code, des_fallback.code) AS designationcode,
-                    wp.DocumentTypeCode AS documenttypecode, 
-                    dt.Name AS documenttype,
-                    wsd.IsActive AS isactive, 
-                    wsd.IsDeleted AS isdeleted, 
-                    wsd.CreatedAt AS createdat, 
-                    wsd.CreatedBy AS createdby, 
-                    wsd.LastModifiedAt AS lastmodifiedat, 
-                    wsd.LastModifiedBy AS lastmodifiedby
-                FROM WorkflowStepDefinitions wsd
-                JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                LEFT JOIN Companies c ON c.Id = wsd.CompanyId
-                LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) = 1
-                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
-                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
-                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
-                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
-                WHERE wp.CompanyId = @CompanyId
-                AND wp.EntityType = @EntityType
-                AND wp.DocumentTypeCode = @DocumentTypeCode
-                -- Allow filtering by specific policy name or ID
-                AND (COALESCE(@DivisionCode, '') = '' OR wp.DivisionCode = @DivisionCode OR (wp.DivisionCode IS NULL AND @DivisionCode IS NULL))
-                AND (COALESCE(@DepartmentCode, '') = '' OR wp.DepartmentCode = @DepartmentCode OR (wp.DepartmentCode IS NULL AND @DepartmentCode IS NULL))
-                AND (COALESCE(@SubDepartmentCode, '') = '' OR wp.SubDepartmentCode = @SubDepartmentCode OR (wp.SubDepartmentCode IS NULL AND @SubDepartmentCode IS NULL))
-                AND (COALESCE(@BusinessDomainCode, '') = '' OR wp.BusinessDomainCode = @BusinessDomainCode OR (wp.BusinessDomainCode IS NULL AND @BusinessDomainCode IS NULL))
-                AND wsd.IsActive = TRUE
-                AND wsd.IsDeleted = FALSE
-                ORDER BY wsd.StepOrder, e.empcode ASC";
+                        WITH SetupsLookup AS (
+                            -- Project only the required columns to minimize join data buffer size in memory
+                            SELECT sdlid, name, code 
+                            FROM tblsetupsdetail
+                            WHERE CompanyId = @CompanyId
+                        )
+                        SELECT 
+                            wsd.Id AS id, 
+                            wsd.CompanyId AS companyid, 
+                            c.Name AS company,
+                            wsd.WorkflowPolicyVersionId AS workflowpolicyversionid,
+                            wp.Id AS workflowpolicyid, 
+                            wp.Name AS workflowpolicyname,
+                            wsd.StepOrder AS steporder, 
+                            wsd.StepGroup AS stepgroup, 
+                            wsd.StepType AS steptype,
+                            wsd.RoleId AS roleid, 
+                            wsd.DesignationId AS designationid, 
+                            wsd.UserId AS userid, 
+                            wsd.RequiresAllApprovals AS requiresallapprovals,
+                            wsd.RequiresAllApprovals AS isparallelapproval,
+                            FALSE AS canedit,
+                            FALSE AS requirecrossfunctionalhead,
+                            e.empcode AS employeecode, 
+                            e.firstname, e.midname, e.lastname,
+                            TRIM(CONCAT(e.firstname, ' ', e.midname, ' ', e.lastname)) AS employeename,
+                            COALESCE(r_step.name, r_emp.name) AS role, 
+                            COALESCE(r_step.name, r_emp.name) AS userrole, 
+                            COALESCE(des_step.name, des_fallback.name) AS designation,
+                            COALESCE(des_step.code, des_fallback.code) AS designationcode,
+                            wp.DocumentTypeCode AS documenttypecode, 
+                            dt.Name AS documenttype,
+                            wsd.IsActive AS isactive, 
+                            wsd.IsDeleted AS isdeleted, 
+                            wsd.CreatedAt AS createdat, 
+                            wsd.CreatedBy AS createdby, 
+                            wsd.LastModifiedAt AS lastmodifiedat, 
+                            wsd.LastModifiedBy AS lastmodifiedby
+                        FROM WorkflowStepDefinitions wsd
+                        JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                        JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                        LEFT JOIN Companies c ON c.Id = wsd.CompanyId
+                        LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
+    
+                        -- Cast join to strip leading zeros in e.empcode and wsd.UserId efficiently
+                        LEFT JOIN tblEmployee e ON e.empcode::bigint = wsd.UserId::bigint  AND  e.CompanyId = @CompanyId
+                        LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid  AND  ejp.CompanyId = @CompanyId AND ejp.active IS NOT FALSE
+    
+                        -- Joins mapped against the narrow SetupsLookup CTE projection
+                        LEFT JOIN SetupsLookup r_step ON r_step.sdlid = wsd.RoleId
+                        LEFT JOIN SetupsLookup r_emp ON r_emp.sdlid = ejp.roleid
+                        LEFT JOIN SetupsLookup des_step ON des_step.sdlid = wsd.DesignationId
+                        LEFT JOIN SetupsLookup des_fallback ON des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+    
+                        WHERE wp.CompanyId = @CompanyId
+                        AND wp.EntityType = @EntityType
+                        AND wp.DocumentTypeCode = @DocumentTypeCode
+                        AND wp.Id = @WorkflowPolicyId
+                        AND wsd.IsActive = TRUE
+                        AND wsd.IsDeleted = FALSE
+    
+                        -- Sargable index-friendly filters
+                        AND (@DivisionCode IS NULL OR @DivisionCode = '' OR wp.DivisionCode = @DivisionCode)
+                        AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR wp.DepartmentCode = @DepartmentCode)
+                        AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR wp.SubDepartmentCode = @SubDepartmentCode)
+                        AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR wp.BusinessDomainCode = @BusinessDomainCode)
+    
+                        ORDER BY wsd.StepOrder, e.empcode ASC;
+                        ";
 
             var queryParams = new
             {
                 CompanyId = CompanyId,
                 filters.EntityType,
                 filters.DocumentTypeCode,
-                filters.DivisionCode,
-                filters.DepartmentCode,
-                filters.SubDepartmentCode,
-                filters.BusinessDomainCode
+                filters.WorkflowPolicyId,
+                DivisionCode = divCode,
+                DepartmentCode = depCode,
+                SubDepartmentCode = subDepCode,
+                BusinessDomainCode = bdCode
             };
 
-            var results = await _common.QueryAsync<dynamic>(query, queryParams); 
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
 
             var dtos = new List<WorkflowStepDefiniationReadDto>();
             foreach (var row in results)
@@ -1115,7 +1149,12 @@ public class WorkflowStepComponent
             string businessDomainCode)
     {
 
-        
+        // ────────────────────────────────────────────────
+        // Convert empty strings → null (this is the key fix)
+        // ────────────────────────────────────────────────
+        string? Normalize(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
         //-----------------------------------------
         // 1️⃣ Find Policy
         //-----------------------------------------
@@ -1126,10 +1165,10 @@ public class WorkflowStepComponent
             WHERE CompanyId = @CompanyId
             AND EntityType = @EntityType
             AND DocumentTypeCode = @DocType
-            AND COALESCE(DivisionCode,'') = COALESCE(@DivisionCode,'')
-            AND COALESCE(DepartmentCode,'') = COALESCE(@DepartmentCode,'')
-            AND COALESCE(SubDepartmentCode,'') = COALESCE(@SubDepartmentCode,'')
-            AND COALESCE(BusinessDomainCode,'') = COALESCE(@BusinessDomainCode,'')
+            AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
+            AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
+            AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
+            AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
             AND IsActive = TRUE
             AND IsDeleted = FALSE;",
         new
@@ -1137,10 +1176,10 @@ public class WorkflowStepComponent
             CompanyId = companyId,
             EntityType = entityType,
             DocType = documentTypeCode,
-            DivisionCode = divisionCode,
-            DepartmentCode = departmentCode,
-            SubDepartmentCode = subDepartmentCode,
-            BusinessDomainCode = businessDomainCode
+            DivisionCode = Normalize(divisionCode),
+            DepartmentCode = Normalize(departmentCode),
+            SubDepartmentCode = Normalize(subDepartmentCode),
+            BusinessDomainCode = Normalize(businessDomainCode)
         });
 
         if (policyId == null)
@@ -1170,19 +1209,23 @@ public class WorkflowStepComponent
             SELECT COUNT(*)
             FROM WorkflowStepDefinitions
             WHERE WorkflowPolicyVersionId = @VersionId
+            AND CompanyId = @CompanyId
             AND IsDeleted = FALSE;",
-        new { VersionId = versionId });
+        new { VersionId = versionId, CompanyId = companyId });
 
         if (steps == 0)
             throw new Exception("Workflow steps not configured.");
 
         return versionId.Value;
     }
-     
+
     public async Task<UserReadDto> GetUsersByFiltersAsync(WorkFlowStepsFilterDto filters)
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
@@ -1207,7 +1250,10 @@ public class WorkflowStepComponent
             ON u.Id = ur.UserId
 	            LEFT JOIN Roles r
 	            ON ur.RoleId = r.Id
-            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE";
+            WHERE u.IsActive = TRUE AND u.IsDeleted = FALSE AND u.CompanyId = @CompanyId";
+
+            whereConditions.Add("u.CompanyId = @CompanyId");
+            parameters.Add("@CompanyId", CompanyId);
 
             // Add conditions based on provided filters
             if (!string.IsNullOrEmpty(filters.DivisionCode))
@@ -1348,8 +1394,7 @@ public class WorkflowStepComponent
             var parameters = new DynamicParameters();
             var whereConditions = new List<string>();
 
-            if (companyId > 0)
-                whereConditions.Add("e.CompanyId = @CompanyId");
+            whereConditions.Add("e.CompanyId = @CompanyId");
             parameters.Add("@CompanyId", companyId);
 
             // Production-ready query with Robust TRIM and Padding matching
@@ -1379,6 +1424,9 @@ public class WorkflowStepComponent
                 LEFT JOIN public.tblsetupsdetail des_fallback 
                     ON e.dsgid = des_fallback.sdlid
                 WHERE ";
+
+            whereConditions.Add("e.CompanyId = @CompanyId");
+            parameters.Add("@CompanyId", filters.CompanyId);
 
             // 1. Access Level Filters
             //if (!string.IsNullOrEmpty(filters.DocumentTypeCode))
@@ -1486,7 +1534,7 @@ public class WorkflowStepComponent
             throw;
         }
     }
-     
+
     public async Task<List<WorkflowStepDefiniationReadDto>> UpdateApprovalSequenceAsync(UpdateApprovalSequenceDto input)
     {
         try
@@ -1526,8 +1574,8 @@ public class WorkflowStepComponent
             // 2. Permanently delete existing steps for this version
             await _dapperService.ExecuteAsync(@"
                 DELETE FROM WorkflowStepDefinitions
-                WHERE WorkflowPolicyVersionId = @VersionId;",
-                new { VersionId = versionId });
+                WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId;",
+                new { VersionId = versionId, CompanyId });
 
             // 3. Insert new steps based on frontend sequence
             if (input.Steps != null && input.Steps.Any())
@@ -1565,8 +1613,8 @@ public class WorkflowStepComponent
                 // Clean up the Workflow Policy Version if all steps are removed
                 await _dapperService.ExecuteAsync(@"
                     DELETE FROM WorkflowPolicyVersions
-                    WHERE Id = @VersionId;",
-                    new { VersionId = versionId });
+                    WHERE Id = @VersionId AND CompanyId = @CompanyId;",
+                    new { VersionId = versionId, CompanyId });
             }
 
             //-----------------------------------------
@@ -1612,11 +1660,11 @@ public class WorkflowStepComponent
                 LEFT JOIN Companies c ON c.Id = wsd.CompanyId
                 LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
                 LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) = 1
-                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
-                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId
-                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid
-                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId
-                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid)
+                LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId  AND r_step.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid AND r_emp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_step ON wsd.DesignationId IS NOT NULL AND des_step.sdlid = wsd.DesignationId AND des_step.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON COALESCE(ejp.dsgid, e.dsgid) IS NOT NULL AND des_fallback.sdlid = COALESCE(ejp.dsgid, e.dsgid) AND des_fallback.CompanyId = @CompanyId
                 WHERE wp.CompanyId = @CompanyId
                 AND wp.Id = @PolicyId
                 AND wsd.IsActive = TRUE
@@ -1629,7 +1677,7 @@ public class WorkflowStepComponent
                 PolicyId = input.WorkflowPolicyId
             };
 
-            var results = await _common.QueryAsync<dynamic>(query, queryParams); 
+            var results = await _common.QueryAsync<dynamic>(query, queryParams);
 
             var dtos = new List<WorkflowStepDefiniationReadDto>();
             foreach (var row in results)

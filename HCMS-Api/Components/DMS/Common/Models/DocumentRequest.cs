@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common.Misc;
+﻿﻿using HCMS_Api.Common.Misc;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -84,6 +84,11 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? BusinessDomain { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? DraftFileURL { get; set; }
+    public int? ParentDocumentId { get; set; }
+
+    // Populated only for Revision requests: when/by whom the document version being revised was created
+    public string? PreviousVersionCreatedOn { get; set; }
+    public string? PreviousVersionCreatedBy { get; set; }
 
     public bool IsReworked { get; set; }
 
@@ -92,6 +97,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public int StepId { get; set; }
     public int StepOrder { get; set; }
     public string StartedAt { get; set; }
+    public string ExecutionStatus { get; set; }
 
 
     // 🟩 UC-22
@@ -420,6 +426,36 @@ public class DocumentRequestDetailsDto
 
 }
 
+// One row per Document in a revision chain (original + every subsequent revision),
+// returned in chronological order by GetDocumentRevisionHistoryAsync.
+public class RevisionHistoryItemDto
+{
+    public int DocumentId { get; set; }
+    public string DocumentNumber { get; set; }
+    public string DocumentName { get; set; }
+    public int? ParentDocumentId { get; set; }
+    public string Version { get; set; }
+
+    public int? RequestId { get; set; }
+    public string RequestNumber { get; set; }
+    public string DocumentRequestTypeCode { get; set; }
+    public string Justification { get; set; }
+
+    public DateTime? RequestedOn { get; set; }
+    public string RequestedBy { get; set; }
+
+    public DateTime? ApprovedOn { get; set; }
+    public string ApprovedBy { get; set; }
+
+    public DateTime? EffectiveOn { get; set; }
+    public string EffectiveBy { get; set; }
+
+    public string CurrentStatus { get; set; }
+
+    // True for the newest document in the chain (the one with no revision made of it yet).
+    public bool IsCurrentVersion { get; set; }
+}
+
 
 
 /// <summary>
@@ -451,6 +487,7 @@ public class DraftDocumentRequestDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
+    public int? ParentDocumentId { get; set; }
      
 
     // 🟩 UC-22
@@ -513,8 +550,18 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
 }
 
 public class SubmitDocumentRequestDto
-{ 
-    public int RequestId { get; set; } 
+{
+    public int RequestId { get; set; }
+    public string DocumentRequestType { get; set; }
+
+    // UC-22 User Modification Allowed
+    public List<DistributionListCreateDto>? DistributionList { get; set; }
+    public List<string>? UserIds { get; set; }
+}
+
+public class SubmitRevisionDocumentRequestDto
+{
+    public int RequestId { get; set; }
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }

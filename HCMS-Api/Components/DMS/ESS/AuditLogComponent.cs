@@ -138,13 +138,13 @@ public class AuditLogComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM AuditLogs
-                WHERE EmployeeCode = {code}
+                WHERE EmployeeCode = '{code}'
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("AuditLog not found", 200);
+                throw new CustomException("AuditLog not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -182,7 +182,11 @@ public class AuditLogComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "Action" => "Action",
-                "EmployeeCode" => "EmployeeCode", 
+                "EmployeeCode" => "EmployeeCode",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "Action"
             };
 
@@ -261,7 +265,7 @@ public class AuditLogComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("AuditLog not found", 200);
+                throw new CustomException("AuditLog not found", 404);
 
             DataRow row = dt.Rows[0];
 

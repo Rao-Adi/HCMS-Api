@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -70,6 +70,7 @@ public class BusinessDomainComponent
                     FROM BusinessDomains
                     WHERE (Code = '{normalizedCode}'
                            OR Name = '{input.Name.Replace("'", "''")}')
+                      AND CompanyId = {CompanyId}
                       AND IsDeleted = FALSE";
 
             int exists =
@@ -79,10 +80,10 @@ public class BusinessDomainComponent
                 throw new CustomException("Document Type already exists", 409);
 
             // 🔢 Generate next Division Code
-            string getLastCodeQuery = @"
+            string getLastCodeQuery = $@"
                             SELECT Code
                             FROM BusinessDomains
-                            WHERE Code IS NOT NULL
+                            WHERE Code IS NOT NULL AND CompanyId = {CompanyId}
                             ORDER BY Id DESC
                             LIMIT 1";
 
@@ -153,7 +154,7 @@ public class BusinessDomainComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
-                    WHERE bd.Id = {newId}";
+                    WHERE bd.Id = {newId} AND bd.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -204,12 +205,13 @@ public class BusinessDomainComponent
                 SELECT COUNT(1)
                 FROM BusinessDomains
                 WHERE Code = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -217,7 +219,7 @@ public class BusinessDomainComponent
                 SET IsDeleted = False,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}'";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -232,9 +234,11 @@ public class BusinessDomainComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP()); 
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE bd.IsDeleted = False 
-                  AND bd.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE bd.IsDeleted = False  AND bd.CompanyId = "+ CompanyId + " AND bd.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -251,6 +255,10 @@ public class BusinessDomainComponent
             {
                 "NAME" => "bd.Name",
                 "CODE" => "bd.Code",
+                "CREATEDAT" => "bd.CreatedAt",
+                "CREATEDBY" => "bd.CreatedBy",
+                "LASTMODIFIEDAT" => "bd.LastModifiedAt",
+                "LASTMODIFIEDBY" => "bd.LastModifiedBy",
                 "ISACTIVE" => "bd.IsActive",
                 _ => "bd.Name"
             };
@@ -345,11 +353,15 @@ public class BusinessDomainComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM BusinessDomains
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -375,6 +387,9 @@ public class BusinessDomainComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
                 -- 🔹 Audit Fields
                  COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
@@ -394,13 +409,14 @@ public class BusinessDomainComponent
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                 WHERE bd.Code = '{code}'
+                  AND bd.CompanyId = {CompanyId}
                   AND bd.IsActive = True
                   AND bd.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -434,6 +450,9 @@ public class BusinessDomainComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"SELECT bd.*, dep.Code AS SubDepartmentCode, dep.Name AS SubDepartment, c.Name AS Company,
                 -- 🔹 Audit Fields
                  COALESCE(e.EmployeeName, bd.CreatedBy::text) AS CreatedByName, 
@@ -453,13 +472,14 @@ public class BusinessDomainComponent
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
                 WHERE bd.SubDepartmentCode = '{dCode}'
+                  AND bd.CompanyId = {CompanyId}
                   AND bd.IsActive = True
                   AND bd.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -493,25 +513,27 @@ public class BusinessDomainComponent
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var empCode = _utilities.GetUserid(prefix);
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Invalid Business Domain code.", 200);
+                throw new CustomException("Invalid Business Domain code.", 404);
 
             // Check existence (Code is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM BusinessDomains
             WHERE Code = '{input.Code.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("BusinessDomain not found", 200);
+                throw new CustomException("BusinessDomain not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -521,7 +543,7 @@ public class BusinessDomainComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -547,7 +569,7 @@ public class BusinessDomainComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(bd.LastModifiedBy::text, '0')
-            WHERE bd.Code = '{input.Code.Replace("'", "''")}'";
+            WHERE bd.Code = '{input.Code.Replace("'", "''")}' AND bd.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -585,10 +607,13 @@ public class BusinessDomainComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM BusinessDomains 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿﻿﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -59,7 +59,7 @@ public class DocumentTrainingComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentTraining
-            WHERE (Id = '{input.Id}' 
+            WHERE Id = '{input.Id}'  AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -86,7 +86,7 @@ public class DocumentTrainingComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentId}',
                 '{input.TrainingMode}',
                 '{input.TrainingProofURL}',
@@ -110,7 +110,7 @@ public class DocumentTrainingComponent
             FROM DocumentTraining dt
             LEFT JOIN Companies c
             ON dt.CompanyId = c.Id
-            WHERE dt.Id = {newId}";
+            WHERE dt.Id = {newId} AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -122,7 +122,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -159,19 +159,19 @@ public class DocumentTrainingComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentTraining
-                WHERE Id = {id}
+                WHERE Id = {id} AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentTraining not found", 200);
+                throw new CustomException("DocumentTraining not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
                 UPDATE DocumentTraining
-                SET IsDeleted = False
-                WHERE Id = {id}";
+                SET IsDeleted = True, LastModifiedAt = NOW(), LastModifiedBy = '{empCode.Replace("'", "''")}'
+                WHERE Id = {id} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -186,9 +186,11 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE dt.IsDeleted = False 
-                  AND dt.IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE dt.IsDeleted = False AND dt.CompanyId = " + CompanyId + @" AND dt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -207,6 +209,10 @@ public class DocumentTrainingComponent
                 "ID" => "dt.Id",
                 "CODE" => "dt.Id",
                 "ISACTIVE" => "dt.IsActive",
+                "CREATEDAT" => "dt.CreatedAt",
+                "CREATEDBY" => "dt.CreatedBy",
+                "LASTMODIFIEDAT" => "dt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dt.LastModifiedBy",
                 _ => "dt.Id"
             };
 
@@ -245,14 +251,14 @@ public class DocumentTrainingComponent
                 .Select(row => new DocumentTrainingReadDto
                 {
                     Id = row.Table.Columns.Contains("Id") ? row.Field<int>("Id") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
                     TrainingMode = row.Table.Columns.Contains("TrainingMode") ? row.Field<int>("TrainingMode") : 0,
                     TrainingProofURL = row.Table.Columns.Contains("TrainingProofURL") ? row.Field<string>("TrainingProofURL") : string.Empty,
                     AssessmentScore = row.Table.Columns.Contains("AssessmentScore") ? row.Field<decimal>("AssessmentScore") : 0,
                     ValidationStatus = row.Table.Columns.Contains("ValidationStatus") ? row.Field<int>("ValidationStatus") : 0,
-                    ReadyForAuthorization = row.Table.Columns.Contains("ReadyForAuthorization") ? row.Field<bool>("AssessmentScore") : false,
+                    ReadyForAuthorization = row.Table.Columns.Contains("ReadyForAuthorization") && row.Field<bool?>("ReadyForAuthorization") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
                     IsDeleted = row.Table.Columns.Contains("IsDeleted") && row.Field<bool?>("IsDeleted") == true,
                     CreatedAt = (row.Table.Columns.Contains("CreatedAt") && !row.IsNull("CreatedAt"))
@@ -276,9 +282,9 @@ public class DocumentTrainingComponent
                 TotalCount = totalCount
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw;
+            throw ex;
         }
     }
 
@@ -287,11 +293,14 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = @"
             SELECT Id, Name
             FROM DocumentTraining
             WHERE IsActive = True
-              AND IsDeleted = False
+              AND IsDeleted = False AND CompanyId = " + CompanyId + @"
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -317,26 +326,29 @@ public class DocumentTrainingComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT dt.*, c.Id AS CompanyId, c.Name AS Company
                         FROM DocumentTraining dt
                         LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
-                WHERE dt.Id = {id}
+                WHERE dt.Id = {id} AND dt.CompanyId = {CompanyId}
                   AND dt.IsActive = True
                   AND dt.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentTraining not found", 200);
+                throw new CustomException("DocumentTraining not found", 404);
 
             DataRow row = dt.Rows[0];
 
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -371,7 +383,7 @@ public class DocumentTrainingComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (input.Id <0)
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Invalid division code.", 404);
 
             // Check existence (Id is VARCHAR → must be quoted)
             string checkQuery = $@"
@@ -383,7 +395,7 @@ public class DocumentTrainingComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentTraining not found", 200);
+                throw new CustomException("DocumentTraining not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -398,7 +410,7 @@ public class DocumentTrainingComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = '{input.Id}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -411,7 +423,7 @@ public class DocumentTrainingComponent
                     FROM DocumentTraining dt
                     LEFT JOIN Companies c
                     ON dt.CompanyId = c.Id
-            WHERE dt.Id = '{input.Id}'";
+            WHERE dt.Id = '{input.Id}' AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -423,7 +435,7 @@ public class DocumentTrainingComponent
             return new DocumentTrainingReadDto
             {
                 Id = row.Field<int>("Id"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentId = row.Field<int>("DocumentId"),
                 TrainingMode = row.Field<int>("TrainingMode"),
@@ -445,14 +457,12 @@ public class DocumentTrainingComponent
         }
     }
 
-    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId)
+    public async Task<TrainingAssessmentResultDto> GetTrainingAssessmentDetailsAsync(int documentId, int trainingMode)
     {
         try
         {
-            string CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var empCode = _utilities.GetUserid(prefix);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId); 
 
             string query = @"
                 SELECT 
@@ -461,6 +471,11 @@ public class DocumentTrainingComponent
                     dut.TrainingStatus,
                     dut.AssessmentScore,
                     dut.TrainingProofUrl,
+                    dut.TrainingMode,
+	                    CASE 
+                            WHEN dut.TrainingMode = 1 THEN 'Classroom' 
+                            ELSE 'Online' 
+                        END AS TrainingModeName,
                     r.name AS RoleName,
                     desig.name AS Designation,
                     div.name AS Division,
@@ -469,32 +484,33 @@ public class DocumentTrainingComponent
                 FROM DocumentUserTraining dut
                 
                 LEFT JOIN tblEmployee e 
-                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')
+                    ON e.empCode = LPAD(dut.EmployeeCode::text, 9, '0')  AND e.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblempjobprofile ejp 
                     ON ejp.empid = e.empid 
-                    AND COALESCE(ejp.Active, TRUE) = TRUE
+                    AND COALESCE(ejp.Active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail r 
-                    ON r.sdlid = ejp.roleid
+                    ON r.sdlid = ejp.roleid  AND r.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail desig 
-                    ON desig.sdlid = ejp.dsgid
+                    ON desig.sdlid = ejp.dsgid  AND desig.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail div 
-                    ON div.sdlid = e.divid
+                    ON div.sdlid = e.divid AND div.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail dep 
-                    ON dep.sdlid = e.mdptid
+                    ON dep.sdlid = e.mdptid AND dep.CompanyId = @CompanyId
                     
                 LEFT JOIN public.tblsetupsdetail subd 
-                    ON subd.sdlid = e.dptid
+                    ON subd.sdlid = e.dptid AND subd.CompanyId = @CompanyId
                     
                 WHERE dut.DocumentId = @DocumentId 
+                  AND (@TrainingMode = 0 OR dut.TrainingMode = @TrainingMode)
                   AND dut.CompanyId = @CompanyId
                   AND dut.IsDeleted = FALSE";
 
-            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = int.Parse(CompanyId) })).ToList();
+            var userScores = (await _common.QueryAsync<TrainingUserScoreDto>(query, new { DocumentId = documentId, CompanyId = CompanyId , TrainingMode = trainingMode })).ToList();
 
             var totalAssigned = userScores.Count;
             var totalCompleted = userScores.Count(x => x.TrainingStatus == 1); // Assuming 1 = Completed
@@ -526,30 +542,54 @@ public class DocumentTrainingComponent
 
         await using var tx = await _common.BeginTransactionAsync();
         try
-        { 
+        {
 
-            // 1. Mark Document Training as Acknowledged / Ready
+            // Guard: only acknowledge a document that's actually sitting in TRAINING_PENDING. Without
+            // this, this endpoint can be called from any state and corrupt the lifecycle (e.g. an
+            // already-Effective document being sent back to Authorization Pending).
+            var currentState = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT ds.Code
+                FROM DocumentStateHistory dsh
+                JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                WHERE dsh.DocumentId = @DocumentId
+                ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1",
+                new { DocumentId = documentId }, tx);
+
+            if (currentState == null || (string)currentState.code != "TRAINING_PENDING")
+                throw new CustomException("Document is not currently pending training acknowledgment.", 409);
+
+            // 1. Mark Document Training as Acknowledged / Ready. The ReadyForAuthorization = FALSE
+            // condition makes this idempotent: a second call (double-click, retry) updates zero rows
+            // instead of silently succeeding and inserting another state-history row below.
             string updateQuery = @"
                 UPDATE DocumentTraining
-                SET 
+                SET
                     ReadyForAuthorization = TRUE,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
-                WHERE DocumentId = @DocumentId 
+                WHERE DocumentId = @DocumentId
                   AND CompanyId = @CompanyId
-                  AND IsDeleted = FALSE";
-            
-            await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+                  AND IsDeleted = FALSE
+                  AND ReadyForAuthorization = FALSE";
 
-            // 2. Log Action in State History without changing the state (stays in TRAINING_PENDING)
+            var rowsUpdated = await _common.ExecuteAsync(updateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            if (rowsUpdated == 0)
+                throw new CustomException("This document's training has already been acknowledged.", 409);
+
+            // 2. Log Action and transition state to AUTHORIZATION_PENDING. Tiebreak by Id: multiple
+            // state transitions can land in the same DB transaction (same NOW() in Postgres), so
+            // ChangedAt alone isn't a reliable way to find the truly-latest row.
             string stateQuery = @"
                 INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt, Comments)
-                SELECT @CompanyId, @DocumentId, 
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
-                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC LIMIT 1),
+                SELECT @CompanyId, @DocumentId,
+                       (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                       (SELECT Id FROM DocumentStates WHERE Code = 'AUTHORIZATION_PENDING'),
                        @UserId, NOW(), 'Training Acknowledged, Sent for Authorization'";
-            
+
             await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+
+            // TODO: Add notification logic here to inform the final authorizer(s) that a document is ready for their action.
 
             await tx.CommitAsync();
             return true;
@@ -560,6 +600,7 @@ public class DocumentTrainingComponent
             throw;
         }
     }
+
 }
 
 public class TrainingAssessmentResultDto

@@ -42,17 +42,11 @@ public class CompanyComponent
         _dataservice.BeginProcess(connectionString);
 
     }
-
-
-
-
+     
     public async Task<CompanyReadDto> CreateAsync(CompanyCreateDto input)
     {
         try
-        {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
+        { 
 
             if (string.IsNullOrWhiteSpace(input.Name))
                 throw new CustomException("Company name is required.", 400);
@@ -149,11 +143,7 @@ public class CompanyComponent
     public async Task<bool> DeleteAsync(string code)
     {
         try
-        {
-            var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp);
-            var userId = _utilities.GetUserid(prefix);
-
+        { 
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
@@ -163,12 +153,12 @@ public class CompanyComponent
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Company not found", 200);
+                throw new CustomException("Company not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Companies 
-                WHERE Code = {code}";
+                WHERE Code = '{code}'";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -201,7 +191,11 @@ public class CompanyComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "NAME" => "Name",
-                "CODE" => "Code", 
+                "CODE" => "Code",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 _ => "Name"
             };
 
@@ -305,7 +299,7 @@ public class CompanyComponent
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Company not found", 200);
+                throw new CustomException("Company not found", 404);
 
             DataRow row = dt.Rows[0];
 

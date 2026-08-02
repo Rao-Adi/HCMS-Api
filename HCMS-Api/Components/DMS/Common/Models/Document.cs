@@ -93,7 +93,7 @@ public class DocumentCreateDto
     public int? RequestId { get; set; }
 
     [MaxLength(500)]
-    public string? Title { get; set; } = null!;
+    public string? DocumentName { get; set; } = null!;
 
     public string? Version { get; set; }
     public string? Content { get; set; }
@@ -133,10 +133,26 @@ public class DocumentUpdateDto : AuditableEntity
 }
 
 public class SubmitDocument
-{ 
-    public int DocumentId { get; set; } 
+{
+    public int DocumentId { get; set; }
 
+    // Bound directly when the request is a JSON body. When submitted as multipart form data
+    // (required whenever DocumentFile is attached), the controller instead reads them from
+    // JSON-encoded "attributes"/"trainingusers" form fields and populates these lists itself,
+    // since ASP.NET Core's form binder can't bind a List<T> from a single JSON string field.
     public List<CreateDocumentAttributeValueDto> Attributes { get; set; } = new();
+    public List<TraningUsers>? TrainingUsers { get; set; }
+
+    // Template attachment for when it wasn't provided at Document Request creation time.
+    // Only one of these is expected, depending on the DocumentType's configured Template:
+    // DocumentFile for a file-based template (PDF/Word), ProposedContent for an HTML template.
+    public IFormFile? DocumentFile { get; set; }
+    public string? ProposedContent { get; set; }
+}
+public class TraningUsers
+{
+    public int TrainingMode { get; set; }
+    public string EmployeeCode { get; set; }
 }
 
 public class CreateDocumentAttributeValueDto
@@ -184,6 +200,7 @@ public  class AllDocumentDto
     public string VersionContent { get; set; }
     public string ProposedVersionNumber { get; set; }
     public string DraftFileURL { get; set; }
+    public string Justification { get; set; }
 
     // Organizational Hierarchy
     public string Division { get; set; }
@@ -206,6 +223,11 @@ public  class AllDocumentDto
     public string StepType { get; set; }
     public string ExecutionStatus { get; set; }
     public string? StartedAt { get; set; } // Maps to TIMESTAMP
+
+    // Populated only for Revision requests: when/by whom the document version being revised was created
+    public string? PreviousVersionCreatedOn { get; set; }
+    public string? PreviousVersionCreatedBy { get; set; }
+
 
     // 🟩 UC-22
     public List<DistributionListReadDto>? DistributionList { get; set; }

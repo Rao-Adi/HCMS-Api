@@ -177,6 +177,27 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    [HttpGet("get-employees-by-divisionId/{divId}")]
+    public async Task<IActionResult> GetEmployeesByDivisionId(int divId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<dynamic>>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetEmployeeByDivisionIdAsync(divId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("get-employees-by-filters")]
     public async Task<IActionResult> GetEmployeesByFilters([FromBody] EmployeeFilterDto input)
     {
@@ -335,6 +356,63 @@ public class DMSPeoplePartnersController : Controller
             {
                 Success = true,
                 Data = selectList.ToList(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-head-by-division-id/{divId}")]
+    public async Task<IActionResult> GetAllSelectList(int divId)
+    {
+        try
+        {
+            var selectList = await _peoplePartnersComponent.GetHeadByDivisionIdAsync(divId);
+            return Ok(new HttpApiResponse<List<dynamic>>()
+            {
+                Success = true,
+                Data = selectList,
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new string[0]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new string[0]);
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-departments-by-division-id/{divId}")]
+    public async Task<IActionResult> GetDepartmentsByDivisionId(int divId)
+    {
+        try
+        {
+            var selectList = await _peoplePartnersComponent.GetDepartmentsByDivisionIdAsync(divId);
+            return Ok(new HttpApiResponse<IQueryable<SelectList2Dto>>()
+            {
+                Success = true,
+                Data = selectList,
                 Message = "Success",
                 Code = 200
             });

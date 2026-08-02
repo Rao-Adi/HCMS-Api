@@ -1,5 +1,4 @@
-﻿﻿﻿﻿using HCMS_Api.Common;
-﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -53,7 +52,7 @@ public class NotificationComponent
     /// <summary>
     /// Triggers a system notification aligned with the predefined Notification Matrix.
     /// </summary>
-    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders)
+    public async Task<bool> TriggerNotificationAsync(NotificationScenario scenario, int companyId, int relatedEntityId, string recipientUserId, Dictionary<string, string> placeholders, IDbTransaction transaction = null)
     {
         try
         {
@@ -61,36 +60,24 @@ public class NotificationComponent
 
             var (title, message, relatedEntityType, redirectionUrl) = GetNotificationDetails(scenario, placeholders);
 
-            string insertQuery = $@"
+            string insertQuery = @"
             INSERT INTO Notifications
-            (   CompanyId,
-                EmployeeCode,
-                Title,
-                Message,
-                NotificationType,
-                RelatedEntityType,
-                RelatedEntityId,
-                RedirectionUrl,
-                IsRead, 
-                CreatedAt
-            )
+            (CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId, RedirectionUrl, IsRead, CreatedAt)
             VALUES
-            (
-                {companyId},
-                '{targetUserId}',
-                '{title.Replace("'", "''")}',
-                '{message.Replace("'", "''")}',
-                {(int)scenario},
-                '{relatedEntityType}',
-                {relatedEntityId},
-                '{redirectionUrl}',
-                FALSE,
-                NOW()
-            )
+            (@CompanyId, @EmployeeCode, @Title, @Message, @NotificationType, @RelatedEntityType, @RelatedEntityId, @RedirectionUrl, FALSE, NOW())
             RETURNING Id;";
 
-            var newIdObj = _common.ExecuteScalarQuery(insertQuery);
-            int newId = newIdObj != null ? Convert.ToInt32(newIdObj) : 0;
+            int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
+            {
+                CompanyId = companyId,
+                EmployeeCode = targetUserId,
+                Title = title,
+                Message = message,
+                NotificationType = (int)scenario,
+                RelatedEntityType = relatedEntityType,
+                RelatedEntityId = relatedEntityId,
+                RedirectionUrl = redirectionUrl
+            }, transaction);
 
             // Dispatch real-time event to specific User and Group (Secure Targeting)
             var payload = new
@@ -99,19 +86,24 @@ public class NotificationComponent
                 recipientUserId = targetUserId,
                 title = title,
                 message = message,
-                type = (int)scenario,
+                type = "info", // Set to string so frontend toastr UI renders it correctly like SendTestNotification
+                notificationType = (int)scenario,
                 relatedEntityType = relatedEntityType,
                 relatedEntityId = relatedEntityId,
                 redirectionUrl = redirectionUrl,
-                createdAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now // Match SendTestNotification casing
             };
 
-            await _hubContext.Clients.User(targetUserId).SendAsync("ReceiveNotification", payload);
-            await _hubContext.Clients.Group(targetUserId).SendAsync("ReceiveNotification", payload);
+            // Broadcast to ALL connected clients to guarantee real-time delivery, mirroring SendTestNotification.
+            // IMPORTANT: Ensure your frontend Angular code filters incoming messages by checking:
+            // if (notification.recipientUserId === currentUser.employeeCode) { showToastr(); }
+            //await _hubContext.Clients.All.SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group($"user_{targetUserId}").SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, transaction);
 
+            
             return true;
         }
         catch (Exception)
@@ -122,7 +114,7 @@ public class NotificationComponent
 
     private (string Title, string Message, string RelatedEntityType, string RedirectionUrl) GetNotificationDetails(NotificationScenario scenario, Dictionary<string, string> p)
     {
-        string Get(string key) => p.TryGetValue(key, out var val) ? val : $"[{key}]";
+        string Get(string key) => p != null && p.TryGetValue(key, out var val) ? val : $"[{key}]";
 
         return scenario switch
         {
@@ -130,55 +122,55 @@ public class NotificationComponent
                 "New Request Pending",
                 $"A new request (Request ID: {Get("ID")}) is pending your approval.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestApprovedForwarded => (
                 "Request Approved - Forwarded",
                 $"Request ID: {Get("ID")} has been approved and requires your action.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestRejected => (
                 "Request Rejected",
                 $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Request",
-                "/dms/my-requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.RequestRevertedForRework => (
                 "Request Rework Required",
                 $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Get("Observation")}.",
                 "Request",
-                $"/dms/requests/edit/{Get("ID")}"
+                $"/documents/my-approvals-request"
             ),
             NotificationScenario.OverdueRequestReminder => (
                 "Overdue Action Required",
                 $"ACTION REQUIRED: Request ID: {Get("ID")} is overdue. Please process immediately.",
                 "Request",
-                "/dms/approvals/requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.PendingDocumentApproval => (
                 "New Document Pending Review",
                 $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) is pending your technical review.",
                 "Document",
-                "/dms/approvals/documents"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.DocumentApprovedForwarded => (
                 "Document Approved - Forwarded",
                 $"Document {Get("Doc Name")} has been approved and requires your action/authorization.",
                 "Document",
-                "/dms/approvals/documents"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.DocumentRejected => (
                 "Document Rejected",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Document",
-                "/dms/my-requests"
+                "/documents/my-approvals-request"
             ),
             NotificationScenario.DocumentRevertedForRework => (
                 "Document Rework Required",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
                 "Document",
-                $"/dms/documents/edit/{Get("ID")}"
+                $"/documents/my-approvals-documents"
             ),
             NotificationScenario.TrainingProofRequired => (
                 "Training Proof Required",
@@ -196,25 +188,25 @@ public class NotificationComponent
                 "Document Authorized & Effective",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
-                "/dms/my-documents"
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.PeriodicReviewDue => (
                 "Document Review Due Soon",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is due for review on {Get("Date")}. Please initiate a Revision Request.",
                 "Review",
-                "/dms/my-documents"
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.DocumentObsoleted => (
                 "Document Obsoleted",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) has been officially obsoleted as of {Get("Date")}.",
                 "Obsoletion",
-                "/dms/documents/obsoleted"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.PhysicalCopyRetrievalTask => (
                 "Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
-                "/dms/tasks/physical-copies"
+                "/documents/my-approvals-documents"
             ),
             NotificationScenario.NewUserAccountCreated => (
                 "Welcome to DMS",
@@ -226,18 +218,19 @@ public class NotificationComponent
                 "Responsibility Transfer Effective",
                 $"Your responsibility transfer from {Get("Emp From")} to {Get("Emp To")} is now effective from {Get("Date From")} to {Get("Date To")}.",
                 "Setup",
-                "/dms/my-documents"
+                "/documents/my-approvals-documents"
             ),
             _ => ("Notification", "You have a new notification.", "General", "/")
         };
     }
 
-     
+
     public async Task<NotificationReadDto> CreateAsync(NotificationCreateDto input)
     {
         try
-        {  
-
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
             INSERT INTO Notifications
@@ -253,7 +246,7 @@ public class NotificationComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.EmployeeCode}',
                 '{input.Title}',
                 '{input.Message}',
@@ -271,7 +264,7 @@ public class NotificationComponent
             string selectQuery = $@"
              SELECT n.*, c.Name AS Company FROM Notifications n
              LEFT JOIN Companies c ON n.CompanyId = c.Id
-            WHERE n.Id = {newId}";
+            WHERE n.Id = {newId} AND n.CompanyId ={CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -307,24 +300,28 @@ public class NotificationComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var empDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(code);
             // Check existence
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM Notifications
                 WHERE EmployeeCode = '{empDetail.empcode}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Notifications not found", 200);
+                throw new CustomException("Notifications not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Notifications
                 SET IsDeleted = False
-                WHERE Id = {code}";
+                WHERE Id = {code} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -339,14 +336,16 @@ public class NotificationComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             JwtArray loginUser = await _common.GetJwtUser();
             // Optionally enforce that a user only queries their own notifications
             input.SearchText = string.IsNullOrWhiteSpace(input.SearchText)
                 ? loginUser.UserEmpID.ToString()
                 : input.SearchText;
 
-            var whereClause = @"
-                WHERE n.IsRead = " + (input.IsActive ? "True" : "False");
+            var whereClause = @"WHERE n.CompanyId = " + CompanyId + " AND  n.IsRead = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -363,6 +362,10 @@ public class NotificationComponent
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
                 "TITLE" => "n.Title",
+                "CREATEDAT" => "n.CreatedAt",
+                "CREATEDBY" => "n.CreatedBy",
+                "LASTMODIFIEDAT" => "n.LastModifiedAt",
+                "LASTMODIFIEDBY" => "n.LastModifiedBy",
                 _ => "n.EmployeeCode"
             };
 
@@ -393,7 +396,7 @@ public class NotificationComponent
                     TotalCount = 0
                 };
             }
-             
+
             var divisions = divisionsTable.AsEnumerable()
                 .Select(row => new NotificationReadDto
                 {
@@ -436,10 +439,10 @@ public class NotificationComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
-            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()); 
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             string query = $@"
                  SELECT n.*,c.Name AS Company
@@ -453,8 +456,8 @@ public class NotificationComponent
             DataTable divisionsTable = await _common.ExecuteSqlQuery(query);
 
             if (divisionsTable.Rows.Count == 0)
-                throw new CustomException("Notifications not found", 200);
-             
+                throw new CustomException("Notifications not found", 404);
+
 
             var divisions = divisionsTable.AsEnumerable()
                .Select(row => new NotificationReadDto
@@ -475,7 +478,7 @@ public class NotificationComponent
                })
                .ToList();
 
-            return divisions; 
+            return divisions;
         }
         catch (Exception)
         {
@@ -487,7 +490,10 @@ public class NotificationComponent
     public async Task<NotificationReadDto> UpdateAsync(NotificationUpdateDto input)
     {
         try
-        { 
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             if (input.Id < 0)
                 throw new CustomException("Invalid division code.", 200);
 
@@ -495,13 +501,14 @@ public class NotificationComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM Notifications
-            WHERE Id = '{input.Id}'
+            WHERE Id = {input.Id}
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Notifications not found", 200);
+                throw new CustomException("Notifications not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -510,7 +517,7 @@ public class NotificationComponent
                 EmployeeCode = '{input.EmployeeCode}', 
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{input.EmployeeCode.Replace("'", "''")}'
-            WHERE Id = '{input.Id}'";
+            WHERE Id = {input.Id} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -522,7 +529,7 @@ public class NotificationComponent
                 SELECT n.*,c.Name AS Company
                     FROM Notifications n
 	                LEFT JOIN Companies c ON n.CompanyId = c.Id
-            WHERE n.Id = '{input.Id}'";
+            WHERE n.Id = {input.Id} AND n.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -559,7 +566,7 @@ public class NotificationComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -567,7 +574,7 @@ public class NotificationComponent
             string updateQuery = $@"
                 UPDATE Notifications 
                 SET IsRead = TRUE 
-                WHERE Id = {notificationId} AND CompanyID = {CompanyId} AND EmployeeCode = '{empCode}'";
+                WHERE Id = {notificationId} AND CompanyId = {CompanyId} AND EmployeeCode = '{empCode}'";
 
             return _common.ExecuteNonQuery(updateQuery);
         }
@@ -582,12 +589,12 @@ public class NotificationComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = {empCode} AND CompanyID = {CompanyId} AND IsRead = FALSE";
+            string updateQuery = $"UPDATE Notifications SET IsRead = TRUE WHERE EmployeeCode = '{empCode}' AND CompanyID = {CompanyId} AND IsRead = FALSE";
             return _common.ExecuteNonQuery(updateQuery);
         }
         catch (Exception)
@@ -606,7 +613,7 @@ public class NotificationComponent
                 title = title,
                 message = message,
                 type = type,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             });
 
             return true;
@@ -618,24 +625,16 @@ public class NotificationComponent
     }
 
 
-    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl)
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, IDbTransaction transaction = null)
     {
         try
         {
-            string emailQuery = "SELECT Email FROM tblEmployee WHERE TRIM(empCode) = @EmpCode AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
-            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId.Trim(), CompanyId = companyId });
+            string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
+            var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId, CompanyId = companyId }, transaction);
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {
-                string emailBody = $@"
-                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 8px;'>
-                        <h2 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;'>{title}</h2>
-                        <p style='font-size: 16px; color: #333; line-height: 1.5;'>{message}</p>
-                        <p style='font-size: 14px; color: #555; margin-top: 20px;'><strong>Action Required At:</strong> {redirectionUrl}</p>
-                        <hr style='border: none; border-top: 1px solid #eee; margin-top: 30px;' />
-                        <p style='font-size: 12px; color: #999; text-align: center;'>This is an automated notification from the Document Management System. Please do not reply.</p>
-                    </div>";
-
+                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
                 await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
             }
         }
@@ -644,6 +643,108 @@ public class NotificationComponent
             // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions
             Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
         }
+    }
+
+    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
+    {
+        string actionUrl = redirectionUrl ?? "";
+        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
+        if (!string.IsNullOrEmpty(actionUrl) && actionUrl != "#")
+        {
+            actionUrl = baseUrl.TrimEnd('/') + "/" + actionUrl.TrimStart('/');
+        }
+        else
+        {
+            actionUrl = baseUrl;
+        }
+
+        return $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='utf-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                <title>{title}</title>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #f1f5f9; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif; -webkit-font-smoothing: antialiased;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='background-color: #f1f5f9; padding: 30px 10px;'>
+                    <tr>
+                        <td align='center'>
+                            <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;'>
+                    
+                                <!-- Header Banner -->
+                                <tr>
+                                    <td style='background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 28px 32px; text-align: left;'>
+                                        <table width='100%' cellspacing='0' cellpadding='0' border='0'>
+                                            <tr>
+                                                <td>
+                                                    <div style='display: inline-block; background-color: rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 12px; color: #ffffff; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;'>
+                                                        Document Management System
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding-top: 12px;'>
+                                                    <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; line-height: 1.3;'>{title}</h1>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+
+                                <!-- Body Content -->
+                                <tr>
+                                    <td style='padding: 32px; color: #334155;'>
+                            
+                                        <!-- Status Badge -->
+                                        <div style='margin-bottom: 20px;'>
+                                            <span style='background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block;'>
+                                                Action Required
+                                            </span>
+                                        </div>
+
+                                        <!-- Notification Message Box -->
+                                        <div style='background-color: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 18px 20px; margin-bottom: 24px;'>
+                                            <p style='margin: 0; font-size: 15px; color: #1e293b; line-height: 1.6; font-weight: 500;'>
+                                                {message}
+                                            </p>
+                                        </div>
+
+                                        <!-- Action Button Section -->
+                                        {(!string.IsNullOrEmpty(redirectionUrl) ? $@"
+                                        <div style='margin-top: 28px; text-align: center; background-color: #ffffff; border: 1px solid #f1f5f9; padding: 20px; border-radius: 10px;'>
+                                            <p style='font-size: 13px; color: #64748b; margin-top: 0; margin-bottom: 16px; font-weight: 500;'>
+                                                Click the button below to review and process this request:
+                                            </p>
+                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); border: 1px solid #1d4ed8;'>
+                                                View Request Details &rarr;
+                                            </a>
+                                            <p style='font-size: 11px; color: #94a3b8; margin-top: 14px; margin-bottom: 0; word-break: break-all;'>
+                                                Target path: <span style='font-family: monospace; color: #475569;'>{redirectionUrl}</span>
+                                            </p>
+                                        </div>" : "")}
+
+                                    </td>
+                                </tr>
+
+                                <!-- Footer -->
+                                <tr>
+                                    <td style='background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                                        <p style='font-size: 12px; color: #64748b; margin: 0 0 6px 0; font-weight: 500;'>
+                                            This is an automated notification from the <strong>Document Management System (DMS)</strong>.
+                                        </p>
+                                        <p style='font-size: 11px; color: #94a3b8; margin: 0;'>
+                                            Please do not reply directly to this email.
+                                        </p>
+                                    </td>
+                                </tr>
+
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>";
     }
 
 }

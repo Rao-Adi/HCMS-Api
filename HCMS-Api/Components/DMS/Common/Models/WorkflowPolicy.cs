@@ -1,4 +1,5 @@
-﻿using HCMS_Api.Components.DMS.Common.Models.Departments;
+﻿using HCMS_Api.Common.Misc;
+using HCMS_Api.Components.DMS.Common.Models.Departments;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -39,7 +40,7 @@ public class WorkflowPolicyReadDto : AuditableEntity
     // 🔑 Tenant
     public int CompanyId { get; set; }
     public string Company { get; set; } = null!;
-      
+
     public string Name { get; set; }
 
     public string? EntityType { get; set; }
@@ -63,19 +64,16 @@ public class WorkflowPolicyReadDto : AuditableEntity
 }
 
 public class WorkflowPolicyCreateDto
-{ 
-
-    // 🔑 Tenant
-    public int CompanyId { get; set; }
+{
 
     public string Name { get; set; }
 
     public string? EntityType { get; set; }
-     
-    public string? DivisionCode { get; set; } 
-    public string? DepartmentCode { get; set; } 
-    public string? SubDepartmentCode { get; set; } 
-    public string? BusinessDomainCode { get; set; } 
+
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
     public string? DocumentTypeCode { get; set; }
 
 }
@@ -106,4 +104,10 @@ public class WorkflowPolicyUpdateDto
     public string? DocumentTypeCode { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
+}
+
+public class WorkflowPolicyGetDto : TableFiltersDto
+{
+
+    public string? EntityType { get; set; }
 }

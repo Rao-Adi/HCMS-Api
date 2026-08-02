@@ -1,4 +1,4 @@
-﻿using Azure.Storage.Blobs;
+﻿﻿using Azure.Storage.Blobs;
 using HCMS_Api.Components.HCMS.Common.DataAccess;
 using HCMS_Api.Components.HCMS.Common.Models;
 using MailKit.Security;
@@ -757,8 +757,11 @@ namespace HCMS_Api.Components.HCMS.Common
         public string GetPrefix(string _ClientIP)
         {
             string _Prefix = String.Empty;
+            if (string.IsNullOrEmpty(_ClientIP)) return _Prefix;
+
+            var sanitizedIP = _ClientIP.Replace("'", "''");
             Object obj = new object();
-            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + _ClientIP + "' order by  Id desc");
+            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
             if (obj != null)
             {
                 _Prefix = obj.ToString();
@@ -1689,24 +1692,66 @@ namespace HCMS_Api.Components.HCMS.Common
 
         public async Task SendEmailAsync(List<string> recipients, string subject, string body)
         {
-            var email = new MimeMessage();
-            email.Sender = MailboxAddress.Parse(_configuration.GetSection("MailSettings:Email").Value);
-
-            foreach (var recipient in recipients)
-                email.To.Add(MailboxAddress.Parse(recipient));
-
-            email.Subject = subject;
-            var builder = new BodyBuilder();
-            builder.HtmlBody = body;
-            email.Body = builder.ToMessageBody();
-
-            using (var smtp = new MailKit.Net.Smtp.SmtpClient())
+            try
             {
-                int.TryParse(_configuration.GetSection("MailSettings:Port").Value, out int _port);
-                await smtp.ConnectAsync(_configuration.GetSection("MailSettings:Host").Value, _port, SecureSocketOptions.StartTls);
-                await smtp.AuthenticateAsync(_configuration.GetSection("MailSettings:Email").Value, _configuration.GetSection("MailSettings:Password").Value);
-                await smtp.SendAsync(email);
-                await smtp.DisconnectAsync(true);
+                var senderEmail = _configuration.GetSection("MailSettings:Email")?.Value;
+                if (string.IsNullOrEmpty(senderEmail))
+                {
+                    Console.WriteLine("[SMTP ERROR] MailSettings:Email is not configured.");
+                    return;
+                }
+
+                var email = new MimeMessage();
+                var mailboxAddress = MailboxAddress.Parse(senderEmail);
+                email.From.Add(mailboxAddress);
+                email.Sender = mailboxAddress;
+
+                if (recipients != null) foreach (var recipient in recipients.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()) email.To.Add(MailboxAddress.Parse(recipient));
+
+                if (!email.To.Any())
+                {
+                    Console.WriteLine("[SMTP ERROR] No recipients specified for email.");
+                    return;
+                }
+
+                email.Subject = subject ?? string.Empty;
+                var builder = new BodyBuilder();
+                builder.HtmlBody = body ?? string.Empty;
+                email.Body = builder.ToMessageBody();
+
+                using (var smtp = new MailKit.Net.Smtp.SmtpClient())
+                {
+                    smtp.Timeout = 15000;
+                    smtp.ServerCertificateValidationCallback = (s, c, h, e) => true;
+
+                    int.TryParse(_configuration.GetSection("MailSettings:Port")?.Value, out int _port);
+                    if (_port <= 0) _port = 25;
+
+                    var host = _configuration.GetSection("MailSettings:Host")?.Value;
+
+                    var socketOption = _port == 465 ? SecureSocketOptions.SslOnConnect :
+                                       _port == 587 ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+
+                    Console.WriteLine($"[SMTP INFO] Connecting to {host}:{_port} using {socketOption}...");
+                    await smtp.ConnectAsync(host, _port, socketOption);
+
+                    smtp.AuthenticationMechanisms.Remove("XOAUTH2");
+
+                    var pass = _configuration.GetSection("MailSettings:Password")?.Value;
+                    if (!string.IsNullOrEmpty(pass))
+                    {
+                        await smtp.AuthenticateAsync(senderEmail, pass);
+                    }
+
+                    await smtp.SendAsync(email);
+                    Console.WriteLine($"[SMTP SUCCESS] Email '{subject}' sent successfully.");
+                    await smtp.DisconnectAsync(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SMTP ERROR] Exception sending email '{subject}': {ex.Message}");
+                throw;
             }
         }
 

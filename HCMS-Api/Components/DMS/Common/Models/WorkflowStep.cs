@@ -134,7 +134,7 @@ public class PendingRequestDto
 public class WorkFlowStepsFilterDto
 { 
     public int? CompanyId { get; set; }
-    public int WorkflowPolicyId { get; set; }
+    public int WorkflowPolicyId { get; set; } 
     public string StepType { get; set; }
     public string EntityType { get; set; }
     public string DocumentTypeCode { get; set; }
@@ -155,6 +155,7 @@ public class WorkFlowStepsFilterDto
 public class GetStepDefinitionFilterDto
 { 
     public string EntityType { get; set; }
+    public int WorkflowPolicyId { get; set; }
     public string DocumentTypeCode { get; set; }
     public string? DivisionCode { get; set; }
     public string? DepartmentCode { get; set; }

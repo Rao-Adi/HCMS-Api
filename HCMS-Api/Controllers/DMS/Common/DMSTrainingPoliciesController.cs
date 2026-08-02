@@ -64,7 +64,7 @@ public class DMSTrainingPoliciesController : Controller
 
 
     [HttpGet("get-training-policy-by-code/{code}")]
-    public async Task<IActionResult> GetTrainingPolicyById(string code)
+    public async Task<IActionResult> GetTrainingPolicyById(int code)
     {
         try
         {
@@ -89,6 +89,35 @@ public class DMSTrainingPoliciesController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+
+    [HttpGet("get-training-policy-by-document-type/{code}")]
+    public async Task<IActionResult> GetTrainingPolicyByDocumentType(string code)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<TrainingPolicyReadDto>()
+            {
+                Success = true,
+                Data = await _trainingpolicyComponent.GetByDocumentTypeAsync(code),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+    
 
 
     [HttpPost("create-training-policy")]
@@ -152,7 +181,7 @@ public class DMSTrainingPoliciesController : Controller
     }
 
     [HttpDelete("delete-training-policy/{code}")]
-    public async Task<IActionResult> DeleteAsync(string code)
+    public async Task<IActionResult> DeleteAsync(int code)
     {
         try
         {

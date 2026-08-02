@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -52,13 +52,14 @@ public class DocumentRequestTypeComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Document type name is required.", 400);
+                throw new CustomException("Document type name is required.", 404);
 
             // 🔍 Check duplicate by NAME only
             string duplicateCheckQuery = $@"
                             SELECT COUNT(1)
                             FROM DocumentRequestTypes
                             WHERE Name = '{input.Name.Replace("'", "''")}'
+                              AND CompanyId = {CompanyId}
                               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
@@ -67,10 +68,11 @@ public class DocumentRequestTypeComponent
                 throw new CustomException("Document Type already exists", 409);
 
             // 🔢 Generate next Division Code
-            string getLastCodeQuery = @"
+            string getLastCodeQuery = $@"
                             SELECT Code
                             FROM DocumentRequestTypes
                             WHERE Code IS NOT NULL
+                              AND CompanyId = {CompanyId}
                             ORDER BY Id DESC
                             LIMIT 1";
 
@@ -105,7 +107,7 @@ public class DocumentRequestTypeComponent
                     )
                     VALUES
                     (
-                        '{input.CompanyId}',
+                        '{CompanyId}',
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         '{input.Description?.Replace("'", "''")}',
@@ -127,7 +129,7 @@ public class DocumentRequestTypeComponent
                 FROM DocumentRequestTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
-                WHERE d.Id = {newId}";
+                WHERE d.Id = {newId} AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -177,12 +179,13 @@ public class DocumentRequestTypeComponent
                 SELECT COUNT(1)
                 FROM DocumentRequestTypes
                 WHERE Code = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentRequestType not found", 200);
+                throw new CustomException("DocumentRequestType not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -190,7 +193,7 @@ public class DocumentRequestTypeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}'";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -205,8 +208,12 @@ public class DocumentRequestTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE d.IsDeleted = False 
+                  AND d.CompanyId = " + CompanyId + @"
                   AND d.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -226,6 +233,10 @@ public class DocumentRequestTypeComponent
                 "NAME" => "d.Name",
                 "CODE" => "d.Code",
                 "ISACTIVE" => "d.IsActive",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
                 _ => "d.Name"
             };
 
@@ -303,11 +314,15 @@ public class DocumentRequestTypeComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM DocumentRequestTypes
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Code";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -333,19 +348,23 @@ public class DocumentRequestTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT d.*, c.Id AS CompanyId, c.Name AS Company
                 FROM DocumentRequestTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
                 WHERE d.Code = '{code}'
+                  AND d.CompanyId = {CompanyId}
                   AND d.IsActive = True
                   AND d.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentRequestType not found", 200);
+                throw new CustomException("DocumentRequestType not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -390,12 +409,13 @@ public class DocumentRequestTypeComponent
             SELECT COUNT(1)
             FROM DocumentRequestTypes
             WHERE Code = '{input.Code.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentRequestType not found", 200);
+                throw new CustomException("DocumentRequestType not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -406,7 +426,7 @@ public class DocumentRequestTypeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -419,7 +439,7 @@ public class DocumentRequestTypeComponent
                 FROM DocumentRequestTypes d
                 LEFT JOIN Companies c
                 ON d.CompanyId = c.Id
-            WHERE Code = '{input.Code.Replace("'", "''")}'";
+            WHERE d.Code = '{input.Code.Replace("'", "''")}' AND d.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -455,10 +475,13 @@ public class DocumentRequestTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM DocumentRequestTypes 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }

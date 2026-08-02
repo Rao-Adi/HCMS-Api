@@ -207,15 +207,15 @@ public class DMSDocumentTrainingController : Controller
         }
     }
 
-    [HttpGet("get-training-assessment-details/{documentId}")]
-    public async Task<IActionResult> GetTrainingAssessmentDetails(int documentId)
+    [HttpGet("get-training-assessment-details/{documentId}/{trainingMode}")]
+    public async Task<IActionResult> GetTrainingAssessmentDetails(int documentId, int trainingMode)
     {
         try
         {
             return Ok(new HttpApiResponse<TrainingAssessmentResultDto>()
             {
                 Success = true,
-                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId),
+                Data = await _documentTrainingComponent.GetTrainingAssessmentDetailsAsync(documentId, trainingMode),
                 Message = "Success",
                 Code = 200
             });

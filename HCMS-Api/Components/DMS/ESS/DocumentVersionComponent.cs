@@ -58,7 +58,8 @@ public class DocumentVersionComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentVersions
-            WHERE (Id = '{input.Id}' 
+            WHERE Id = '{input.Id}' AND CompanyId ={CompanyId}
+               OR (Version = '{input.Version.Replace("'", "''")}' AND DocumentId = {input.DocumentId})
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -82,7 +83,7 @@ public class DocumentVersionComponent
             )
             VALUES
             (
-                '{input.CompanyId}',
+                '{CompanyId}',
                 '{input.DocumentId}',
                 '{input.Version.Replace("'", "''")}',
                 '{input.VersionType}',
@@ -101,7 +102,7 @@ public class DocumentVersionComponent
             string selectQuery = $@"
             SELECT *
             FROM DocumentVersions
-            WHERE Id = {newId}";
+            WHERE Id = {newId} AND CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -113,7 +114,7 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
@@ -148,13 +149,13 @@ public class DocumentVersionComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentVersions
-                WHERE DocumentId = {code}
+                WHERE DocumentId = {code} AND CompanyId ={CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -162,7 +163,7 @@ public class DocumentVersionComponent
                 SET IsDeleted = True, 
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE DocumentId = {code}";
+                WHERE DocumentId = {code} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -177,9 +178,11 @@ public class DocumentVersionComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE IsDeleted = False 
-                  AND IsActive = " + (input.IsActive ? "True" : "False");
+                WHERE IsDeleted = False AND CompanyId = " + CompanyId + @" AND IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -197,6 +200,10 @@ public class DocumentVersionComponent
             {
                 "NAME" => "Version",
                 "CODE" => "DocumentId",
+                "CREATEDAT" => "CreatedAt",
+                "CREATEDBY" => "CreatedBy",
+                "LASTMODIFIEDAT" => "LastModifiedAt",
+                "LASTMODIFIEDBY" => "LastModifiedBy",
                 "ISACTIVE" => "IsActive",
                 _ => "Version"
             };
@@ -234,7 +241,7 @@ public class DocumentVersionComponent
                 .Select(row => new DocumentVersionReadDto
                 {
                     DocumentId = row.Table.Columns.Contains("DocumentId") ? row.Field<int>("DocumentId") : 0,
-                    CompanyId = row.Field<Int64>("CompanyId"),
+                    CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     Version = row.Table.Columns.Contains("Version") ? row.Field<string>("Version") : string.Empty,
                     VersionType = row.Table.Columns.Contains("VersionType") ? row.Field<int>("VersionType") : 0,
@@ -269,10 +276,13 @@ public class DocumentVersionComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT DocumentId, Version
             FROM DocumentVersions
-            WHERE IsActive = True
+            WHERE IsActive = True AND CompanyId = {CompanyId}
               AND IsDeleted = False
             ORDER BY Version";
 
@@ -299,24 +309,27 @@ public class DocumentVersionComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT *
                 FROM DocumentVersions
-                WHERE DocumentId = {code}
+                WHERE DocumentId = {code} AND CompanyId = {CompanyId}
                   AND IsActive = True
                   AND IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             DataRow row = dt.Rows[0];
 
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),
@@ -354,13 +367,13 @@ public class DocumentVersionComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentVersions
-            WHERE DocumentId = '{input.DocumentId}'
+            WHERE DocumentId = {input.DocumentId} AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DocumentVersion not found", 200);
+                throw new CustomException("DocumentVersion not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -370,7 +383,7 @@ public class DocumentVersionComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE DocumentId = '{input.DocumentId}'";
+            WHERE DocumentId = {input.DocumentId} AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -381,7 +394,7 @@ public class DocumentVersionComponent
             string selectQuery = $@"
             SELECT *
             FROM DocumentVersions
-            WHERE DocumentId = '{input.DocumentId}'";
+            WHERE DocumentId = {input.DocumentId} AND CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -393,7 +406,7 @@ public class DocumentVersionComponent
             return new DocumentVersionReadDto
             {
                 DocumentId = row.Field<int>("DocumentId"),
-                CompanyId = row.Field<Int64>("CompanyId"),
+                CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 Version = row.Field<string>("Version"),
                 VersionType = row.Field<int>("VersionType"),

@@ -1,4 +1,4 @@
-﻿using HCMS_Api.Common;
+﻿﻿using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -56,7 +56,8 @@ public class DistributionTypeComponent
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DistributionTypes
-            WHERE Name = '{input.Name.Replace("'", "''")}' 
+            WHERE Name = '{input.Name.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -78,7 +79,7 @@ public class DistributionTypeComponent
             )
             VALUES
             (
-                '{input.CompanyId}',  
+                {CompanyId},  
                 '{input.Name.Replace("'", "''")}',  
                 TRUE,
                 FALSE,
@@ -97,7 +98,7 @@ public class DistributionTypeComponent
                         FROM DistributionTypes dt
                         LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
-            WHERE dt.Id = {newId}";
+            WHERE dt.Id = {newId} AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -142,12 +143,13 @@ public class DistributionTypeComponent
                 SELECT COUNT(1)
                 FROM DistributionTypes
                 WHERE Id = {id}
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DistributionType not found", 200);
+                throw new CustomException("DistributionType not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -155,7 +157,7 @@ public class DistributionTypeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {id}";
+                WHERE Id = {id} AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -170,11 +172,15 @@ public class DistributionTypeComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Id, Name
             FROM DistributionTypes
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Id";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -200,8 +206,12 @@ public class DistributionTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
                 WHERE dt.IsDeleted = False 
+                  AND dt.CompanyId = " + CompanyId + @"
                   AND dt.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -220,6 +230,10 @@ public class DistributionTypeComponent
             {
                 "NAME" => "dt.Name",
                 "DESCRIPTION" => "dt.Description",
+                "CREATEDAT" => "dt.CreatedAt",
+                "CREATEDBY" => "dt.CreatedBy",
+                "LASTMODIFIEDAT" => "dt.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dt.LastModifiedBy",
                 "ISACTIVE" => "dt.IsActive",
                 _ => "dt.Name"
             };
@@ -295,12 +309,16 @@ public class DistributionTypeComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT dt.*,c.Id AS CompanyId,c.Name AS Company
                         FROM DistributionTypes dt
                         LEFT JOIN Companies c
                         ON dt.CompanyId = c.Id
                 WHERE dt.Id = {id}
+                  AND dt.CompanyId = {CompanyId}
                   AND dt.IsActive = True
                   AND dt.IsDeleted = False";
 
@@ -343,19 +361,20 @@ public class DistributionTypeComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Invalid division code.", 200);
+                throw new CustomException("Invalid division code.", 404);
 
             // Check existence (Name is VARCHAR → must be quoted)
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DistributionTypes
             WHERE Name = '{input.Name.Replace("'", "''")}'
+              AND CompanyId = {CompanyId}
               AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("DistributionType not found", 200);
+                throw new CustomException("DistributionType not found", 404);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
@@ -365,7 +384,7 @@ public class DistributionTypeComponent
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
-            WHERE Name = '{input.Name.Replace("'", "''")}'";
+            WHERE Name = '{input.Name.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -378,7 +397,7 @@ public class DistributionTypeComponent
             FROM DistributionTypes dt
             LEFT JOIN Companies c
             ON dt.CompanyId = c.Id
-            WHERE dt.Name = '{input.Name.Replace("'", "''")}'";
+            WHERE dt.Name = '{input.Name.Replace("'", "''")}' AND dt.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 

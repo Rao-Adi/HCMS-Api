@@ -64,6 +64,7 @@ public class DepartmentComponent
                         SELECT COUNT(1)
                         FROM Divisions
                         WHERE Code = '{input.DivisionCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int divisionExists = Convert.ToInt32(_common.ExecuteScalarQuery(divisionCheckQuery));
@@ -77,6 +78,7 @@ public class DepartmentComponent
                         FROM Departments
                         WHERE Name = '{input.Name.Replace("'", "''")}'
                           AND DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(duplicateCheckQuery));
@@ -89,6 +91,7 @@ public class DepartmentComponent
                         SELECT Code
                         FROM Departments
                         WHERE DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
+                          AND CompanyId = {CompanyId}
                           AND Code IS NOT NULL
                         ORDER BY Id DESC
                         LIMIT 1";
@@ -163,7 +166,7 @@ public class DepartmentComponent
                 -- 🔹 Last Modified By Employee
                 LEFT JOIN Vw_EmployeeNames m 
                     ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
-                    WHERE dep.Id = {newId}";
+                    WHERE dep.Id = {newId} AND dep.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -213,12 +216,13 @@ public class DepartmentComponent
                 SELECT COUNT(1)
                 FROM Departments
                 WHERE Code = '{code}'
+                  AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
 
             if (exists == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             // Soft delete
             string deleteQuery = $@"
@@ -226,7 +230,7 @@ public class DepartmentComponent
                 SET IsDeleted = TRUE,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}'";
+                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }
@@ -241,8 +245,12 @@ public class DepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             var whereClause = @"
-                WHERE dep.IsDeleted = False 
+                WHERE dep.IsDeleted = False AND dep.IsActive = True 
+                  AND dep.CompanyId = " + CompanyId + @"
                   AND dep.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -261,6 +269,10 @@ public class DepartmentComponent
             {
                 "NAME" => "dep.Name",
                 "CODE" => "dep.Code",
+                "CREATEDAT" => "dep.CreatedAt",
+                "CREATEDBY" => "dep.CreatedBy",
+                "LASTMODIFIEDAT" => "dep.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dep.LastModifiedBy",
                 "ISACTIVE" => "dep.IsActive",
                 _ => "dep.Name"
             };
@@ -357,11 +369,15 @@ public class DepartmentComponent
     {
         try
         {
-            string query = @"
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            string query = $@"
             SELECT Code, Name
             FROM Departments
             WHERE IsActive = True
               AND IsDeleted = False
+              AND CompanyId = {CompanyId}
             ORDER BY Name";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
@@ -387,6 +403,9 @@ public class DepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@" SELECT dep.*,c.Name As Company,
                     -- 🔹 Audit Fields
                      COALESCE(e.EmployeeName, dep.CreatedBy::text) AS CreatedByName,
@@ -408,13 +427,14 @@ public class DepartmentComponent
                         ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
  
                 WHERE dep.Code = '{code}'
+                  AND dep.CompanyId = {CompanyId}
                   AND dep.IsActive = True
                   AND dep.IsDeleted = False";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
             if (dt.Rows.Count == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             DataRow row = dt.Rows[0];
 
@@ -448,6 +468,9 @@ public class DepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                  SELECT dep.*,c.Name As Company,  div.Name AS Division,
                     -- 🔹 Audit Fields
@@ -470,6 +493,7 @@ public class DepartmentComponent
                         ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
  
                 WHERE dep.DivisionCode = '{dCode}'
+                  AND dep.CompanyId = {CompanyId}
                   AND dep.IsActive = True
                   AND dep.IsDeleted = False";
 
@@ -479,7 +503,7 @@ public class DepartmentComponent
                                                       // ✅ SAFETY CHECKS
             if (departmentTable == null || departmentTable.Rows.Count == 0)
             {
-                throw new CustomException("SubDepartment not found", 200);
+                throw new CustomException("SubDepartment not found", 404);
             }
 
             var departments = departmentTable.AsEnumerable()
@@ -523,39 +547,41 @@ public class DepartmentComponent
 
             // 🔒 Mandatory validations
             if (string.IsNullOrWhiteSpace(input.Code))
-                throw new CustomException("Department code is required.", 200);
+                throw new CustomException("Department code is required.", 404);
 
             if (string.IsNullOrWhiteSpace(input.Name))
-                throw new CustomException("Department name is required.", 200);
+                throw new CustomException("Department name is required.", 404);
 
             if (string.IsNullOrWhiteSpace(input.DivisionCode))
-                throw new CustomException("Division code is required.", 200);
+                throw new CustomException("Division code is required.", 404);
 
             // 🔍 Check department exists
             string departmentExistsQuery = $@"
                     SELECT COUNT(1)
                     FROM Departments
                     WHERE Code = '{input.Code.Replace("'", "''")}'
+                      AND CompanyId = {CompanyId}
                       AND IsDeleted = FALSE";
 
             int departmentExists =
                 Convert.ToInt32(_common.ExecuteScalarQuery(departmentExistsQuery));
 
             if (departmentExists == 0)
-                throw new CustomException("Department not found", 200);
+                throw new CustomException("Department not found", 404);
 
             // 🔍 Validate parent Division exists
             string divisionExistsQuery = $@"
                     SELECT COUNT(1)
                     FROM Divisions
                     WHERE Code = '{input.DivisionCode.Replace("'", "''")}'
+                      AND CompanyId = {CompanyId}
                       AND IsDeleted = FALSE";
 
             int divisionExists =
                 Convert.ToInt32(_common.ExecuteScalarQuery(divisionExistsQuery));
 
             if (divisionExists == 0)
-                throw new CustomException("Parent Division not found", 200);
+                throw new CustomException("Parent Division not found", 404);
 
             // 🚫 Prevent duplicate Department Name PER Division
             string duplicateNameQuery = $@"
@@ -564,6 +590,7 @@ public class DepartmentComponent
                     WHERE Name = '{input.Name.Replace("'", "''")}'
                       AND DivisionCode = '{input.DivisionCode.Replace("'", "''")}'
                       AND Code <> '{input.Code.Replace("'", "''")}'
+                      AND CompanyId = {CompanyId}
                       AND IsDeleted = FALSE";
 
             int duplicate =
@@ -571,7 +598,7 @@ public class DepartmentComponent
 
             if (duplicate > 0)
                 throw new CustomException(
-                    "Department name already exists in this Division", 200);
+                    "Department name already exists in this Division", 404);
 
             // ✏️ Update ONLY mutable fields
             string updateQuery = $@"
@@ -581,7 +608,7 @@ public class DepartmentComponent
                     DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{input.Code.Replace("'", "''")}'";
+                WHERE Code = '{input.Code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
             bool updated = _common.ExecuteNonQuery(updateQuery);
 
@@ -609,7 +636,7 @@ public class DepartmentComponent
                     -- 🔹 Last Modified By Employee
                     LEFT JOIN Vw_EmployeeNames m 
                         ON m.CleanEmpCode = LTRIM(dep.LastModifiedBy::text, '0')
-                    WHERE dep.Code = '{input.Code.Replace("'", "''")}'";
+                    WHERE dep.Code = '{input.Code.Replace("'", "''")}' AND dep.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -649,10 +676,13 @@ public class DepartmentComponent
     {
         try
         {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
             string query = $@"
                 SELECT COUNT(1)
                 FROM Departments 
-                  WHERE IsDeleted = FALSE";
+                  WHERE IsDeleted = FALSE AND CompanyId = {CompanyId}";
             int count = Convert.ToInt32(_common.ExecuteScalarQuery(query));
             return count;
         }
