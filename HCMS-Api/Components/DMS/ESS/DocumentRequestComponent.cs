@@ -341,10 +341,7 @@ public class DocumentRequestComponent
         }
     }
 
-
-
-  
-
+     
     public async Task<long> CreateAndSubmitDocumentRequestAsync(DraftDocumentRequestDto dto)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -3163,7 +3160,7 @@ public class DocumentRequestComponent
                     d.DocumentNumber,
                     d.Title AS DocumentName,
                     d.ParentDocumentId,
-                    COALESCE(dv.Version, '1.0') AS Version,
+                    dv.Version,
                     d.RequestId,
                     dr.RequestNumber,
                     dr.DocumentRequestTypeCode,
