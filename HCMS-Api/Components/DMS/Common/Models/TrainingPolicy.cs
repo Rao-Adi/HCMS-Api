@@ -28,6 +28,7 @@ public class TrainingPolicyReadDto : AuditableEntity
     public Int64 CompanyId { get; set; }
     public string Company { get; set; } = null!;
 
+    public string DocumentType { get; set; }
     public string DocumentTypeCode { get; set; }
     public bool TrainingRequired { get; set; }
     public int? MinimumScore { get; set; }

@@ -1822,7 +1822,26 @@ public class DocumentRequestComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
-            var dataSql = $@"SELECT * FROM fn_get_my_inbox_requests(
+            // Limited to the same columns the "My Approvals – Request for Document Creation/Update"
+            // grid shows (documentColumnDefsWithoutStatus in my-approval-request.ts) instead of
+            // SELECT * — the export previously dumped every raw column from the underlying
+            // function (ids, codes, internal flags, etc.) instead of matching what's on screen.
+            // Dates are formatted in SQL to match the UI's "Mon DD, YYYY HH24:MI:SS" display.
+            var dataSql = $@"SELECT
+                    documenttype AS ""Document Type"",
+                    requestnumber AS ""Request ID"",
+                    documentname AS ""Document Name"",
+                    justification AS ""Justification"",
+                    rowversion AS ""Proposed Version Number"",
+                    division AS ""Division"",
+                    department AS ""Department"",
+                    subdepartment AS ""Sub-Department"",
+                    businessdomain AS ""Business Domain"",
+                    createdby AS ""Request Created By"",
+                    TO_CHAR(createdat, 'Mon DD, YYYY HH24:MI:SS') AS ""Request Created On"",
+                    previousversioncreatedby AS ""Previous Version Created By"",
+                    TO_CHAR(previousversioncreatedon, 'Mon DD, YYYY HH24:MI:SS') AS ""Previous Version Created On""
+                FROM fn_get_my_inbox_requests(
                     @CompanyId,
                     @UserId,
                     @RequestStatus
@@ -1861,7 +1880,13 @@ public class DocumentRequestComponent
                 var values = new List<string>();
                 foreach (var header in headers)
                 {
-                    var value = dict[header]?.ToString() ?? "";
+                    var raw = dict[header];
+                    // Postgres timestamp columns come back as DateTime, not string, so
+                    // ToString() would use the server's current-culture default format instead
+                    // of the requested "Aug, 02 2026 09:00:00" style.
+                    var value = raw is DateTime dt
+                        ? dt.ToString("MMM, dd yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
+                        : raw?.ToString() ?? "";
                     // Escape commas and quotes
                     var escapedValue = $"\"{value.Replace("\"", "\"\"")}\"";
                     values.Add(escapedValue);

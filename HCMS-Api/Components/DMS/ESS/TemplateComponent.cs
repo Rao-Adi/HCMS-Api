@@ -482,7 +482,8 @@ public class TemplateComponent
                     ON t.BusinessDomainCode = bd.Code
                 WHERE t.DocumentTypeCode = '{code}' AND t.CompanyId = {CompanyId} 
                   AND t.IsActive = True
-                  AND t.IsDeleted = False";
+                  AND t.IsDeleted = False
+                  AND t.IsDefault = True";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 

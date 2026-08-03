@@ -98,27 +98,29 @@ public class TrainingPolicyComponent
 
             // Fetch inserted record
             string selectQuery = $@" 
-             SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
-             -- 🔹 Audit Fields
-              COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
+                SELECT t.*,dt.Name AS DocumentType, c.Id AS CompanyId, c.Name AS Company,
+                         -- 🔹 Audit Fields
+                          COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
  
-              COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
-             FROM TrainingPolicies t 
-            LEFT JOIN Companies c
-                    ON t.CompanyId = c.Id
-                -- 🔹 Created By Employee
-             LEFT JOIN Vw_EmployeeNames e
-                 ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
+                          COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
+                         FROM TrainingPolicies t 
+                        LEFT JOIN DocumentTypes dt
+                        ON dt.Code = t.DocumentTypeCode
+                        LEFT JOIN Companies c
+                                ON t.CompanyId = c.Id
+                            -- 🔹 Created By Employee
+                         LEFT JOIN Vw_EmployeeNames e
+                             ON e.CleanEmpCode = LTRIM(t.CreatedBy::text, '0')
 
-             -- 🔹 Last Modified By Employee
-             LEFT JOIN Vw_EmployeeNames m 
-                 ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
+                         -- 🔹 Last Modified By Employee
+                         LEFT JOIN Vw_EmployeeNames m 
+                             ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
             WHERE t.Id = {newId} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
             if (dt == null || dt.Rows.Count == 0)
-                throw new Exception("Failed to fetch created division");
+                throw new CustomException("Failed to fetch created division", 409);
 
             DataRow row = dt.Rows[0];
 
@@ -127,6 +129,7 @@ public class TrainingPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+                DocumentType = row.Field<string>("DocumentType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -225,12 +228,14 @@ public class TrainingPolicyComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             string query = $@"
-                        SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                        SELECT t.*,dt.Name AS DocumentType, c.Id AS CompanyId, c.Name AS Company,
                          -- 🔹 Audit Fields
                           COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
  
                           COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
                          FROM TrainingPolicies t 
+                        LEFT JOIN DocumentTypes dt
+                        ON dt.Code = t.DocumentTypeCode
                         LEFT JOIN Companies c
                                 ON t.CompanyId = c.Id
                             -- 🔹 Created By Employee
@@ -269,6 +274,7 @@ public class TrainingPolicyComponent
                     CompanyId = row.Field<int>("CompanyId"),
                     Company = row.Field<string>("Company"),
                     DocumentTypeCode = row.Table.Columns.Contains("DocumentTypeCode") ? row.Field<string>("DocumentTypeCode") : string.Empty,
+                    DocumentType = row.Table.Columns.Contains("DocumentType") ? row.Field<string>("DocumentType") : string.Empty,
                     MinimumScore = row.Table.Columns.Contains("MinimumScore") ? row.Field<int>("MinimumScore") : 0,
                     TrainingRequired = row.Table.Columns.Contains("TrainingRequired") && row.Field<bool?>("TrainingRequired") == true,
                     IsActive = row.Table.Columns.Contains("IsActive") && row.Field<bool?>("IsActive") == true,
@@ -310,12 +316,14 @@ public class TrainingPolicyComponent
             int CompanyId = int.Parse(_CompanyId);
 
             string query = $@"
-                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                 SELECT t.*,dt.Name AS DocumentType, c.Id AS CompanyId, c.Name AS Company,
                      -- 🔹 Audit Fields
                       COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
  
                       COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
                      FROM TrainingPolicies t 
+                    LEFT JOIN DocumentTypes dt
+                    ON dt.Code = t.DocumentTypeCode
                     LEFT JOIN Companies c
                             ON t.CompanyId = c.Id
                         -- 🔹 Created By Employee
@@ -341,6 +349,7 @@ public class TrainingPolicyComponent
                 Id = row.Field<int>("Id"),
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
+                DocumentType = row.Field<string>("DocumentType"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
@@ -370,12 +379,14 @@ public class TrainingPolicyComponent
             int CompanyId = int.Parse(_CompanyId);
 
             string query = $@"
-                 SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+                 SELECT t.*,dt.Name AS DocumentType, c.Id AS CompanyId, c.Name AS Company,
                      -- 🔹 Audit Fields
                       COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
  
                       COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
                      FROM TrainingPolicies t 
+                    LEFT JOIN DocumentTypes dt
+                    ON dt.Code = t.DocumentTypeCode
                     LEFT JOIN Companies c
                             ON t.CompanyId = c.Id
                         -- 🔹 Created By Employee
@@ -402,6 +413,7 @@ public class TrainingPolicyComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentType = row.Field<string>("DocumentType"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),
@@ -466,12 +478,14 @@ public class TrainingPolicyComponent
 
             // Return updated record
             string selectQuery = $@"
-             SELECT t.*, c.Id AS CompanyId, c.Name AS Company,
+             SELECT t.*,dt.Name AS DocumentType, c.Id AS CompanyId, c.Name AS Company,
                  -- 🔹 Audit Fields
                   COALESCE(e.EmployeeName, t.CreatedBy::text) AS CreatedByName,
  
                   COALESCE(m.EmployeeName, t.LastModifiedBy::text) AS LastModifiedByName
                  FROM TrainingPolicies t 
+                LEFT JOIN DocumentTypes dt
+                ON dt.Code = t.DocumentTypeCode
                 LEFT JOIN Companies c
                         ON t.CompanyId = c.Id
                     -- 🔹 Created By Employee
@@ -481,7 +495,7 @@ public class TrainingPolicyComponent
                  -- 🔹 Last Modified By Employee
                  LEFT JOIN Vw_EmployeeNames m 
                      ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
-            WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
+             WHERE t.Id = {input.Id} AND t.CompanyId = {CompanyId}";
 
             DataTable dt = await _common.ExecuteSqlQuery(selectQuery);
 
@@ -496,6 +510,7 @@ public class TrainingPolicyComponent
                 CompanyId = row.Field<int>("CompanyId"),
                 Company = row.Field<string>("Company"),
                 DocumentTypeCode = row.Field<string>("DocumentTypeCode"),
+                DocumentType = row.Field<string>("DocumentType"),
                 TrainingRequired = row.Field<bool>("TrainingRequired"),
                 MinimumScore = row.Field<int>("MinimumScore"),
                 IsDeleted = row.Field<bool>("IsDeleted"),

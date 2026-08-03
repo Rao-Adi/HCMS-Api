@@ -4071,14 +4071,18 @@ public class DocumentComponent
 
             var sb = new System.Text.StringBuilder();
 
-            // Add header row matching Angular model columns
+            // Limited to the same columns the "My Approvals – Documents" grid shows
+            // (leadingColumnDefs/trailingColumnDefs in my-approval-document.ts) instead of every
+            // internal field on AllDocumentDto (ExecutionId, StepId, draftFileUrl, etc.) — the
+            // export previously dumped 30 raw columns, most of which never appear on screen, and
+            // was even missing "Justification", which does.
             var headers = new List<string>
             {
-                "ExecutionId", "Id", "documentId", "stepId", "stepOrder", "ExecutionStatus",
-                "documentType", "documentTypeCode", "documentName", "company", "proposedDocumentNumber", "proposedVersionNumber",
-                "division", "department", "departmentId", "subDepartment", "subDepartmentId", "businessDomain", "businessDomainId",
-                "proposedContent", "draftFileUrl", "requestCreatedBy", "dateOfCreation", "requestCreatedOn", "startedAt",
-                "previsousVersionCreatedBy", "previousVersionCreatedOn", "observation", "requestedBy", "dateOfApproval", "approvalHistory"
+                "Document Type", "Document ID", "Document Name", "Justification", "Company",
+                "Proposed Document Number", "Proposed Version Number",
+                "Division", "Department", "Sub-Department", "Business Domain",
+                "Date of Creation", "Requested By", "Requested On",
+                "Previous Version Created By", "Previous Version Created On"
             };
             sb.AppendLine(string.Join(",", headers));
 
@@ -4087,37 +4091,22 @@ public class DocumentComponent
             {
                 var values = new List<string>
                 {
-                    row.ExecutionId.ToString(),
-                    row.Id.ToString(),
-                    row.Id.ToString(), // documentId
-                    row.StepId.ToString(),
-                    row.StepOrder.ToString(),
-                    row.ExecutionStatus ?? "Unknown",
                     row.DocumentType ?? "",
-                    row.DocumentTypeCode ?? "",
+                    row.Id.ToString(),
                     row.Title ?? "",
+                    row.Justification ?? "",
                     row.Company ?? "",
                     row.DocumentNumber ?? "",
                     row.ProposedVersionNumber ?? "1.0",
                     row.Division ?? "",
                     row.Department ?? "",
-                    row.DepartmentCode ?? "",
                     row.SubDepartment ?? "",
-                    row.SubDepartmentCode ?? "",
                     row.BusinessDomain ?? "",
-                    row.BusinessDomainCode ?? "",
-                    row.VersionContent ?? "",
-                    row.DraftFileURL ?? "",
+                    FormatExportDate(row.CreatedAt),
                     row.RequestCreatedBy ?? "",
-                    row.CreatedAt ?? "",
-                    row.RequestCreatedAt ?? "",
-                    row.StartedAt ?? "",
-                    row.RequestCreatedBy ?? "", // previsousVersionCreatedBy
-                    row.RequestCreatedAt ?? "", // previousVersionCreatedOn
-                    "", // observation (not present, defaults to empty)
-                    row.CreatedBy ?? "", // requestedBy
-                    "", // dateOfApproval (not present)
-                    ""  // approvalHistory (not present)
+                    FormatExportDate(row.RequestCreatedAt),
+                    row.PreviousVersionCreatedBy ?? "",
+                    FormatExportDate(row.PreviousVersionCreatedOn),
                 };
 
                 // Escape commas and quotes for standard CSV formatting
@@ -4132,6 +4121,21 @@ public class DocumentComponent
             // In a real application, you'd log this exception
             throw new CustomException("Failed to export data.", 500);
         }
+    }
+
+    // AllDocumentDto's date-like fields are already strings (the underlying SQL function casts
+    // timestamps to text), in whatever raw format that cast produced -- reparses and reformats
+    // them to "Aug, 02 2026 09:00:00" for the export. Non-date or unparseable values pass through
+    // unchanged rather than being blanked out.
+    private static string FormatExportDate(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) &&
+            DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt))
+        {
+            return dt.ToString("MMM, dd yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return value ?? "";
     }
 
 

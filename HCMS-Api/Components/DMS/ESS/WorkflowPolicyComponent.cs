@@ -432,6 +432,7 @@ public class WorkflowPolicyComponent
                 DepartmentCode = '{input.DepartmentCode}',
                 SubDepartmentCode = '{input.SubDepartmentCode}',
                 BusinessDomainCode = '{input.BusinessDomainCode}',
+                DocumentTypeCode = '{input.DocumentTypeCode}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'

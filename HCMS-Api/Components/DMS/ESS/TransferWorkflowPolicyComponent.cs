@@ -533,11 +533,15 @@ public class TransferWorkflowPolicyComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
              
 
+            // Zero-trimmed comparison, not exact equality: @UserId (from GetEmpCodeForHCMS) and
+            // rt.ApproverId (stored from tblEmployee.empcode at request-creation time) can arrive
+            // differently zero-padded for the same employee, same as every other empcode comparison
+            // in this codebase.
             var whereClause = @"
-                WHERE rt.IsDeleted = FALSE 
+                WHERE rt.IsDeleted = FALSE
                   AND rt.CompanyId = @CompanyId
                   AND rt.Status = @Status
-                  AND rt.ApproverId = @UserId";
+                  AND LTRIM(RTRIM(rt.ApproverId::text), '0') = LTRIM(RTRIM(@UserId::text), '0')";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -612,6 +616,12 @@ public class TransferWorkflowPolicyComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            // Scoped to ApproverId only -- "requests pending MY approval", not requests I submitted
+            // myself. A prior version OR'd in CreatedBy = @UserId here, which (on top of an operator
+            // precedence bug that bypassed CompanyId/IsDeleted scoping) meant a user's own submitted
+            // request counted as "pending my approval" even when they weren't the assigned approver.
+            // Submitted-request counts now come from the separate
+            // GetMySubmittedResponsibilityTransfersCountAsync below.
             string sql = @"
                 SELECT
                     COUNT(1) FILTER (WHERE rt.Status = 1) AS PendingCount,
@@ -622,7 +632,44 @@ public class TransferWorkflowPolicyComponent
                 FROM ResponsibilityTransfers rt
                 WHERE rt.IsDeleted = FALSE
                   AND rt.CompanyId = @CompanyId
-                  AND rt.ApproverId = @UserId;";
+                  AND LTRIM(RTRIM(rt.ApproverId::text), '0') = LTRIM(RTRIM(@UserId::text), '0');";
+
+            var queryParams = new { CompanyId = CompanyId, UserId = empCode };
+
+            var result = await _common.QuerySingleAsync<ResponsibilityTransferApprovalCountsDto>(sql, queryParams);
+            return result ?? new ResponsibilityTransferApprovalCountsDto();
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    // Same scope as GetMySubmittedResponsibilityTransfersAsync (CreatedBy = current user) but counts
+    // every status in one query -- the "My Submitted Requests" tab's own badge, kept separate from
+    // GetMyResponsibilityTransfersApprovalsCountAsync's ApproverId-scoped count above so a user's own
+    // submission is never miscounted as something pending for them to approve.
+    public async Task<ResponsibilityTransferApprovalCountsDto> GetMySubmittedResponsibilityTransfersCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            string sql = @"
+                SELECT
+                    COUNT(1) FILTER (WHERE rt.Status = 1) AS PendingCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 2) AS ApprovedCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 3) AS RejectedCount,
+                    COUNT(1) FILTER (WHERE rt.Status = 4) AS RevertedCount,
+                    COUNT(1) AS TotalCount
+                FROM ResponsibilityTransfers rt
+                WHERE rt.IsDeleted = FALSE
+                  AND rt.CompanyId = @CompanyId
+                  AND LTRIM(RTRIM(rt.CreatedBy::text), '0') = LTRIM(RTRIM(@UserId::text), '0');";
 
             var queryParams = new { CompanyId = CompanyId, UserId = empCode };
 
