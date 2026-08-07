@@ -51,8 +51,12 @@ public class DashboardComponent
                     (SELECT COUNT(1) FROM DocumentRequests WHERE CompanyId = @CompanyId AND CreatedBy = @UserId AND Status IN (1, 2) AND IsDeleted = FALSE) AS MyPendingRequests,
                     (SELECT COUNT(1) FROM DocumentRequests WHERE CompanyId = @CompanyId AND CreatedBy = @UserId AND Status = 3 AND IsDeleted = FALSE) AS MyApprovedRequests,
                     (SELECT COUNT(1) FROM DocumentRequests WHERE CompanyId = @CompanyId AND CreatedBy = @UserId AND Status = 4 AND IsDeleted = FALSE) AS MyRejectedRequests,
-                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId 
+                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                         WHERE we.CompanyId = @CompanyId AND wes.AssignedUserId = @EmployeeCode AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS PendingApprovals,
+                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                        WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND wes.AssignedUserId = @EmployeeCode AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS PendingDocumentApprovals,
+                    (SELECT COUNT(1) FROM WorkflowExecutionSteps wes JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+                        WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request' AND wes.AssignedUserId = @EmployeeCode AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS PendingRequestApprovals,
                     (SELECT COUNT(1) FROM WorkflowExecutionSteps wes
                         JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                         WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request' AND wes.AssignedUserId = @EmployeeCode 

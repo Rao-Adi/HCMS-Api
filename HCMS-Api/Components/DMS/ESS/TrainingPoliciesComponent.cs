@@ -53,11 +53,26 @@ public class TrainingPolicyComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            // A policy can't be bound to a DocumentType that's invalid or deleted -- without this,
+            // CreateAsync would happily insert a row that every read API then hides (they all
+            // exclude rows whose DocumentType is deleted), so the user gets no feedback at all
+            // about why their new policy never shows up anywhere.
+            string docTypeCheckQuery = $@"
+            SELECT COUNT(1)
+            FROM DocumentTypes
+            WHERE Code = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
+              AND IsDeleted = FALSE";
+
+            int docTypeExists = Convert.ToInt32(_common.ExecuteScalarQuery(docTypeCheckQuery));
+
+            if (docTypeExists == 0)
+                throw new CustomException("Selected Document Type is invalid or has been deleted.", 400);
+
             // Check duplicate by Id OR DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM TrainingPolicies
-            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
              AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -82,7 +97,7 @@ public class TrainingPolicyComponent
             VALUES
             (
                 '{CompanyId}',
-                '{input.DocumentTypeCode}',
+                '{input.DocumentTypeCode?.Replace("'", "''")}',
                 '{input.TrainingRequired}',
                 '{input.MinimumScore}',
                 TRUE,
@@ -195,9 +210,13 @@ public class TrainingPolicyComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
+            // dt.Id IS NULL tolerates a DocumentTypeCode that never resolved to a real row at all
+            // (a different, pre-existing data problem) -- only a DocumentType that resolves AND is
+            // actually deleted should hide the policy row that references it.
             var whereClause = @"
                 WHERE t.IsDeleted = False AND t.CompanyId = " + CompanyId + @"
-                  AND t.IsActive = " + (input.IsActive ? "True" : "False");
+                  AND t.IsActive = " + (input.IsActive ? "True" : "False") + @"
+                  AND (dt.Id IS NULL OR dt.IsDeleted = False)";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -251,6 +270,8 @@ public class TrainingPolicyComponent
 
                         SELECT COUNT(1)
                         FROM TrainingPolicies t
+                        LEFT JOIN DocumentTypes dt
+                        ON dt.Code = t.DocumentTypeCode
                         {whereClause};
                     ";
 
@@ -335,7 +356,8 @@ public class TrainingPolicyComponent
                          ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
                 WHERE t.Id = {id} AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
-                  AND t.IsDeleted = False";
+                  AND t.IsDeleted = False
+                  AND (dt.Id IS NULL OR dt.IsDeleted = False)";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -396,9 +418,10 @@ public class TrainingPolicyComponent
                      -- 🔹 Last Modified By Employee
                      LEFT JOIN Vw_EmployeeNames m 
                          ON m.CleanEmpCode = LTRIM(t.LastModifiedBy::text, '0')
-                WHERE t.DocumentTypeCode = '{dtCode}' AND t.CompanyId = {CompanyId}
+                WHERE t.DocumentTypeCode = '{dtCode?.Replace("'", "''")}' AND t.CompanyId = {CompanyId}
                   AND t.IsActive = True
-                  AND t.IsDeleted = False";
+                  AND t.IsDeleted = False
+                  AND (dt.Id IS NULL OR dt.IsDeleted = False)";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -460,11 +483,23 @@ public class TrainingPolicyComponent
             if (exists == 0)
                 throw new CustomException("TrainingPolicy not found", 404);
 
+            // Same reasoning as CreateAsync -- don't allow (re)binding to a deleted DocumentType.
+            string docTypeCheckQuery = $@"
+            SELECT COUNT(1)
+            FROM DocumentTypes
+            WHERE Code = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
+              AND IsDeleted = FALSE";
+
+            int docTypeExists = Convert.ToInt32(_common.ExecuteScalarQuery(docTypeCheckQuery));
+
+            if (docTypeExists == 0)
+                throw new CustomException("Selected Document Type is invalid or has been deleted.", 400);
+
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"
             UPDATE TrainingPolicies
-            SET 
-                DocumentTypeCode = '{input.DocumentTypeCode}',
+            SET
+                DocumentTypeCode = '{input.DocumentTypeCode?.Replace("'", "''")}',
                 MinimumScore = '{input.MinimumScore}',
                 TrainingRequired = {(input.TrainingRequired ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),

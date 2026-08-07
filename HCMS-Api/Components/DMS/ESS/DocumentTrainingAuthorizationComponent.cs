@@ -48,11 +48,26 @@ public class DocumentTrainingAuthorizationComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            // A policy can't be bound to a DocumentType that's invalid or deleted -- without this,
+            // CreateAsync would happily insert a row that every read API then hides (they all
+            // exclude rows whose DocumentType is deleted), so the user gets no feedback at all
+            // about why their new policy never shows up anywhere.
+            string docTypeCheckQuery = $@"
+            SELECT COUNT(1)
+            FROM DocumentTypes
+            WHERE Code = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
+              AND IsDeleted = FALSE";
+
+            int docTypeExists = Convert.ToInt32(_common.ExecuteScalarQuery(docTypeCheckQuery));
+
+            if (docTypeExists == 0)
+                throw new CustomException("Selected Document Type is invalid or has been deleted.", 400);
+
             // Check duplicate by DocumentTypeCode
             string checkQuery = $@"
             SELECT COUNT(1)
             FROM DocumentTrainingAuthorizations
-            WHERE DocumentTypeCode = '{input.DocumentTypeCode}' AND CompanyId = {CompanyId}
+            WHERE DocumentTypeCode = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
               AND IsActive = TRUE AND IsDeleted = FALSE";
 
             int exists = Convert.ToInt32(_common.ExecuteScalarQuery(checkQuery));
@@ -60,7 +75,7 @@ public class DocumentTrainingAuthorizationComponent
             if (exists > 0)
                 throw new CustomException("Authorization Policy already exists for this Document Type", 409);
 
-            // Format parameters to handle nulls properly 
+            // Format parameters to handle nulls properly
             string userIdVal = string.IsNullOrWhiteSpace(input.AuthorizingUserId) ? "NULL" : $"'{input.AuthorizingUserId.Replace("'", "''")}'";
 
             // Insert
@@ -68,7 +83,7 @@ public class DocumentTrainingAuthorizationComponent
             INSERT INTO DocumentTrainingAuthorizations
             (   CompanyId,
                 DocumentTypeCode,
-                AuthorizationRequired, 
+                AuthorizationRequired,
                 AuthorizingUserId,
                 IsActive,
                 IsDeleted,
@@ -80,8 +95,8 @@ public class DocumentTrainingAuthorizationComponent
             VALUES
             (
                 {CompanyId},
-                '{input.DocumentTypeCode}',
-                {(input.AuthorizationRequired ? "TRUE" : "FALSE")}, 
+                '{input.DocumentTypeCode?.Replace("'", "''")}',
+                {(input.AuthorizationRequired ? "TRUE" : "FALSE")},
                 {userIdVal},
                 TRUE,
                 FALSE,
@@ -148,9 +163,13 @@ public class DocumentTrainingAuthorizationComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
+            // dt.Id IS NULL tolerates a DocumentTypeCode that never resolved to a real row at all
+            // (a different, pre-existing data problem) -- only a DocumentType that resolves AND is
+            // actually deleted should hide the policy row that references it.
             var whereClause = @"
                 WHERE a.IsDeleted = False AND a.CompanyId = " + CompanyId + @"
-                  AND a.IsActive = " + (input.IsActive ? "True" : "False");
+                  AND a.IsActive = " + (input.IsActive ? "True" : "False") + @"
+                  AND (dt.Id IS NULL OR dt.IsDeleted = False)";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -293,7 +312,8 @@ public class DocumentTrainingAuthorizationComponent
                      ON m.CleanEmpCode = LTRIM(a.LastModifiedBy::text, '0')
                 WHERE a.Id = {id} AND a.CompanyId = {CompanyId}
                   AND a.IsActive = True
-                  AND a.IsDeleted = False";
+                  AND a.IsDeleted = False
+                  AND (dt.Id IS NULL OR dt.IsDeleted = False)";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 
@@ -351,16 +371,28 @@ public class DocumentTrainingAuthorizationComponent
             if (exists == 0)
                 throw new CustomException("Authorization Policy not found", 404);
 
-            // Format parameters to handle nulls properly 
+            // Same reasoning as CreateAsync -- don't allow (re)binding to a deleted DocumentType.
+            string docTypeCheckQuery = $@"
+            SELECT COUNT(1)
+            FROM DocumentTypes
+            WHERE Code = '{input.DocumentTypeCode?.Replace("'", "''")}' AND CompanyId = {CompanyId}
+              AND IsDeleted = FALSE";
+
+            int docTypeExists = Convert.ToInt32(_common.ExecuteScalarQuery(docTypeCheckQuery));
+
+            if (docTypeExists == 0)
+                throw new CustomException("Selected Document Type is invalid or has been deleted.", 400);
+
+            // Format parameters to handle nulls properly
             string userIdVal = string.IsNullOrWhiteSpace(input.AuthorizingUserId) ? "NULL" : $"'{input.AuthorizingUserId.Replace("'", "''")}'";
 
             // Update
             string updateQuery = $@"
             UPDATE DocumentTrainingAuthorizations
-            SET 
-                DocumentTypeCode = '{input.DocumentTypeCode}',
-                AuthorizationRequired = {(input.AuthorizationRequired ? "TRUE" : "FALSE")}, 
-                AuthorizingUserId = {userIdVal}, 
+            SET
+                DocumentTypeCode = '{input.DocumentTypeCode?.Replace("'", "''")}',
+                AuthorizationRequired = {(input.AuthorizationRequired ? "TRUE" : "FALSE")},
+                AuthorizingUserId = {userIdVal},
                 LastModifiedAt = NOW(),
                 LastModifiedBy = '{empCode.Replace("'", "''")}'
             WHERE Id = {input.Id} AND CompanyId = {CompanyId}";

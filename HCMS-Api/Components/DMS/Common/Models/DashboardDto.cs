@@ -11,6 +11,8 @@ public class DashboardSummaryDto
     public int MyApprovedRequests { get; set; }
     public int MyRejectedRequests { get; set; }
     public int PendingApprovals { get; set; }
+    public int PendingDocumentApprovals { get; set; }
+    public int PendingRequestApprovals { get; set; }
     public int ApprovedByMe { get; set; }
     public int RejectedByMe { get; set; }
     public int PendingTrainings { get; set; }

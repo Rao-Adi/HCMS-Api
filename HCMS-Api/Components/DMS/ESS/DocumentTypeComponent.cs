@@ -191,7 +191,7 @@ public class DocumentTypeComponent
             string checkQuery = $@"
                 SELECT COUNT(1)
                 FROM DocumentTypes
-                WHERE Code = '{code}'
+                WHERE Code = '{code.Replace("'", "''")}'
                   AND CompanyId = {CompanyId}
                   AND IsDeleted = False";
 
@@ -206,9 +206,20 @@ public class DocumentTypeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Code = '{code}' AND CompanyId = {CompanyId}";
+                WHERE Code = '{code.Replace("'", "''")}' AND CompanyId = {CompanyId}";
 
-            return _common.ExecuteNonQuery(deleteQuery);
+            bool deleted = _common.ExecuteNonQuery(deleteQuery);
+
+            // ExecuteNonQuery swallows exceptions internally and just returns false on failure --
+            // the controller unconditionally responds with Success = true regardless of this
+            // return value, so a silent failure here previously told the user "deleted
+            // successfully" while the row stayed IsDeleted = FALSE, which is exactly why
+            // re-adding a DocumentType with the same name kept hitting the "already exists"
+            // check afterward. Throwing here makes that failure visible instead of silent.
+            if (!deleted)
+                throw new CustomException("Failed to delete DocumentType.", 500);
+
+            return deleted;
         }
         catch (Exception)
         {

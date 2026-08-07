@@ -592,12 +592,13 @@ public class DocumentComponent
                 throw new CustomException("Document not found.", 404);
 
             //-------------------------------------------------
-            // Attach Template, only if one wasn't already provided at Document Request
-            // creation time (i.e. Documents.DocumentURL is still empty and the Draft
-            // DocumentVersions row still has no Content).
+            // Attach/Update Template. If the caller provides a new file or content at
+            // Document Creation time, it overwrites whatever the Document Request stage
+            // set (or fills a gap if the Request stage set nothing). If nothing new is
+            // provided here, whatever was already attached at Request time is kept as-is.
             //-------------------------------------------------
 
-            await AttachTemplateIfMissingAsync(input, doc, CompanyId, empCode, transaction);
+            await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction);
 
             //-------------------------------------------------
             // Validate & Save Attributes (NEW METHOD)
@@ -870,7 +871,7 @@ public class DocumentComponent
     // at Document Creation/Submission time, instead. Which input is expected depends entirely on
     // the DocumentType's configured Template: a file-based template (PDF/Word, TemplateType 1/2)
     // expects DocumentFile; an HTML template (TemplateType 3) expects ProposedContent.
-    private async Task AttachTemplateIfMissingAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
+    private async Task AttachOrUpdateTemplateAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
     {
         bool hasFile = !string.IsNullOrWhiteSpace((string)doc.documenturl);
         bool hasContent = await _common.ExecuteScalarAsync<bool>(@"
@@ -879,10 +880,6 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1
                   AND Content IS NOT NULL AND Content <> ''
             );", new { input.DocumentId, CompanyId = companyId }, transaction);
-
-        // Already has a template from Request Creation time -- nothing to do here.
-        if (hasFile || hasContent)
-            return;
 
         int? templateType = await _common.ExecuteScalarAsync<int?>(@"
             SELECT TemplateType FROM Templates
@@ -897,48 +894,61 @@ public class DocumentComponent
         bool contentProvided = !string.IsNullOrWhiteSpace(input.ProposedContent);
 
         // No Template configured for this DocumentType at all -- don't block submission over a
-        // setup gap that isn't the caller's fault; accept whichever of the two was actually sent.
+        // setup gap that isn't the caller's fault; accept whichever of the two was actually sent,
+        // falling back to whichever already exists from Request Creation time if neither was sent now.
         if (templateType == null)
         {
-            expectsFile = fileProvided;
-            expectsContent = !fileProvided && contentProvided;
+            expectsFile = fileProvided || (!contentProvided && hasFile);
+            expectsContent = !expectsFile && (contentProvided || hasContent);
         }
 
         if (expectsFile)
         {
-            if (!fileProvided)
-                throw new CustomException("A document file is required before this document can be submitted.", 400);
-
-            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
-            if (!Directory.Exists(uploadsRoot))
-                Directory.CreateDirectory(uploadsRoot);
-
-            var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
-            var filePath = Path.Combine(uploadsRoot, fileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
+            // A new file at Document Creation time overwrites whatever was set at Request time.
+            // If none is provided now, keep the existing file (already attached at Request time).
+            if (fileProvided)
             {
-                await input.DocumentFile.CopyToAsync(stream);
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await input.DocumentFile.CopyToAsync(stream);
+                }
+
+                var documentUrl = $"/uploads/documents/{fileName}";
+
+                await _common.ExecuteAsync(@"
+                    UPDATE Documents
+                    SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                    new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
             }
-
-            var documentUrl = $"/uploads/documents/{fileName}";
-
-            await _common.ExecuteAsync(@"
-                UPDATE Documents
-                SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
-                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-                new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+            else if (!hasFile)
+            {
+                throw new CustomException("A document file is required before this document can be submitted.", 400);
+            }
         }
         else if (expectsContent)
         {
-            if (!contentProvided)
+            // New content at Document Creation time overwrites whatever was set at Request time.
+            // If none is provided now, keep the existing content (already attached at Request time).
+            if (contentProvided)
+            {
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentVersions
+                    SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
+                    new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+            }
+            else if (!hasContent)
+            {
                 throw new CustomException("Document content is required before this document can be submitted.", 400);
-
-            await _common.ExecuteAsync(@"
-                UPDATE DocumentVersions
-                SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
-                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
-                new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+            }
         }
         else
         {
@@ -2270,7 +2280,7 @@ public class DocumentComponent
             string dataSql = $@"
                 SELECT Distinct
                     doc.*,  
-                    tr.TrainingMode,
+                    dut.TrainingMode,
                     tr.TrainingProofURL,
                     doc.CreatedAt,  
                     LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
@@ -2286,6 +2296,25 @@ public class DocumentComponent
 
                 FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                LEFT JOIN (
+                        SELECT 
+                            DocumentId,
+                            MAX(TrainingProofURL) AS TrainingProofURL, 
+                            CASE 
+                                -- Check if both IDs (1 and 2) exist for the same document
+                                WHEN COUNT(DISTINCT TrainingMode) > 1 
+                                     AND SUM(CASE WHEN TrainingMode = 2 THEN 1 ELSE 0 END) > 0 
+                                     AND SUM(CASE WHEN TrainingMode = 1 THEN 1 ELSE 0 END) > 0 
+                                     THEN 'Classroom/Online'
+                                -- Map single numeric IDs back to their corresponding text names
+                                WHEN MAX(TrainingMode) = 1 THEN 'Classroom'
+                                WHEN MAX(TrainingMode) = 2 THEN 'Online'
+                                ELSE NULL
+                            END AS TrainingMode
+                        FROM DocumentUserTraining
+                        WHERE IsActive = TRUE
+                        GROUP BY DocumentId
+                    ) dut ON dut.DocumentId = doc.Id 
                 LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
                 -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
                 LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
@@ -3639,64 +3668,26 @@ public class DocumentComponent
 
                 // --- Database Insertion / Update ---
 
-                //LogToFile($"[BULK IMPORT] Row {row}: Checking if document with Title='{title}' exists...");
+                // Match against the Documents table by Title OR DocumentNumber. If either already
+                // exists, reject the row with a warning instead of inserting or silently updating.
+                //LogToFile($"[BULK IMPORT] Row {row}: Checking if document with Title='{title}' or DocumentNumber='{docNum}' already exists...");
                 var existingDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT Id, DocumentNumber FROM Documents WHERE Title = @Title AND CompanyId = @CompanyId AND IsDeleted = FALSE LIMIT 1",
-                    new { Title = title, CompanyId }, tx);
+                    @"SELECT Id, DocumentNumber, Title FROM Documents
+                      WHERE CompanyId = @CompanyId AND IsDeleted = FALSE
+                        AND (Title = @Title OR (@DocumentNumber <> '' AND DocumentNumber = @DocumentNumber))
+                      LIMIT 1",
+                    new { Title = title, DocumentNumber = docNum, CompanyId }, tx);
 
                 if (existingDoc != null)
                 {
                     var docDict = (IDictionary<string, object>)existingDoc;
-                    int existingId = Convert.ToInt32(docDict["id"]);
                     string existingDocNum = docDict["documentnumber"]?.ToString() ?? "";
-                    //LogToFile($"[BULK IMPORT] Row {row}: Existing document found. ID: {existingId}, DocNum: '{existingDocNum}'. Performing UPDATE.");
+                    string existingTitle = docDict["title"]?.ToString() ?? "";
+                    //LogToFile($"[BULK IMPORT] Row {row}: Existing document found. DocNum: '{existingDocNum}', Title: '{existingTitle}'. Skipping.");
 
-                    await _common.ExecuteAsync(@"
-                        UPDATE Documents
-                        SET DocumentTypeCode = @DocumentTypeCode,
-                            DivisionCode = @DivisionCode,
-                            DepartmentCode = @DepartmentCode,
-                            SubDepartmentCode = @SubDepartmentCode,
-                            NextReviewdate = @NextReviewDate,
-                            DocumentURL = @ExpectedFileName,
-                            LastModifiedAt = NOW(),
-                            LastModifiedBy = @UserId
-                        WHERE Id = @Id AND CompanyId = @CompanyId;", new
-                    {
-                        CompanyId,
-                        Id = existingId,
-                        DocumentTypeCode = docTypeCode,
-                        DivisionCode = string.IsNullOrEmpty(divCode) ? null : divCode,
-                        DepartmentCode = string.IsNullOrEmpty(deptCode) ? null : deptCode,
-                        SubDepartmentCode = string.IsNullOrEmpty(subDeptCode) ? null : subDeptCode,
-                        NextReviewDate = nextReviewDate,
-                        ExpectedFileName = expectedFileName,
-                        UserId = empCode
-                    }, tx);
-
-                    //LogToFile($"[BULK IMPORT] Row {row}: UPDATE on Documents table succeeded. Checking if version '{version}' exists...");
-                    int versionExists = await _common.ExecuteScalarAsync<int>(
-                        "SELECT COUNT(1) FROM DocumentVersions WHERE DocumentId = @DocumentId AND Version = @Version AND CompanyId = @CompanyId AND IsActive = TRUE",
-                        new { DocumentId = existingId, Version = version, CompanyId }, tx);
-
-                    if (versionExists == 0)
-                    {
-                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' does not exist. Inserting into DocumentVersions.");
-                        await _common.ExecuteAsync(@"
-                            INSERT INTO DocumentVersions
-                            (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
-                            VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
-                            new { CompanyId, DocumentId = existingId, Version = version, UserId = empCode }, tx);
-                    }
-                    else
-                    {
-                        //LogToFile($"[BULK IMPORT] Row {row}: Version '{version}' already exists.");
-                    }
-
-                    await tx.CommitAsync();
-                    //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (UPDATE).");
-                    // Log success physically but do not return in skipped/error list
-                    LogToFile($"Row {row}: Successfully updated metadata for '{existingDocNum}'.");
+                    results.Add($"Row {row}: Skipped. Document ID '{docNum}' and/or Document Name '{title}' already exists (matches existing Document ID '{existingDocNum}', Document Name '{existingTitle}').");
+                    await tx.RollbackAsync();
+                    continue;
                 }
                 else
                 {

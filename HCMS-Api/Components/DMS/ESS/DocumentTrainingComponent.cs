@@ -577,6 +577,23 @@ public class DocumentTrainingComponent
             if (rowsUpdated == 0)
                 throw new CustomException("This document's training has already been acknowledged.", 409);
 
+
+            string updateDocumentUserTraining = @"
+                UPDATE DocumentUserTraining
+                SET
+                    ReadyForAuthorization = TRUE,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId
+                  AND CompanyId = @CompanyId
+                  AND IsDeleted = FALSE
+                  AND ReadyForAuthorization = FALSE";
+
+            var rowsDocumentUserTraining = await _common.ExecuteAsync(updateDocumentUserTraining, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
+            if (rowsDocumentUserTraining == 0)
+                throw new CustomException("This document's training has already been acknowledged.", 409);
+
+
             // 2. Log Action and transition state to AUTHORIZATION_PENDING. Tiebreak by Id: multiple
             // state transitions can land in the same DB transaction (same NOW() in Postgres), so
             // ChangedAt alone isn't a reliable way to find the truly-latest row.
@@ -617,6 +634,7 @@ public class TrainingUserScoreDto
     public string EmployeeName { get; set; } = string.Empty;
     public string EmployeeCode { get; set; } = string.Empty;
     public int TrainingStatus { get; set; }
+    public string TrainingModeName { get; set; }
     public decimal AssessmentScore { get; set; }
     public string TrainingProofUrl { get; set; } = string.Empty;
     public string RoleName { get; set; } = string.Empty;
