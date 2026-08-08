@@ -2214,7 +2214,7 @@ public class DocumentComponent
             }
             else
             {
-                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING')";
+                stateFilter = input.IsAuthorized ? "IN ('EFFECTIVE', 'AUTHORIZED')" : "IN ('APPROVED', 'AUTHORIZATION_PENDING')";
             }
             // Architecture Note: A document is pending final authorization if it is fully approved,
             // AND (if training is applicable) training has been verified (ReadyForAuthorization = TRUE).
@@ -2265,71 +2265,72 @@ public class DocumentComponent
 
             string sortColumn = input.SortColumn?.ToUpper() switch
             {
-                "DOCUMENTNUMBER" => "doc.DocumentNumber",
-                "TITLE" => "doc.Title",
-                "CREATEDAT" => "doc.CreatedAt",
-                "CREATEDBY" => "doc.CreatedBy",
-                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
-                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
-                _ => "doc.CreatedAt"
+                "DOCUMENTNUMBER" => "sub.DocumentNumber",
+                "TITLE" => "sub.Title",
+                "CREATEDAT" => "sub.CreatedAt",
+                "CREATEDBY" => "sub.CreatedBy",
+                "LASTMODIFIEDAT" => "sub.LastModifiedAt",
+                "LASTMODIFIEDBY" => "sub.LastModifiedBy",
+                _ => "sub.CreatedAt"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
             int offset = (input.PageNumber - 1) * input.PageSize;
 
+            // Total count is derived from this same query (COUNT(*) OVER(), attached to every
+            // returned row) instead of a separate countSql -- countSql's simplified joins don't
+            // match dataSql's DISTINCT/join set closely enough to be trusted as the same count.
+            // The DISTINCT dedup happens in the inner subquery *before* COUNT(*) OVER() runs in
+            // the outer query, so the count reflects the same de-duplicated row set as Items,
+            // not the pre-DISTINCT (possibly fanned-out) join result.
             string dataSql = $@"
-                SELECT Distinct
-                    doc.*,  
-                    dut.TrainingMode,
-                    tr.TrainingProofURL,
-                    doc.CreatedAt,  
-                    LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
-                    doc.CreatedAt,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
-                    (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore,
-                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
-                    COALESCE(
-                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
-                        prevdoc.CreatedBy
-                    )::character varying AS PreviousVersionCreatedBy
+                SELECT sub.*, COUNT(*) OVER() AS TotalCount
+                FROM (
+                    SELECT DISTINCT
+                        doc.*,
+                        dut.TrainingMode,
+                        tr.TrainingProofURL,
+                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
+                        (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
+                        (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
+                        (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore,
+                        prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                        COALESCE(
+                            NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                            prevdoc.CreatedBy
+                        )::character varying AS PreviousVersionCreatedBy
 
-                FROM VW_Documents doc
-                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                LEFT JOIN (
-                        SELECT 
-                            DocumentId,
-                            MAX(TrainingProofURL) AS TrainingProofURL, 
-                            CASE 
-                                -- Check if both IDs (1 and 2) exist for the same document
-                                WHEN COUNT(DISTINCT TrainingMode) > 1 
-                                     AND SUM(CASE WHEN TrainingMode = 2 THEN 1 ELSE 0 END) > 0 
-                                     AND SUM(CASE WHEN TrainingMode = 1 THEN 1 ELSE 0 END) > 0 
-                                     THEN 'Classroom/Online'
-                                -- Map single numeric IDs back to their corresponding text names
-                                WHEN MAX(TrainingMode) = 1 THEN 'Classroom'
-                                WHEN MAX(TrainingMode) = 2 THEN 'Online'
-                                ELSE NULL
-                            END AS TrainingMode
-                        FROM DocumentUserTraining
-                        WHERE IsActive = TRUE
-                        GROUP BY DocumentId
-                    ) dut ON dut.DocumentId = doc.Id 
-                LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
-                -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
-                LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
-                -- The earlier document this one is a revision of (only present for revisions)
-                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
-                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
-                {whereClause}
+                    FROM VW_Documents doc
+                    LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
+                    LEFT JOIN (
+                            SELECT
+                                DocumentId,
+                                MAX(TrainingProofURL) AS TrainingProofURL,
+                                CASE
+                                    -- Check if both IDs (1 and 2) exist for the same document
+                                    WHEN COUNT(DISTINCT TrainingMode) > 1
+                                         AND SUM(CASE WHEN TrainingMode = 2 THEN 1 ELSE 0 END) > 0
+                                         AND SUM(CASE WHEN TrainingMode = 1 THEN 1 ELSE 0 END) > 0
+                                         THEN 'Classroom/Online'
+                                    -- Map single numeric IDs back to their corresponding text names
+                                    WHEN MAX(TrainingMode) = 1 THEN 'Classroom'
+                                    WHEN MAX(TrainingMode) = 2 THEN 'Online'
+                                    ELSE NULL
+                                END AS TrainingMode
+                            FROM DocumentUserTraining
+                            WHERE IsActive = TRUE
+                            GROUP BY DocumentId
+                        ) dut ON dut.DocumentId = doc.Id
+                    LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
+                    -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
+                    LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
+                    -- The earlier document this one is a revision of (only present for revisions)
+                    LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
+                    LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                    {whereClause}
+                ) sub
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
-
-            string countSql = $@"
-                SELECT COUNT(1)
-                FROM VW_Documents doc
-                LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
-                {whereClause};";
 
             var queryParams = new
             {
@@ -2342,7 +2343,13 @@ public class DocumentComponent
             };
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
-            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            int totalCount = 0;
+            if (items.Count > 0)
+            {
+                var firstRow = (IDictionary<string, object>)items[0];
+                totalCount = Convert.ToInt32(firstRow["totalcount"]);
+            }
 
             return new PaginationResult<dynamic>
             {
@@ -2399,31 +2406,37 @@ public class DocumentComponent
                 whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
             }
 
+            // COUNT(DISTINCT doc.Id) FILTER (...), not COUNT(CASE WHEN ... THEN 1 END): the
+            // DocumentTraining join below can fan a single document out into multiple rows
+            // (more than one active DocumentTraining row for the same DocumentId), and a plain
+            // COUNT(CASE WHEN...) counts each of those duplicate rows separately. The list query
+            // (GetPendingAuthorizationsAsync) guards against the exact same fan-out with SELECT
+            // DISTINCT; COUNT(DISTINCT doc.Id) is the equivalent guard for a bucketed count.
             string sql = $@"
-                SELECT 
-                    COUNT(CASE WHEN (
-                        SELECT ds.Code 
-                        FROM DocumentStateHistory dsh 
+                SELECT
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE (
+                        SELECT ds.Code
+                        FROM DocumentStateHistory dsh
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                        WHERE dsh.DocumentId = doc.Id 
+                        WHERE dsh.DocumentId = doc.Id
                         ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                    ) IN ('APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING') THEN 1 END) AS PendingCount,
+                    ) IN ('APPROVED', 'AUTHORIZATION_PENDING')) AS PendingCount,
 
-                    COUNT(CASE WHEN (
-                        SELECT ds.Code 
-                        FROM DocumentStateHistory dsh 
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE (
+                        SELECT ds.Code
+                        FROM DocumentStateHistory dsh
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                        WHERE dsh.DocumentId = doc.Id 
+                        WHERE dsh.DocumentId = doc.Id
                         ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                    ) IN ('EFFECTIVE', 'AUTHORIZED') THEN 1 END) AS AuthorizedCount,
+                    ) IN ('EFFECTIVE', 'AUTHORIZED')) AS AuthorizedCount,
 
-                    COUNT(CASE WHEN (
-                        SELECT ds.Code 
-                        FROM DocumentStateHistory dsh 
+                    COUNT(DISTINCT doc.Id) FILTER (WHERE (
+                        SELECT ds.Code
+                        FROM DocumentStateHistory dsh
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                        WHERE dsh.DocumentId = doc.Id 
+                        WHERE dsh.DocumentId = doc.Id
                         ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                    ) IN ('REJECTED') THEN 1 END) AS RejectedCount
+                    ) IN ('REJECTED')) AS RejectedCount
                 FROM VW_Documents doc
                 LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 {whereClause};";

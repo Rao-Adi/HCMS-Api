@@ -4301,7 +4301,7 @@ public class DocumentRequestComponent
             bsd = GetAbbreviation((string)cabinetNames.businessdomainname);
         }
 
-        string typ = docTypeName.ToUpper();
+        string typ = GetAbbreviation(docTypeName) ?? docTypeName.ToUpper();
 
         // 3. If it is an annexure (parentDocumentId is provided and > 0)
         if (parentDocumentId.HasValue && parentDocumentId.Value > 0)
