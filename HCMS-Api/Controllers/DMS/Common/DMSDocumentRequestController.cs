@@ -212,14 +212,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-document-observation-details")]
-    public async Task<IActionResult> GetDocumentObservationDetails(int requestId, string entityType)
+    public async Task<IActionResult> GetDocumentObservationDetails(int requestId, string entityType,string? decision)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetDocumentObservationDetailsAsync(requestId, entityType),
+                Data = await _documentRequestComponent.GetDocumentObservationDetailsAsync(requestId, entityType, decision),
                 Message = "Success",
                 Code = 200
             });
@@ -241,14 +241,14 @@ public class DMSDocumentRequestController : Controller
 
 
     [HttpGet("get-workflow-details")]
-    public async Task<IActionResult> GetWorkflowDetail(int requestId, string entityType)
+    public async Task<IActionResult> GetWorkflowDetail(int requestId, string entityType, string? decision)
     {
         try
         {
             return Ok(new HttpApiResponse<IEnumerable<DocumentRequestDetailsDto>>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(requestId, entityType),
+                Data = await _documentRequestComponent.GetWorkflowDetailsAsync(requestId, entityType, decision),
                 Message = "Success",
                 Code = 200
             });
@@ -547,82 +547,11 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
-
-
-    //[HttpPost("approve-document-request")]
-    //public async Task<IActionResult> ApproveDraftDocumentRequest([FromBody] ApproveRejectWorkflowStepDto input)
-    //{
-    //    if (!ModelState.IsValid)
-    //    {
-    //        // Return validation errors
-    //        return BadRequest(ModelState);
-    //    }
-
-    //    try
-    //    {
-    //        return Ok(new HttpApiResponse<bool>()
-    //        {
-    //            Success = true,
-    //            Data = await _documentRequestComponent.ApproveWorkflowStepAsync(input),
-    //            Message = "Document Request created successfully.",
-    //            Code = 200
-    //        });
-    //    }
-    //    catch (CustomException ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-    //        return StatusCode(response.Code, response);
-    //    }
-    //}
-
-
-
-    //[HttpPost("reject-document-request")]
-    //public async Task<IActionResult> RejectDraftDocumentRequest([FromBody] ApproveRejectWorkflowStepDto input)
-    //{
-    //    if (!ModelState.IsValid)
-    //    {
-    //        // Return validation errors
-    //        return BadRequest(ModelState);
-    //    }
-
-    //    try
-    //    {
-    //        return Ok(new HttpApiResponse<bool>()
-    //        {
-    //            Success = true,
-    //            Data = await _documentRequestComponent.RejectWorkflowStepAsync(input),
-    //            Message = "Document Request created successfully.",
-    //            Code = 200
-    //        });
-    //    }
-    //    catch (CustomException ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
-    //        return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, ex.Message);
-    //        var response = HttpResponseCatchReturn.ReturnException(ex, new { });
-    //        return StatusCode(response.Code, response);
-    //    }
-    //}
-
-
-
-
+     
 
     [HttpPost("submit-draft-document-request")]
-    public async Task<IActionResult> SubmitDocumentRequest(SubmitDocumentRequestDto input)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> SubmitDocumentRequest([FromForm] SubmitDocumentRequestDto input)
     {
         if (!ModelState.IsValid)
         {
@@ -635,7 +564,7 @@ public class DMSDocumentRequestController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.SubmitDraftDocumentRequestAsync(input),
+                Data = await _documentRequestComponent.SubmitDocumentRequestAsync(input),
                 Message = "Document Request created successfully.",
                 Code = 200
             });

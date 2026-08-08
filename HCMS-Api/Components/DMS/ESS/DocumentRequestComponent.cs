@@ -80,7 +80,7 @@ public class DocumentRequestComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -107,17 +107,17 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // Insert Draft Request
             //-------------------------------------------------
-
+            string nextRowVersion = IncrementMinorVersion(null);// At the time of Request creation, the RowVersion is initialized to "0.1" (minor version 1)
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
                     CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
-                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Status, CreatedBy, LastModifiedBy, IsContentFinalized, ParentDocumentId
+                    DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, Status, CreatedBy, LastModifiedBy, IsContentFinalized, ParentDocumentId,RowVersion
                 )
                 VALUES
                 (
                     @CompanyId, 'DR-' || nextval('document_request_seq'), @RequestType, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
-                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Status, @CreatedBy, @LastModifiedBy, FALSE, @ParentDocumentId
+                    @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Status, @CreatedBy, @LastModifiedBy, FALSE, @ParentDocumentId,@RowVersion
                 )
                 RETURNING Id;",
             new
@@ -136,7 +136,8 @@ public class DocumentRequestComponent
                 Status = DocumentRequestStatus.Draft,
                 CreatedBy = empCode,
                 LastModifiedBy = empCode,
-                dto.ParentDocumentId
+                dto.ParentDocumentId,
+                RowVersion = nextRowVersion
             }, transaction);
 
             //-----------------------------------------
@@ -234,7 +235,7 @@ public class DocumentRequestComponent
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -246,7 +247,7 @@ public class DocumentRequestComponent
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
-                var fileExtension = Path.GetExtension(dto.DraftFile.FileName); 
+                var fileExtension = Path.GetExtension(dto.DraftFile.FileName);
                 var fileName = SanitizeDuplicatedExtension(dto.DraftFile.FileName);
                 var filePath = Path.Combine(uploadsRoot, fileName);
 
@@ -341,7 +342,7 @@ public class DocumentRequestComponent
         }
     }
 
-     
+
     public async Task<long> CreateAndSubmitDocumentRequestAsync(DraftDocumentRequestDto dto)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -350,7 +351,7 @@ public class DocumentRequestComponent
         {
             // 1. Get User/Company Info
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -384,18 +385,19 @@ public class DocumentRequestComponent
             }
 
             // 3. Insert Document Request with 'Submitted' status
+            string nextRowVersion = IncrementMinorVersion(null);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
                     CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
                     DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, 
-                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId
+                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId,RowVersion
                 )
                 VALUES
                 (
                     @CompanyId, 'DR-' || nextval('document_request_seq'), @RequestType, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
                     @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, 
-                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId
+                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId, @RowVersion
                 )
                 RETURNING Id;",
             new
@@ -413,7 +415,8 @@ public class DocumentRequestComponent
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Submitted,
                 UserId = empCode,
-                dto.ParentDocumentId
+                dto.ParentDocumentId,
+                RowVersion = nextRowVersion
             }, transaction);
 
             // 4. Insert Distribution Lists
@@ -484,7 +487,7 @@ public class DocumentRequestComponent
                         AND CompanyId = @CompanyId AND Status = 2 
                         AND EffectiveDateFrom <= CURRENT_DATE 
                         AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                        ORDER BY Id DESC LIMIT 1;", 
+                        ORDER BY Id DESC LIMIT 1;",
                         new { EmpFrom = actualUserId, CompanyId }, transaction);
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -522,7 +525,7 @@ public class DocumentRequestComponent
                             AND CompanyId = @CompanyId AND Status = 2 
                             AND EffectiveDateFrom <= CURRENT_DATE 
                             AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                            ORDER BY Id DESC LIMIT 1;", 
+                            ORDER BY Id DESC LIMIT 1;",
                             new { EmpFrom = actualUserId, CompanyId }, transaction);
 
                         if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -866,38 +869,7 @@ public class DocumentRequestComponent
         }
     }
 
-    public async Task<bool> SubmitDraftDocumentRequestAsync(SubmitDocumentRequestDto input)
-    {
-        //string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        //var clientIp = _clientContextService.GetClientIP();
-        //var prefix = _utilities.GetPrefix(clientIp);
-        //var userId = _utilities.GetUserid(prefix);
-        //int CompanyId = int.Parse(_CompanyId);
-        //var empId = _utilities.GetEmpid(clientIp);
-        //var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-
-        //// Optional: ensure draft exists before calling original submit
-        //var draftExists = await _common.ExecuteScalarAsync<int>(@"
-        //    SELECT COUNT(1)
-        //    FROM DocumentRequests
-        //    WHERE Id = @RequestId
-        //    AND CompanyId = @CompanyId
-        //    AND Status = @DraftStatus;",
-        //new
-        //{
-        //    input.RequestId,
-        //    CompanyId,
-        //    DraftStatus = DocumentRequestStatus.Draft
-        //});
-
-        //if (draftExists == 0)
-        //    throw new Exception("Only draft requests can be submitted.");
-
-        // Call your EXISTING working method
-        return await SubmitDocumentRequestAsync(input);
-    }
-
-    private async Task<bool> SubmitDocumentRequestAsync(SubmitDocumentRequestDto input)
+    public async Task<bool> SubmitDocumentRequestAsync(SubmitDocumentRequestDto input)
     {
         await using var tx = await _common.BeginTransactionAsync();
 
@@ -905,7 +877,7 @@ public class DocumentRequestComponent
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -932,6 +904,40 @@ public class DocumentRequestComponent
             if (string.IsNullOrWhiteSpace(request.justification))
                 throw new Exception("Justification is required to submit a document request.");
 
+            //-------------------------------------------------
+            // Allow the Template (file) or HTML content to be updated at Submit time, instead
+            // of requiring a separate Update-Draft call beforehand. Both are optional -- leave
+            // blank to submit the draft's existing content/file unchanged.
+            //-------------------------------------------------
+
+            string? newDraftFileUrl = null;
+            if (input.DraftFile != null && input.DraftFile.Length > 0)
+            {
+                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                if (!Directory.Exists(uploadsRoot))
+                    Directory.CreateDirectory(uploadsRoot);
+
+                var fileName = SanitizeDuplicatedExtension(input.DraftFile.FileName);
+                var filePath = Path.Combine(uploadsRoot, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await input.DraftFile.CopyToAsync(stream);
+                }
+                newDraftFileUrl = $"/uploads/drafts/{fileName}";
+            }
+
+            string effectiveProposedContent = !string.IsNullOrWhiteSpace(input.ProposedContent)
+                ? input.ProposedContent
+                : (string)request.proposedcontent;
+            string effectiveDraftFileUrl = newDraftFileUrl ?? (string)request.draftfileurl;
+
+            // NOTE: the effective content/file computed above is not persisted here. Where it
+            // gets written depends on whether this draft was previously reverted (see the fork
+            // logic below) -- persisting it against @RequestId unconditionally would silently
+            // overwrite the reverted attempt's own historical content/file before it gets copied
+            // into the new resubmission row, destroying the audit trail of what was reverted.
+
             // UC-22 Validation: Ensure content has been altered for a Revision
             // Assuming 'Revision' or 'REV' is the code for revision requests. Adjust as per your actual codes.
             if (request.documentrequesttypecode == "Revision" && request.documentid != null)
@@ -946,11 +952,88 @@ public class DocumentRequestComponent
 
                 if (originalDoc != null)
                 {
-                    bool contentUnchanged = (request.proposedcontent == originalDoc.content) || (string.IsNullOrWhiteSpace(request.proposedcontent) && string.IsNullOrWhiteSpace(originalDoc.content));
-                    bool fileUnchanged = (request.draftfileurl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(request.draftfileurl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
+                    bool contentUnchanged = (effectiveProposedContent == originalDoc.content) || (string.IsNullOrWhiteSpace(effectiveProposedContent) && string.IsNullOrWhiteSpace(originalDoc.content));
+                    bool fileUnchanged = (effectiveDraftFileUrl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(effectiveDraftFileUrl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
 
                     if (contentUnchanged && fileUnchanged)
                         throw new Exception("Document Content must be altered from the original version before submitting a revision request.");
+                }
+            }
+
+            //-------------------------------------------------
+            // If this draft was previously reverted (Reworked) by an approver, resubmitting it
+            // creates a NEW linked DocumentRequests row instead of reusing the same one --
+            // mirroring how a Revision Request links back to the Document it revises via
+            // ParentDocumentId. This keeps each attempt's approval history on its own EntityId
+            // (no interleaving in the audit trail) and lets the resubmission carry its own
+            // incremented Proposed Version Number. The original (reverted) row is left as-is;
+            // it's no longer surfaced as an actionable draft once a child request exists for it.
+            //-------------------------------------------------
+
+            bool wasReworked = await _common.ExecuteScalarAsync<bool>(@"
+                SELECT EXISTS(
+                    SELECT 1 FROM WorkflowExecutions
+                    WHERE CompanyId = @CompanyId AND EntityType = 'Request' AND EntityId = @RequestId AND Status = 'Reworked'
+                );", new { CompanyId, input.RequestId }, tx);
+
+            long submittedRequestId;
+
+            if (wasReworked)
+            {
+                string nextRowVersion = IncrementMinorVersion((string?)request.rowversion);
+
+                // ProposedContent/DraftFileUrl are passed explicitly as the effective (possibly
+                // just-edited) values rather than SELECTed from the old row, and the old row
+                // itself is never written to below -- it keeps exactly the content/file it had
+                // when it was reverted, intact as the audit record of that attempt.
+                submittedRequestId = await _common.ExecuteScalarAsync<long>(@"
+                    INSERT INTO DocumentRequests
+                    (
+                        CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
+                        DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                        Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId, ParentRequestId, RowVersion
+                    )
+                    SELECT
+                        CompanyId, 'DR-' || nextval('document_request_seq'), DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, @ProposedContent,
+                        @DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                        @Status, @UserId, @UserId, TRUE, NOW(), @UserId, ParentDocumentId, Id, @RowVersion
+                    FROM DocumentRequests
+                    WHERE Id = @RequestId AND CompanyId = @CompanyId
+                    RETURNING Id;",
+                new
+                {
+                    ProposedContent = effectiveProposedContent,
+                    DraftFileUrl = effectiveDraftFileUrl,
+                    Status = DocumentRequestStatus.Submitted,
+                    UserId = empCode,
+                    input.RequestId,
+                    CompanyId,
+                    RowVersion = nextRowVersion
+                }, tx);
+            }
+            else
+            {
+                submittedRequestId = input.RequestId;
+
+                // First-ever submission of this draft (never reworked) -- there's no prior
+                // attempt to preserve, so persist the effective content/file onto this same row.
+                if (newDraftFileUrl != null || !string.IsNullOrWhiteSpace(input.ProposedContent))
+                {
+                    await _common.ExecuteAsync(@"
+                        UPDATE DocumentRequests
+                        SET ProposedContent = @ProposedContent,
+                            DraftFileUrl = @DraftFileUrl,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE Id = @RequestId AND CompanyId = @CompanyId;",
+                        new
+                        {
+                            ProposedContent = effectiveProposedContent,
+                            DraftFileUrl = effectiveDraftFileUrl,
+                            UserId = empCode,
+                            input.RequestId,
+                            CompanyId
+                        }, tx);
                 }
             }
 
@@ -960,15 +1043,15 @@ public class DocumentRequestComponent
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestRoleDistributions
-            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { RequestId = submittedRequestId, CompanyId }, tx);
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestUserDistributions
-            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { RequestId = submittedRequestId, CompanyId }, tx);
             //-------------------------------------------------
             // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
-            await InsertDistributionsAsync(CompanyId, input.RequestId,
+            await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
                 empCode, tx);
 
@@ -1024,7 +1107,6 @@ public class DocumentRequestComponent
             if (versionId == null)
                 throw new Exception("Workflow policy version not found.");
 
-
             //-------------------------------------------------
             // Create Execution
             //-------------------------------------------------
@@ -1044,7 +1126,7 @@ public class DocumentRequestComponent
                     CompanyId,
                     WorkflowPolicyVersionId = versionId,
                     EntityType = "Request",
-                    EntityId = input.RequestId,
+                    EntityId = submittedRequestId,
                     Status = "Running",
                     StartedBy = empCode
                 }, tx);
@@ -1069,7 +1151,7 @@ public class DocumentRequestComponent
                         AND CompanyId = @CompanyId AND Status = 2 
                         AND EffectiveDateFrom <= CURRENT_DATE 
                         AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                        ORDER BY Id DESC LIMIT 1;", 
+                        ORDER BY Id DESC LIMIT 1;",
                         new { EmpFrom = actualUserId, CompanyId }, tx);
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -1106,7 +1188,7 @@ public class DocumentRequestComponent
                             AND CompanyId = @CompanyId AND Status = 2 
                             AND EffectiveDateFrom <= CURRENT_DATE 
                             AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE) 
-                            ORDER BY Id DESC LIMIT 1;", 
+                            ORDER BY Id DESC LIMIT 1;",
                             new { EmpFrom = actualUserId, CompanyId }, tx);
 
                         if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
@@ -1155,8 +1237,8 @@ public class DocumentRequestComponent
                 {
                     Status = DocumentRequestStatus.Submitted,
                     UserId = empCode,
-                    input.RequestId,
-                    CompanyId 
+                    RequestId = submittedRequestId,
+                    CompanyId
                 }, tx);
 
             // Prepare notification data
@@ -1169,10 +1251,10 @@ public class DocumentRequestComponent
                 AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, tx);
 
             List<string> approvers = new List<string>();
-            string requestNumber = input.RequestId.ToString();
+            string requestNumber = submittedRequestId.ToString();
             if (activeStep != null)
             {
-                requestNumber = Convert.ToString(activeStep.requestnumber) ?? input.RequestId.ToString();
+                requestNumber = Convert.ToString(activeStep.requestnumber) ?? submittedRequestId.ToString();
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, tx);
             }
 
@@ -1181,7 +1263,7 @@ public class DocumentRequestComponent
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders, tx);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)submittedRequestId, approver, placeholders, tx);
                 }
             }
 
@@ -1261,20 +1343,67 @@ public class DocumentRequestComponent
             }
 
             //-------------------------------------------------
+            // If this draft was previously reverted (Reworked) by an approver, resubmitting it
+            // creates a NEW linked DocumentRequests row instead of reusing the same one --
+            // mirroring how this Revision Request itself links back to the Document it revises
+            // via ParentDocumentId. See SubmitDocumentRequestAsync for the full rationale.
+            //-------------------------------------------------
+
+            bool wasReworked = await _common.ExecuteScalarAsync<bool>(@"
+                SELECT EXISTS(
+                    SELECT 1 FROM WorkflowExecutions
+                    WHERE CompanyId = @CompanyId AND EntityType = 'Request' AND EntityId = @RequestId AND Status = 'Reworked'
+                );", new { CompanyId, input.RequestId }, tx);
+
+            long submittedRequestId;
+
+            if (wasReworked)
+            {
+                string nextRowVersion = IncrementMinorVersion((string?)request.rowversion);
+
+                submittedRequestId = await _common.ExecuteScalarAsync<long>(@"
+                    INSERT INTO DocumentRequests
+                    (
+                        CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
+                        DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                        Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId, ParentRequestId, RowVersion
+                    )
+                    SELECT
+                        CompanyId, 'DR-' || nextval('document_request_seq'), DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
+                        DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                        @Status, @UserId, @UserId, TRUE, NOW(), @UserId, ParentDocumentId, Id, @RowVersion
+                    FROM DocumentRequests
+                    WHERE Id = @RequestId AND CompanyId = @CompanyId
+                    RETURNING Id;",
+                new
+                {
+                    Status = DocumentRequestStatus.Submitted,
+                    UserId = empCode,
+                    input.RequestId,
+                    CompanyId,
+                    RowVersion = nextRowVersion
+                }, tx);
+            }
+            else
+            {
+                submittedRequestId = input.RequestId;
+            }
+
+            //-------------------------------------------------
             // UC-22 USER MODIFICATION BEFORE FREEZE
             //-------------------------------------------------
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestRoleDistributions
-            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { RequestId = submittedRequestId, CompanyId }, tx);
 
             await _common.ExecuteAsync(@"
             DELETE FROM DocumentRequestUserDistributions
-            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { input.RequestId, CompanyId }, tx);
+            WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;", new { RequestId = submittedRequestId, CompanyId }, tx);
             //-------------------------------------------------
             // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
-            await InsertDistributionsAsync(CompanyId, input.RequestId,
+            await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
                 empCode, tx);
 
@@ -1353,7 +1482,7 @@ public class DocumentRequestComponent
                     CompanyId,
                     WorkflowPolicyVersionId = versionId,
                     EntityType = "Request",
-                    EntityId = input.RequestId,
+                    EntityId = submittedRequestId,
                     Status = "Running",
                     StartedBy = empCode
                 }, tx);
@@ -1464,7 +1593,7 @@ public class DocumentRequestComponent
                 {
                     Status = DocumentRequestStatus.Submitted,
                     UserId = empCode,
-                    input.RequestId,
+                    RequestId = submittedRequestId,
                     CompanyId
                 }, tx);
 
@@ -1478,10 +1607,10 @@ public class DocumentRequestComponent
                 AND wes.IsActive = TRUE LIMIT 1;", new { ExecutionId = executionId, CompanyId }, tx);
 
             List<string> approvers = new List<string>();
-            string requestNumber = input.RequestId.ToString();
+            string requestNumber = submittedRequestId.ToString();
             if (activeStep != null)
             {
-                requestNumber = Convert.ToString(activeStep.requestnumber) ?? input.RequestId.ToString();
+                requestNumber = Convert.ToString(activeStep.requestnumber) ?? submittedRequestId.ToString();
                 approvers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, (int)activeStep.steporder, tx);
             }
 
@@ -1490,7 +1619,7 @@ public class DocumentRequestComponent
                 var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
                 foreach (var approver in approvers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)input.RequestId, approver, placeholders, tx);
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)submittedRequestId, approver, placeholders, tx);
                 }
             }
 
@@ -1563,7 +1692,7 @@ public class DocumentRequestComponent
                     }, tx);
                 }
             }
-            
+
             //-------------------------------------------------
             // Auto-expand roles into specific users and insert them into UserDistributions
             //-------------------------------------------------
@@ -1609,6 +1738,20 @@ public class DocumentRequestComponent
         }
     }
 
+    // Bumps the minor component of a "Proposed Version Number" (e.g. "1.0" -> "1.1"). Used
+    // when a reverted Request is resubmitted, so the resubmission carries a distinct version
+    // number from the attempt the approver reverted. Unparseable/missing input defaults to "1.0".
+    private static string IncrementMinorVersion(string? current)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            var parts = current.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major) && int.TryParse(parts[1], out int minor))
+                return $"{major}.{minor + 1}";
+        }
+        return "1.0";
+    }
+
     private async Task InsertHistoryAsync(
         int companyId,
         long requestId,
@@ -1631,17 +1774,17 @@ public class DocumentRequestComponent
             Comments = comments
         }, tx);
     }
-     
+
     public async Task<PaginationResult<DocumentRequestReadDto>> GetMyInboxRequestsAsync(GetPendingRequestDto input)
     {
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            var clientIp = _clientContextService.GetClientIP(); 
+            var clientIp = _clientContextService.GetClientIP();
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-             
+
             var whereClause = "WHERE 1=1";
 
             // Search
@@ -1908,14 +2051,18 @@ public class DocumentRequestComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp); 
+            var prefix = _utilities.GetPrefix(clientIp);
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             var whereClause = @"WHERE dr.CompanyId = @CompanyId
                 AND dr.Status = @DraftStatus
-                AND dr.CreatedBy = @CreatedBy";
+                AND dr.CreatedBy = @CreatedBy
+                AND NOT EXISTS (
+                    SELECT 1 FROM DocumentRequests child
+                    WHERE child.ParentRequestId = dr.Id AND child.CompanyId = dr.CompanyId
+                )";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -2125,7 +2272,7 @@ public class DocumentRequestComponent
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp); 
+            var prefix = _utilities.GetPrefix(clientIp);
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -2227,7 +2374,7 @@ public class DocumentRequestComponent
                     Decision = decision,
                     input.Observation,
                     input.StepId,
-                    CompanyId 
+                    CompanyId
                 }, tx);
 
             //-------------------------------------------------
@@ -2401,7 +2548,7 @@ public class DocumentRequestComponent
 
             if (nextStepApprovers.Any() && requestInfo != null)
             {
-                foreach(var approver in nextStepApprovers)
+                foreach (var approver in nextStepApprovers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, approver, notifyPlaceholders, tx);
                 }
@@ -2585,8 +2732,8 @@ public class DocumentRequestComponent
                     SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
                     BusinessDomain = GetValue<string>(dict, "businessdomain"),
                     BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
-                    DocumentName = GetValue<string>(dict, "title"),  
-                    DocumentURL = GetValue<string>(dict, "documenturl"),  
+                    DocumentName = GetValue<string>(dict, "title"),
+                    DocumentURL = GetValue<string>(dict, "documenturl"),
                     IsActive = GetValue<bool>(dict, "isactive"),
                     IsDeleted = GetValue<bool>(dict, "isdeleted"),
                     CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
@@ -2597,7 +2744,7 @@ public class DocumentRequestComponent
                     LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
                 });
             }
-           
+
             if (!requests.Any())
                 return new PaginationResult<EffectiveDocumentDetailsDto>
                 {
@@ -2698,7 +2845,7 @@ public class DocumentRequestComponent
                 Items = requests,
                 TotalCount = totalCount
             };
-             
+
         }
         catch (Exception ex)
         {
@@ -2714,13 +2861,13 @@ public class DocumentRequestComponent
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp); 
+            var prefix = _utilities.GetPrefix(clientIp);
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             filter.Initiator = empCode;
-            filter.CompanyId = CompanyId; 
+            filter.CompanyId = CompanyId;
 
             var searchCondition = "";
             if (!string.IsNullOrWhiteSpace(filter.SearchText))
@@ -2867,7 +3014,7 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
-            
+
 
             var countSql = $@"SELECT COUNT(1)                
                     FROM Vw_DocumentRequests dr
@@ -2909,7 +3056,7 @@ public class DocumentRequestComponent
     }
 
     // This mehod is doing the same jo as GetWorkflowDetailsAsync. 
-    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetDocumentObservationDetailsAsync(int documentId, string entityType)
+    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetDocumentObservationDetailsAsync(int documentId, string entityType, string? decision)
     {
         try
         {
@@ -2948,45 +3095,6 @@ public class DocumentRequestComponent
                 if (actualRequestId.HasValue)
                     documentId = actualRequestId.Value;
             }
-
-            //var sql = $@"
-            //    SELECT 
-            //        we.EntityId,
-            //        we.EntityType,
-            //        wes.StepOrder,
-            //        wsd.StepType,
-            //        wes.AssignedUserId,
-            //        e.empCode AS employeecode,
-            //        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName, 
-            //        ejp.roleid AS RoleId,
-            //        r.name AS RoleName,
-            //        ejp.dsgid AS DesignationId,
-            //        desig.name AS Designation,
-            //        wes.Decision,
-            //        wes.Observation,
-            //        wes.ActionAt,
-            //        wes.IsActive
-            //    FROM WorkflowExecutionSteps wes
-            //    INNER JOIN WorkflowExecutions we
-            //        ON we.CompanyId = wes.CompanyId
-            //        AND we.Id = wes.WorkflowExecutionId
-            //        AND we.EntityType = @EntityType  -- Critical filter: Only get steps from Document workflow
-            //    INNER JOIN WorkflowStepDefinitions wsd
-            //        ON wsd.CompanyId = wes.CompanyId
-            //        AND wsd.Id = wes.StepDefinitionId
-            //    LEFT JOIN tblEmployee e
-            //       ON e.empCode = wes.AssignedUserId
-            //    LEFT JOIN public.tblempjobprofile ejp 
-            //       ON ejp.empid = e.empid AND ejp.Active = TRUE
-            //    LEFT JOIN public.tblsetupsdetail r 
-            //       ON r.sdlid = ejp.roleid
-            //    LEFT JOIN public.tblsetupsdetail desig 
-            //       ON desig.sdlid = ejp.dsgid
-            //    WHERE wes.CompanyId = @CompanyId
-            //      AND we.EntityId = @DocumentId  -- The Document ID
-            //      AND we.EntityType = @EntityType  -- Should be 'Document'
-            //    ORDER BY wes.StepOrder";
-
             string sql = $@"
                     SELECT 
                         we.EntityId,
@@ -3044,6 +3152,18 @@ public class DocumentRequestComponent
                     WHERE wes.CompanyId = @CompanyId
                       AND we.EntityId = @DocumentId
                       AND we.EntityType = @EntityType
+                      AND (
+                            NULLIF(TRIM(@Decision), '') IS NULL
+                            OR @Decision = 'All'
+                            OR (
+                                @Decision IN ('Rejected', 'Reworked')
+                                AND wes.Decision = 'Reworked'
+                            )
+                            OR (
+                                @Decision = 'Approved'
+                                AND wes.Decision = 'Approved'
+                            )
+                        )
                       AND wes.Observation IS NOT NULL
                       AND TRIM(wes.Observation) <> ''
 
@@ -3053,7 +3173,8 @@ public class DocumentRequestComponent
             {
                 CompanyId,
                 documentId,  // Renamed from requestId for clarity
-                entityType   // Should be "Document"
+                entityType,   // Should be "Document"
+                Decision = decision // Reworked/Completed/Rejected
             });
         }
         catch (Exception ex)
@@ -3063,13 +3184,13 @@ public class DocumentRequestComponent
     }
 
 
-    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetWorkflowDetailsAsync(int documentId, string entityType) 
+    public async Task<IEnumerable<DocumentRequestDetailsDto>> GetWorkflowDetailsAsync(int documentId, string entityType, string? decision)
     {
         try
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            int CompanyId = int.Parse(_CompanyId); 
+            int CompanyId = int.Parse(_CompanyId);
 
             var sql = $@"
                 SELECT 
@@ -3125,13 +3246,26 @@ public class DocumentRequestComponent
                 WHERE wes.CompanyId = @CompanyId
                   AND we.EntityId = @DocumentId
                   AND we.EntityType = @EntityType
+                  AND (
+                        NULLIF(TRIM(@Decision), '') IS NULL
+                        OR @Decision = 'All'
+                        OR (
+                            @Decision IN ('Rejected', 'Reworked')
+                            AND wes.Decision = 'Reworked'
+                        )
+                        OR (
+                            @Decision = 'Approved'
+                            AND wes.Decision = 'Approved'
+                        )
+                    )
                 ORDER BY wes.StepOrder";
 
             return await _common.QueryAsync<DocumentRequestDetailsDto>(sql, new
             {
                 CompanyId,
                 documentId,
-                entityType
+                entityType,
+                Decision = decision
             });
         }
         catch (Exception ex)
@@ -3212,7 +3346,7 @@ public class DocumentRequestComponent
                 LEFT JOIN LATERAL (
                     SELECT dv2.Version
                     FROM DocumentVersions dv2
-                    WHERE dv2.DocumentId = d.Id AND dv2.CompanyId = d.CompanyId AND dv2.VersionType = 2
+                    WHERE dv2.DocumentId = d.Id AND dv2.CompanyId = d.CompanyId AND dv2.VersionType  IN (1, 2)
                     ORDER BY dv2.Id DESC LIMIT 1
                 ) dv ON TRUE
                 LEFT JOIN LATERAL (
@@ -3320,7 +3454,7 @@ public class DocumentRequestComponent
         //await using var transaction = await _common.BeginTransactionAsync();
 
         try
-        { 
+        {
 
             //-----------------------------------------
             // 1️⃣ Get Approved Request
@@ -3646,8 +3780,8 @@ public class DocumentRequestComponent
 
             var myRequestsCounts = await _common.QueryFirstOrDefaultAsync<dynamic>(myRequestsQuery, new { CompanyId, empCode });
 
-             // Query 2: Counts for requests in the current user's INBOX (for action)
-             var myInboxQuery = @"
+            // Query 2: Counts for requests in the current user's INBOX (for action)
+            var myInboxQuery = @"
              SELECT
                  COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
                  COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
@@ -3903,7 +4037,7 @@ public class DocumentRequestComponent
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             var clientIp = _clientContextService.GetClientIP();
-            var prefix = _utilities.GetPrefix(clientIp); 
+            var prefix = _utilities.GetPrefix(clientIp);
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
@@ -4024,9 +4158,9 @@ public class DocumentRequestComponent
 
             // Query 2: Counts for documents in the current user's INBOX (for approval)
             var myInboxQuery = @"
-            SELECT COUNT(1) FROM Vw_DocumentRequests dr WHERE dr.CompanyId = @CompanyId
-                AND dr.Status = 0 -- Draft
-                AND dr.CompanyId = @CompanyId
+            SELECT COUNT(1) FROM vw_documentrequests_latest_count dr 
+                WHERE dr.CompanyId = @CompanyId
+                AND dr.Status = 0 -- Draft 
                 AND dr.CreatedBy = @empCode;";
 
             var draftCount = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
@@ -4038,7 +4172,7 @@ public class DocumentRequestComponent
             throw;
         }
     }
-     
+
 
     public async Task<IQueryable<SelectListDto>> GetRequestCreatedByUserListAsync()
     {
@@ -4104,9 +4238,9 @@ public class DocumentRequestComponent
         string GetAbbreviation(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
-            
+
             name = name.Trim().ToUpper();
-            
+
             // Remove noise words
             var noiseWords = new[] { "DIVISION", "DEPARTMENT", "SUB-DEPARTMENT", "SUBDEPARTMENT", "SECTION", "DOMAIN" };
             foreach (var nw in noiseWords)
@@ -4168,60 +4302,60 @@ public class DocumentRequestComponent
         }
 
         string typ = docTypeName.ToUpper();
- 
-         // 3. If it is an annexure (parentDocumentId is provided and > 0)
-         if (parentDocumentId.HasValue && parentDocumentId.Value > 0)
-         {
-             var parentDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+
+        // 3. If it is an annexure (parentDocumentId is provided and > 0)
+        if (parentDocumentId.HasValue && parentDocumentId.Value > 0)
+        {
+            var parentDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                  SELECT DocumentNumber FROM documents 
                  WHERE Id = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
-                 new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
- 
-             if (parentDoc == null || string.IsNullOrWhiteSpace((string)parentDoc.documentnumber))
-                 throw new Exception("Parent document not found for annexure generation.");
- 
-             string parentNum = (string)parentDoc.documentnumber;
- 
-             // Query existing annexures for this parent to determine the next letter suffix
-             var existingAnnexures = await _common.QueryAsync<string>(@"
+                new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+            if (parentDoc == null || string.IsNullOrWhiteSpace((string)parentDoc.documentnumber))
+                throw new Exception("Parent document not found for annexure generation.");
+
+            string parentNum = (string)parentDoc.documentnumber;
+
+            // Query existing annexures for this parent to determine the next letter suffix
+            var existingAnnexures = await _common.QueryAsync<string>(@"
                  SELECT DocumentNumber FROM documents 
                  WHERE ParentDocumentId = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
-                 new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
- 
-             var usedLetters = new HashSet<char>();
-             foreach (var annNum in existingAnnexures)
-             {
-                 if (string.IsNullOrWhiteSpace(annNum)) continue;
-                 var parts = annNum.Split('-');
-                 var lastPart = parts[parts.Length - 1];
-                 if (lastPart.Length == 1 && char.IsLetter(lastPart[0]))
-                 {
-                     usedLetters.Add(char.ToUpper(lastPart[0]));
-                 }
-             }
- 
-             char nextLetter = 'A';
-             for (char c = 'A'; c <= 'Z'; c++)
-             {
-                 if (!usedLetters.Contains(c))
-                 {
-                     nextLetter = c;
-                     break;
-                 }
-             }
- 
-             return $"{parentNum}-{nextLetter}";
-         }
- 
-         // 4. Otherwise, normal document numbering: Build prefix using only linked cabinet segments
-         var segments = new List<string>();
-         if (!string.IsNullOrWhiteSpace(div)) segments.Add(div);
-         if (!string.IsNullOrWhiteSpace(dpt)) segments.Add(dpt);
-         if (!string.IsNullOrWhiteSpace(sct)) segments.Add(sct);
-         if (!string.IsNullOrWhiteSpace(bsd)) segments.Add(bsd);
-         segments.Add(typ);
- 
-         string prefix = string.Join("-", segments) + "-";
+                new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+            var usedLetters = new HashSet<char>();
+            foreach (var annNum in existingAnnexures)
+            {
+                if (string.IsNullOrWhiteSpace(annNum)) continue;
+                var parts = annNum.Split('-');
+                var lastPart = parts[parts.Length - 1];
+                if (lastPart.Length == 1 && char.IsLetter(lastPart[0]))
+                {
+                    usedLetters.Add(char.ToUpper(lastPart[0]));
+                }
+            }
+
+            char nextLetter = 'A';
+            for (char c = 'A'; c <= 'Z'; c++)
+            {
+                if (!usedLetters.Contains(c))
+                {
+                    nextLetter = c;
+                    break;
+                }
+            }
+
+            return $"{parentNum}-{nextLetter}";
+        }
+
+        // 4. Otherwise, normal document numbering: Build prefix using only linked cabinet segments
+        var segments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(div)) segments.Add(div);
+        if (!string.IsNullOrWhiteSpace(dpt)) segments.Add(dpt);
+        if (!string.IsNullOrWhiteSpace(sct)) segments.Add(sct);
+        if (!string.IsNullOrWhiteSpace(bsd)) segments.Add(bsd);
+        segments.Add(typ);
+
+        string prefix = string.Join("-", segments) + "-";
 
         var existingDocs = await _common.QueryAsync<string>(@"
             SELECT DocumentNumber FROM documents 

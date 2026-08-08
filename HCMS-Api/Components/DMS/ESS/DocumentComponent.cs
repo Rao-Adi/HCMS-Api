@@ -3607,7 +3607,7 @@ public class DocumentComponent
                 }
 
                 //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Document Type Code where Name='{docTypeName}'");
-                var docTypeCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM DocumentTypes WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = docTypeName }, tx);
+                var docTypeCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM DocumentTypes WHERE IsDeleted=FALSE AND CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = docTypeName }, tx);
                 if (string.IsNullOrEmpty(docTypeCode))
                 {
                     //LogToFile($"[BULK IMPORT] Row {row}: Document Type '{docTypeName}' not found. Skipped.");
@@ -3617,7 +3617,7 @@ public class DocumentComponent
                 }
 
                 //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Division Code where Name='{divName}'");
-                var divCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Divisions WHERE CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = divName }, tx);
+                var divCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Divisions WHERE IsDeleted=FALSE AND CompanyId = @CompanyId AND Name = @Name AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = divName }, tx);
                 if (string.IsNullOrEmpty(divCode))
                 {
                     //LogToFile($"[BULK IMPORT] Row {row}: Division '{divName}' not found. Skipped.");
@@ -3627,7 +3627,7 @@ public class DocumentComponent
                 }
 
                 //LogToFile($"[BULK IMPORT] Row {row}: Querying lookup for Department Code where Name='{deptName}' and DivCode='{divCode}'");
-                var deptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Departments WHERE CompanyId = @CompanyId AND Name = @Name AND DivisionCode = @DivCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = deptName, DivCode = divCode }, tx);
+                var deptCode = await _common.ExecuteScalarAsync<string>("SELECT Code FROM Departments WHERE IsDeleted=FALSE AND CompanyId = @CompanyId AND Name = @Name AND DivisionCode = @DivCode AND IsActive = TRUE LIMIT 1", new { CompanyId, Name = deptName, DivCode = divCode }, tx);
                 if (string.IsNullOrEmpty(deptCode))
                 {
                     //LogToFile($"[BULK IMPORT] Row {row}: Department '{deptName}' not found in Division '{divName}'. Skipped.");

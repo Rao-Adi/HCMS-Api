@@ -85,6 +85,7 @@ public class DocumentRequestReadDto : AuditableEntity
     public string? BusinessDomainCode { get; set; }
     public string? DraftFileURL { get; set; }
     public int? ParentDocumentId { get; set; }
+    public int? ParentRequestId { get; set; }
 
     // Populated only for Revision requests: when/by whom the document version being revised was created
     public string? PreviousVersionCreatedOn { get; set; }
@@ -553,6 +554,12 @@ public class SubmitDocumentRequestDto
 {
     public int RequestId { get; set; }
     public string DocumentRequestType { get; set; }
+
+    // Allows the Template (file) or HTML content to be updated at Submit time, without
+    // requiring a separate UpdateDraftDocumentRequestAsync call beforehand. Optional --
+    // leave both blank to submit the draft's existing content/file unchanged.
+    public string? ProposedContent { get; set; }
+    public IFormFile? DraftFile { get; set; }
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
