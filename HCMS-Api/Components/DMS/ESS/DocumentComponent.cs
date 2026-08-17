@@ -887,11 +887,38 @@ public class DocumentComponent
                   AND Content IS NOT NULL AND Content <> ''
             );", new { input.DocumentId, CompanyId = companyId }, transaction);
 
+        // A DocumentType can have more than one active Template row -- one scoped to a specific
+        // Division/Department/SubDepartment/BusinessDomain, plus a company-wide IsDefault
+        // fallback. Prefer the scoped match for this document's actual cabinet placement (NULL-
+        // tolerant, matching the same pattern used for WorkflowPolicies/ReviewPolicies elsewhere),
+        // falling back to the default only when no scoped template applies. Without this, "LIMIT 1"
+        // with no ORDER BY over multiple candidate rows is non-deterministic and can silently pick
+        // a template with the wrong TemplateType (e.g. HTML instead of Word), causing an uploaded
+        // file to be routed into the wrong branch below and dropped without error.
         int? templateType = await _common.ExecuteScalarAsync<int?>(@"
             SELECT TemplateType FROM Templates
             WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
               AND IsActive = TRUE AND IsDeleted = FALSE
-            LIMIT 1;", new { DocumentTypeCode = (string)doc.documenttypecode, CompanyId = companyId }, transaction);
+              AND (
+                    IsDefault = TRUE
+                    OR (
+                        (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                        AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                        AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                        AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                    )
+                  )
+            ORDER BY IsDefault ASC
+            LIMIT 1;",
+            new
+            {
+                DocumentTypeCode = (string)doc.documenttypecode,
+                CompanyId = companyId,
+                DivisionCode = (string)doc.divisioncode,
+                DepartmentCode = (string)doc.departmentcode,
+                SubDepartmentCode = (string)doc.subdepartmentcode,
+                BusinessDomainCode = (string)doc.businessdomaincode
+            }, transaction);
 
         bool expectsFile = templateType == 1 || templateType == 2; // 1 = PDF, 2 = Word
         bool expectsContent = templateType == 3;                    // 3 = HTML
@@ -992,7 +1019,8 @@ public class DocumentComponent
         //-------------------------------------------------
 
         var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-            SELECT Id, DocumentNumber, Title, DocumentTypeCode, NextReviewDate, ParentDocumentId
+            SELECT Id, DocumentNumber, Title, DocumentTypeCode, NextReviewDate, ParentDocumentId,
+                   DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode
             FROM Documents
             WHERE Id = @DocumentId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
             new { DocumentId = documentId, CompanyId = companyId }, transaction);
@@ -1040,12 +1068,33 @@ public class DocumentComponent
         // 2. The DocumentType's Word template
         //-------------------------------------------------
 
+        // Same scoped-then-default resolution as AttachOrUpdateTemplateAsync -- a DocumentType
+        // can have more than one active Template row (per cabinet scope, plus an IsDefault
+        // fallback); this picks the one that actually applies to this document's placement.
         var templatePath = await _common.ExecuteScalarAsync<string>(@"
             SELECT TemplateFileUrl FROM Templates
             WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
               AND TemplateType = 2 AND IsActive = TRUE AND IsDeleted = FALSE
+              AND (
+                    IsDefault = TRUE
+                    OR (
+                        (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                        AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                        AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                        AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                    )
+                  )
+            ORDER BY IsDefault ASC
             LIMIT 1;",
-            new { DocumentTypeCode = (string)doc.documenttypecode, CompanyId = companyId }, transaction);
+            new
+            {
+                DocumentTypeCode = (string)doc.documenttypecode,
+                CompanyId = companyId,
+                DivisionCode = (string)doc.divisioncode,
+                DepartmentCode = (string)doc.departmentcode,
+                SubDepartmentCode = (string)doc.subdepartmentcode,
+                BusinessDomainCode = (string)doc.businessdomaincode
+            }, transaction);
 
         if (string.IsNullOrWhiteSpace(templatePath))
             throw new CustomException("No Word template configured for this Document Type.", 404);

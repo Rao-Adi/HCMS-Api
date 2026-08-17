@@ -150,7 +150,7 @@ public class NotificationComponent
             ),
             NotificationScenario.PendingDocumentApproval => (
                 "New Document Pending Review",
-                $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) is pending your technical review.",
+                $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) pending for your technical review.",
                 "Document",
                 "/documents/my-approvals-documents"
             ),
@@ -648,7 +648,7 @@ public class NotificationComponent
     private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
     {
         string actionUrl = redirectionUrl ?? "";
-        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
+        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/";
         if (!string.IsNullOrEmpty(actionUrl) && actionUrl != "#")
         {
             actionUrl = baseUrl.TrimEnd('/') + "/" + actionUrl.TrimStart('/');
@@ -716,7 +716,7 @@ public class NotificationComponent
                                             <p style='font-size: 13px; color: #64748b; margin-top: 0; margin-bottom: 16px; font-weight: 500;'>
                                                 Click the button below to review and process this request:
                                             </p>
-                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); border: 1px solid #1d4ed8;'>
+                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background-color: #2563eb; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); border: 1px solid #1d4ed8;'>
                                                 View Request Details &rarr;
                                             </a>
                                             <p style='font-size: 11px; color: #94a3b8; margin-top: 14px; margin-bottom: 0; word-break: break-all;'>
