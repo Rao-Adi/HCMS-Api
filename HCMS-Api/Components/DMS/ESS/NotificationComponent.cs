@@ -648,7 +648,7 @@ public class NotificationComponent
     private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
     {
         string actionUrl = redirectionUrl ?? "";
-        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/";
+        var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
         if (!string.IsNullOrEmpty(actionUrl) && actionUrl != "#")
         {
             actionUrl = baseUrl.TrimEnd('/') + "/" + actionUrl.TrimStart('/');
@@ -676,6 +676,11 @@ public class NotificationComponent
                                 <tr>
                                     <td style='background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 28px 32px; text-align: left;'>
                                         <table width='100%' cellspacing='0' cellpadding='0' border='0'>
+                                            <tr>
+                                                <td style='padding-bottom: 14px;'>
+                                                    <img src='cid:{DMSUtilities.DmsLogoContentId}' alt='Logo' width='40' height='40' style='display: block; border: 0; border-radius: 8px;' />
+                                                </td>
+                                            </tr>
                                             <tr>
                                                 <td>
                                                     <div style='display: inline-block; background-color: rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 12px; color: #ffffff; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;'>
@@ -716,12 +721,9 @@ public class NotificationComponent
                                             <p style='font-size: 13px; color: #64748b; margin-top: 0; margin-bottom: 16px; font-weight: 500;'>
                                                 Click the button below to review and process this request:
                                             </p>
-                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background-color: #2563eb; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); border: 1px solid #1d4ed8;'>
+                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; border: 1px solid #1d4ed8;'>
                                                 View Request Details &rarr;
-                                            </a>
-                                            <p style='font-size: 11px; color: #94a3b8; margin-top: 14px; margin-bottom: 0; word-break: break-all;'>
-                                                Target path: <span style='font-family: monospace; color: #475569;'>{redirectionUrl}</span>
-                                            </p>
+                                            </a> 
                                         </div>" : "")}
 
                                     </td>
@@ -731,7 +733,7 @@ public class NotificationComponent
                                 <tr>
                                     <td style='background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;'>
                                         <p style='font-size: 12px; color: #64748b; margin: 0 0 6px 0; font-weight: 500;'>
-                                            This is an automated notification from the <strong>Document Management System (DMS)</strong>.
+                                            This is an automated notification from the <strong>DMS.Partners</strong>.
                                         </p>
                                         <p style='font-size: 11px; color: #94a3b8; margin: 0;'>
                                             Please do not reply directly to this email.

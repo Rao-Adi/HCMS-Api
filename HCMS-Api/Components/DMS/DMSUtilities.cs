@@ -72,6 +72,11 @@ namespace HCMS_Api.Components.DMS.Common
 
     public class DMSUtilities
     {
+        // Referenced via "cid:{DmsLogoContentId}" in HTML email bodies (see
+        // NotificationComponent.BuildNotificationEmailHtml) so SendEmailAsync knows which
+        // linked resource to embed -- a plain https:// <img> would get blocked by default in
+        // most corporate mail clients, and base64 data: URIs don't render in classic Outlook desktop.
+        public const string DmsLogoContentId = "dms-notification-logo";
 
         private readonly DMSDataServices _dataservice;
         private readonly IConfiguration _configuration;
@@ -1727,6 +1732,17 @@ namespace HCMS_Api.Components.DMS.Common
 
                 email.Subject = subject ?? string.Empty;
                 var builder = new BodyBuilder();
+
+                if (!string.IsNullOrEmpty(body) && body.Contains($"cid:{DmsLogoContentId}"))
+                {
+                    var logoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "logo", "android-chrome-512x512.png");
+                    if (File.Exists(logoPath))
+                    {
+                        var logo = builder.LinkedResources.Add(logoPath);
+                        logo.ContentId = DmsLogoContentId;
+                    }
+                }
+
                 builder.HtmlBody = body ?? string.Empty;
                 email.Body = builder.ToMessageBody();
 
