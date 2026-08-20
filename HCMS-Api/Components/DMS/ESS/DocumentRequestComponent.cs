@@ -7,6 +7,7 @@ using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
 using Npgsql;
+using OfficeOpenXml;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -2011,33 +2012,49 @@ public class DocumentRequestComponent
                 return Array.Empty<byte>();
             }
 
-            var sb = new System.Text.StringBuilder();
-            // Add header row
-            var headers = ((IDictionary<string, object>)requests.First()).Keys;
-            sb.AppendLine(string.Join(",", headers));
+            var headers = ((IDictionary<string, object>)requests.First()).Keys.ToList();
 
-            // Add data rows
+            // Real .xlsx via EPPlus, not CSV -- bold headers and optimized column widths are
+            // Excel-specific presentation features with no equivalent in plain CSV, so satisfying
+            // that requirement needs a genuine binary/XML workbook. (An earlier attempt at this
+            // reportedly failed to open on client machines; the most likely cause found while
+            // revisiting this was a frontend/backend mismatch -- CSV bytes wrapped in an xlsx
+            // MIME type -- not a defect in EPPlus output itself. See DMSDocumentRequestController
+            // and document-request.service.ts/my-approval-request.ts for the matching frontend
+            // fix that keeps the blob's declared type and the actual bytes in agreement this time.)
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Requests");
+
+            for (int col = 0; col < headers.Count; col++)
+            {
+                worksheet.Cells[1, col + 1].Value = headers[col];
+            }
+            using (var headerRange = worksheet.Cells[1, 1, 1, headers.Count])
+            {
+                headerRange.Style.Font.Bold = true;
+            }
+
+            int rowIndex = 2;
             foreach (var row in requests)
             {
-                var dict = row as IDictionary<string, object>;
-                var values = new List<string>();
-                foreach (var header in headers)
+                var dict = (IDictionary<string, object>)row;
+                for (int col = 0; col < headers.Count; col++)
                 {
-                    var raw = dict[header];
+                    var raw = dict[headers[col]];
                     // Postgres timestamp columns come back as DateTime, not string, so
                     // ToString() would use the server's current-culture default format instead
                     // of the requested "Aug, 02 2026 09:00:00" style.
                     var value = raw is DateTime dt
                         ? dt.ToString("MMM, dd yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
                         : raw?.ToString() ?? "";
-                    // Escape commas and quotes
-                    var escapedValue = $"\"{value.Replace("\"", "\"\"")}\"";
-                    values.Add(escapedValue);
+                    worksheet.Cells[rowIndex, col + 1].Value = value;
                 }
-                sb.AppendLine(string.Join(",", values));
+                rowIndex++;
             }
 
-            return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns(10, 60);
+
+            return await package.GetAsByteArrayAsync();
         }
         catch (Exception ex)
         {

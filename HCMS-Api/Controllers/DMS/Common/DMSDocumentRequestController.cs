@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 using System.Net;
 using System.IO;
 using System.Text.Json;
@@ -91,6 +92,24 @@ public class DMSDocumentRequestController : Controller
         }
     }
 
+    // Mirrors the "Mon DD, YYYY" date convention already used for date columns in the
+    // exported data (see DocumentRequestComponent.ExportMyInboxRequestsAsync).
+    private static string BuildInboxExportFileName(string? requestStatus)
+    {
+        var titlePart = requestStatus?.Trim().ToUpperInvariant() switch
+        {
+            "APPROVED" => "Requests Approved by Me",
+            "REJECTED" => "Requests Rejected by Me",
+            "REVERTED" => "Requests Reverted by Me",
+            "PENDING" => "Pending Requests",
+            _ => "My Inbox Requests"
+        };
+
+        var datePart = DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture);
+
+        return $"{titlePart} - ({datePart}).xlsx";
+    }
+
     [HttpPost("export-my-pending-document-request")]
     public async Task<IActionResult> ExportMyInboxRequestsAsync(GetPendingRequestDto input)
     {
@@ -107,9 +126,14 @@ public class DMSDocumentRequestController : Controller
                     Code = 404
                 });
             }
-             
-            string fileName = $"My Approvals–Request for Document Creation/Update -({DateTime.Now:yyyyMMddHHmmss}).csv";
-            return File(fileBytes, "text/csv", fileName);
+
+            string fileName = BuildInboxExportFileName(input.RequestStatus);
+
+            // Without this, Angular cannot read the filename off Content-Disposition
+            // (see DownloadDraftDocument below, which needs the same header for the same reason).
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
         catch (CustomException ex)
         {

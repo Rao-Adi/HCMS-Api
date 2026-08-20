@@ -4468,8 +4468,6 @@ public class DocumentComponent
                 return Array.Empty<byte>();
             }
 
-            var sb = new System.Text.StringBuilder();
-
             // Limited to the same columns the "My Approvals – Documents" grid shows
             // (leadingColumnDefs/trailingColumnDefs in my-approval-document.ts) instead of every
             // internal field on AllDocumentDto (ExecutionId, StepId, draftFileUrl, etc.) — the
@@ -4483,9 +4481,23 @@ public class DocumentComponent
                 "Date of Creation", "Requested By", "Requested On",
                 "Previous Version Created By", "Previous Version Created On"
             };
-            sb.AppendLine(string.Join(",", headers));
 
-            // Add data rows
+            // Real .xlsx via EPPlus (bold header row, auto-fit column widths) -- see
+            // DocumentRequestComponent.ExportMyInboxRequestsAsync for the matching Request-side
+            // export and why this replaced a plain-CSV StringBuilder.
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Documents");
+
+            for (int col = 0; col < headers.Count; col++)
+            {
+                worksheet.Cells[1, col + 1].Value = headers[col];
+            }
+            using (var headerRange = worksheet.Cells[1, 1, 1, headers.Count])
+            {
+                headerRange.Style.Font.Bold = true;
+            }
+
+            int rowIndex = 2;
             foreach (var row in requests)
             {
                 var values = new List<string>
@@ -4508,12 +4520,16 @@ public class DocumentComponent
                     FormatExportDate(row.PreviousVersionCreatedOn),
                 };
 
-                // Escape commas and quotes for standard CSV formatting
-                var escapedValues = values.Select(value => $"\"{value.Replace("\"", "\"\"")}\"");
-                sb.AppendLine(string.Join(",", escapedValues));
+                for (int col = 0; col < values.Count; col++)
+                {
+                    worksheet.Cells[rowIndex, col + 1].Value = values[col];
+                }
+                rowIndex++;
             }
 
-            return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns(10, 60);
+
+            return await package.GetAsByteArrayAsync();
         }
         catch (Exception ex)
         {

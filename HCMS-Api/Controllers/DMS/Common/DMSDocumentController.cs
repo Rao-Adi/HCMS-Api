@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.ESS;
 using HCMS_Api.Components.HCMS.Common;
 using HCMS_Api.Controllers.HCMS.ESS;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 using System.Text.Json;
 
 namespace HCMS_Api.Controllers.DMS.Common;
@@ -826,6 +827,24 @@ public class DMSDocumentController : Controller
 
 
 
+    // Mirrors DMSDocumentRequestController.BuildInboxExportFileName, just for the Documents
+    // side of "My Approvals" instead of Requests.
+    private static string BuildDocumentExportFileName(string? requestStatus)
+    {
+        var titlePart = requestStatus?.Trim().ToUpperInvariant() switch
+        {
+            "APPROVED" => "Documents Approved by Me",
+            "REJECTED" => "Documents Rejected by Me",
+            "REVERTED" => "Documents Reverted by Me",
+            "PENDING" => "Pending Documents",
+            _ => "My Document Approvals"
+        };
+
+        var datePart = DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture);
+
+        return $"{titlePart} - ({datePart}).xlsx";
+    }
+
     [HttpPost("export-my-documents")]
     public async Task<IActionResult> ExportMyInboxRequestsAsync(GetDocumentDto input)
     {
@@ -843,8 +862,12 @@ public class DMSDocumentController : Controller
                 });
             }
 
-            string fileName = $"Requests Approved by Me-({DateTime.Now:yyyyMMddHHmmss}).csv";
-            return File(fileBytes, "text/csv", fileName);
+            string fileName = BuildDocumentExportFileName(input.RequestStatus);
+
+            // Without this, Angular cannot read the filename off Content-Disposition.
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
         catch (CustomException ex)
         {
