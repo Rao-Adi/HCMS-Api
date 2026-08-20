@@ -678,7 +678,7 @@ public class NotificationComponent
                                         <table width='100%' cellspacing='0' cellpadding='0' border='0'>
                                             <tr>
                                                 <td style='padding-bottom: 14px;'>
-                                                    <img src='cid:{DMSUtilities.DmsLogoContentId}' alt='Logo' width='40' height='40' style='display: block; border: 0; border-radius: 8px;' />
+                                                    <img src='cid:{DMSUtilities.DmsLogoContentId}' alt='Logo' width='200' height='auto' style='display: block; border: 0;' />
                                                 </td>
                                             </tr>
                                             <tr>

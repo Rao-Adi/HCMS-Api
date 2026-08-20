@@ -93,6 +93,9 @@ public class DocumentRequestReadDto : AuditableEntity
 
     public bool IsReworked { get; set; }
 
+    public string? CreatedByName { get; set; }
+    public string? LastModifiedByName { get; set; }
+
     public int Status { get; set; }
     public string RowVersion { get; set; }
     public int StepId { get; set; }

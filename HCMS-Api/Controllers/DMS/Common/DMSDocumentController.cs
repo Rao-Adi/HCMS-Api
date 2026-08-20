@@ -843,7 +843,7 @@ public class DMSDocumentController : Controller
                 });
             }
 
-            string fileName = $"Document_{DateTime.Now:yyyyMMddHHmmss}.csv";
+            string fileName = $"Requests Approved by Me-({DateTime.Now:yyyyMMddHHmmss}).csv";
             return File(fileBytes, "text/csv", fileName);
         }
         catch (CustomException ex)

@@ -107,8 +107,8 @@ public class DMSDocumentRequestController : Controller
                     Code = 404
                 });
             }
-
-            string fileName = $"Pending_Requests_{DateTime.Now:yyyyMMddHHmmss}.csv";
+             
+            string fileName = $"My Approvals–Request for Document Creation/Update -({DateTime.Now:yyyyMMddHHmmss}).csv";
             return File(fileBytes, "text/csv", fileName);
         }
         catch (CustomException ex)
@@ -278,6 +278,33 @@ public class DMSDocumentRequestController : Controller
             {
                 Success = true,
                 Data = await _documentRequestComponent.GetDocumentRevisionHistoryAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("get-my-total-request")]
+    public async Task<IActionResult> GetMyTotalRequests(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<DocumentRequestReadDto>>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetMyTotalRequestsAsync(input),
                 Message = "Success",
                 Code = 200
             });

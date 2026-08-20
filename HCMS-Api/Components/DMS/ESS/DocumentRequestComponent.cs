@@ -2045,6 +2045,131 @@ public class DocumentRequestComponent
             throw new CustomException("Failed to export data.", 500);
         }
     }
+    // Every request the current user has ever created, any status -- no Status filter, and no
+    // "superseded by a newer revision" exclusion (unlike GetDraftDocumentRequestAsync), so this
+    // matches DashboardComponent's MyTotalRequests count (CreatedBy + IsDeleted = FALSE only) and
+    // the "My Total Requests" tab shows the same total the dashboard card promises.
+    public async Task<PaginationResult<DocumentRequestReadDto>> GetMyTotalRequestsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = @"WHERE dr.CompanyId = @CompanyId
+                AND dr.CreatedBy = @CreatedBy
+                AND dr.IsDeleted = FALSE";
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(dr.DocumentName) LIKE '%{search}%'
+                    OR UPPER(dr.RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "dr.DocumentName",
+                "REQUESTNUMBER" => "dr.RequestNumber",
+                "STATUS" => "dr.Status",
+                "CREATEDAT" => "dr.CreatedAt",
+                "CREATEDBY" => "dr.CreatedBy",
+                "LASTMODIFIEDAT" => "dr.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dr.LastModifiedBy",
+                _ => "dr.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"SELECT DISTINCT dr.*,
+                CASE WHEN dr.Status = 0 AND EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN TRUE ELSE FALSE END AS isreworked,
+                COALESCE(cn.EmployeeName, dr.CreatedBy) AS createdbyname,
+                COALESCE(mn.EmployeeName, dr.LastModifiedBy) AS lastmodifiedbyname
+                FROM Vw_DocumentRequests dr
+                LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(dr.CreatedBy::text, '0')
+                LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(dr.LastModifiedBy::text, '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"SELECT COUNT(DISTINCT dr.Id) FROM Vw_DocumentRequests dr {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                CreatedBy = empCode
+            };
+
+            var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var requests = new List<DocumentRequestReadDto>();
+            foreach (var row in dynamicRequests)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                requests.Add(new DocumentRequestReadDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    RequestNumber = GetValue<string>(dict, "requestnumber"),
+                    DocumentRequestTypeCode = GetValue<string>(dict, "documentrequesttypecode"),
+                    DocumentId = GetValue<int>(dict, "documentid"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    DocumentName = GetValue<string>(dict, "documentname"),
+                    Justification = GetValue<string>(dict, "justification"),
+                    Status = GetValue<int>(dict, "status"),
+                    IsReworked = GetValue<bool>(dict, "isreworked"),
+                    RowVersion = GetValue<string>(dict, "rowversion"),
+                    ProposedContent = GetValue<string>(dict, "proposedcontent"),
+                    DraftFileUrl = GetValue<string>(dict, "draftfileurl"),
+                    IsContentFinalized = GetValue<bool>(dict, "iscontentfinalized"),
+                    DraftContentLastModifiedAt = GetValue<DateTime?>(dict, "draftcontentlastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    DraftContentLastModifiedBy = GetValue<string>(dict, "draftcontentlastmodifiedby"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    CreatedByName = GetValue<string>(dict, "createdbyname"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                });
+            }
+
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<DocumentRequestReadDto>
+            {
+                Items = requests,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new CustomException("Failed to fetch total requests.", 500);
+        }
+    }
+
     public async Task<PaginationResult<DocumentRequestReadDto>> GetDraftDocumentRequestAsync(GetDocumentDto input)
     {
         try
@@ -2400,14 +2525,16 @@ public class DocumentRequestComponent
 
                 await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
-                SET Status = @RejectedStatus
+                SET Status = @RejectedStatus,
+                    LastModifiedBy = @EmpCode,
+                    LastModifiedAt = NOW()
                 WHERE CompanyId = @CompanyId AND Id =
                 (
                     SELECT EntityId
                     FROM WorkflowExecutions
                     WHERE Id = @ExecutionId AND CompanyId = @CompanyId
                 );",
-                    new { ExecutionId = executionId, CompanyId, RejectedStatus = DocumentRequestStatus.Rejected }, tx); // Or whatever your enum uses for Rejected
+                    new { ExecutionId = executionId, CompanyId, RejectedStatus = DocumentRequestStatus.Rejected, EmpCode = empCode }, tx); // Or whatever your enum uses for Rejected
 
                 if (initiatorId != string.Empty)
                 {
@@ -2433,14 +2560,16 @@ public class DocumentRequestComponent
                 await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
                 SET Status = @DraftStatus,
-                IsContentFinalized = FALSE
+                IsContentFinalized = FALSE,
+                LastModifiedBy = @EmpCode,
+                LastModifiedAt = NOW()
                 WHERE CompanyId = @CompanyId AND Id =
                 (
                     SELECT EntityId
                     FROM WorkflowExecutions
                     WHERE Id = @ExecutionId AND CompanyId = @CompanyId
                 );",
-                    new { ExecutionId = executionId, CompanyId, DraftStatus = DocumentRequestStatus.Draft }, tx);
+                    new { ExecutionId = executionId, CompanyId, DraftStatus = DocumentRequestStatus.Draft, EmpCode = empCode }, tx);
 
                 if (initiatorId != string.Empty)
                 {
@@ -2496,6 +2625,23 @@ public class DocumentRequestComponent
                     if (rows == 0)
                         throw new Exception("Workflow activation failed. Next step not found.");
 
+                    // Not a terminal outcome -- Status doesn't change here -- but this approver did
+                    // just act on the request, and previously nothing recorded that at all (the
+                    // Rejected/Reworked/final-Approved branches below at least updated Status; this
+                    // mid-workflow "approved, forwarded to next approver" path touched DocumentRequests
+                    // not at all), so LastModifiedBy/At kept showing whoever last edited the draft.
+                    await _common.ExecuteAsync(@"
+                        UPDATE DocumentRequests
+                        SET LastModifiedBy = @EmpCode,
+                            LastModifiedAt = NOW()
+                        WHERE CompanyId = @CompanyId AND Id =
+                        (
+                            SELECT EntityId
+                            FROM WorkflowExecutions
+                            WHERE Id = @ExecutionId AND CompanyId = @CompanyId
+                        );",
+                        new { ExecutionId = executionId, CompanyId, EmpCode = empCode }, tx);
+
                     nextStepApprovers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, executionId, next.Value, tx);
                 }
                 else
@@ -2513,7 +2659,9 @@ public class DocumentRequestComponent
 
                     await _common.ExecuteAsync(@"
                     UPDATE DocumentRequests
-                    SET Status = @Approved
+                    SET Status = @Approved,
+                        LastModifiedBy = @EmpCode,
+                        LastModifiedAt = NOW()
                     WHERE CompanyId = @CompanyId AND Id =
                     (
                         SELECT EntityId
@@ -2524,7 +2672,8 @@ public class DocumentRequestComponent
                         {
                             ExecutionId = executionId,
                             Approved = DocumentRequestStatus.Approved,
-                            CompanyId = CompanyId
+                            CompanyId = CompanyId,
+                            EmpCode = empCode
                         }, tx);
 
 
@@ -4156,12 +4305,19 @@ public class DocumentRequestComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            // Query 2: Counts for documents in the current user's INBOX (for approval)
+            // Must match GetDraftDocumentRequestAsync's WHERE clause (the actual Draft Requests
+            // list this badge sits next to) -- it excludes drafts already superseded by a newer
+            // child request, which this count previously didn't, so the badge could show a higher
+            // number than the list it points at actually contains.
             var myInboxQuery = @"
-            SELECT COUNT(1) FROM vw_documentrequests_latest_count dr 
+            SELECT COUNT(1) FROM vw_documentrequests_latest_count dr
                 WHERE dr.CompanyId = @CompanyId
-                AND dr.Status = 0 -- Draft 
-                AND dr.CreatedBy = @empCode;";
+                AND dr.Status = 0 -- Draft
+                AND dr.CreatedBy = @empCode
+                AND NOT EXISTS (
+                    SELECT 1 FROM DocumentRequests child
+                    WHERE child.ParentRequestId = dr.Id AND child.CompanyId = dr.CompanyId
+                );";
 
             var draftCount = await _common.QueryFirstOrDefaultAsync<dynamic>(myInboxQuery, new { CompanyId, empCode });
 

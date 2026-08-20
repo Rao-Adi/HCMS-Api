@@ -1735,7 +1735,7 @@ namespace HCMS_Api.Components.DMS.Common
 
                 if (!string.IsNullOrEmpty(body) && body.Contains($"cid:{DmsLogoContentId}"))
                 {
-                    var logoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "logo", "android-chrome-512x512.png");
+                    var logoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "logo", "Doc.Partners.png");
                     if (File.Exists(logoPath))
                     {
                         var logo = builder.LinkedResources.Add(logoPath);

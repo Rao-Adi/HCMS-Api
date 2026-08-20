@@ -6,10 +6,13 @@ namespace HCMS_Api.Components.DMS.Common.Models;
 public class DashboardSummaryDto
 {
     public int MyTotalDocuments { get; set; }
+    public int MyApprovedDocuments { get; set; }
     public int MyTotalRequests { get; set; }
     public int MyPendingRequests { get; set; }
     public int MyApprovedRequests { get; set; }
     public int MyRejectedRequests { get; set; }
+    public int MyDraftRequests { get; set; }
+    public int MyRevertedRequests { get; set; }
     public int PendingApprovals { get; set; }
     public int PendingDocumentApprovals { get; set; }
     public int PendingRequestApprovals { get; set; }
