@@ -421,17 +421,40 @@ public class DMSDocumentController : Controller
                 });
             }
 
-            var memory = new MemoryStream();
-            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-            {
-                await stream.CopyToAsync(memory);
-            }
-            memory.Position = 0;
+            byte[] fileBytes;
+            string contentType;
+            var extension = Path.GetExtension(filePath).ToLowerInvariant();
 
-            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
+            // For Word content (the only case the merge understands), try to hand back the
+            // DocumentType's official template populated with this document's metadata, the
+            // uploaded content, and the approval history recorded so far -- instead of the raw
+            // uploaded file -- so whoever downloads (approver reviewing, or the initiator
+            // checking their own submission) sees the actual finished document, not a bare
+            // content fragment. Never lets a merge problem (no template configured yet, template
+            // file missing, etc.) block the download itself -- falls back to the raw file.
+            if (extension == ".doc" || extension == ".docx")
             {
-                contentType = "application/octet-stream";
+                try
+                {
+                    await using var contentFileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                    fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream);
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                }
+                catch (Exception mergeEx)
+                {
+                    _logger.LogWarning(mergeEx, "Template merge failed for Document {DocumentId}; falling back to the raw uploaded file.", id);
+                    fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                }
+            }
+            else
+            {
+                fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+                if (!provider.TryGetContentType(filePath, out contentType))
+                {
+                    contentType = "application/octet-stream";
+                }
             }
 
             var fileName = Path.GetFileName(filePath);
@@ -439,7 +462,7 @@ public class DMSDocumentController : Controller
             // Important for frontend reading of the File Name
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
 
-            return File(memory, contentType, fileName);
+            return File(fileBytes, contentType, fileName);
         }
         catch (CustomException ex)
         {

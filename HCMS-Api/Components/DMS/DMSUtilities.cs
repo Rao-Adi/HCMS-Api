@@ -2345,7 +2345,12 @@ namespace HCMS_Api.Components.DMS.Common
             try
             {
                 Object obj = new object();
-                obj = GetScalarDataForHCMS("Select empcode from tblEmployee where EmpId = '" + EmpId + "'");
+                // tblEmployee.empcode is a fixed-width/padded column (same as elsewhere in this
+                // file, e.g. GetEmpNameForHCMS trims its own fields) -- without LTRIM/RTRIM this
+                // returns trailing whitespace baked into the value, which then gets stored
+                // verbatim anywhere this is persisted (e.g. ESignatures.UserId) and silently
+                // fails to match a clean empcode value in later equality comparisons.
+                obj = GetScalarDataForHCMS("Select LTRIM(RTRIM(empcode)) from tblEmployee where EmpId = '" + EmpId + "'");
                 if (obj != null)
                 {
                     empcode = obj.ToString();

@@ -25,7 +25,7 @@ public class DocumentComponent
     private readonly IConfiguration _configuration;
     private readonly ClientContextService _clientContextService;
     private readonly IDMSDapperDataService _dapperService;
-    //private readonly ILogger<UtilitiesController> _logger;
+    private readonly ILogger<DocumentComponent> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly NotificationComponent _notificationComponent;
@@ -37,7 +37,7 @@ public class DocumentComponent
         , IConfiguration configuration
         , ClientContextService clientContextService
         , IDMSDapperDataService dapper
-        //, ILogger<UtilitiesController> logger
+        , ILogger<DocumentComponent> logger
         , IHttpContextAccessor http,
         DMSCommon common,
         NotificationComponent notificationComponent,
@@ -46,7 +46,7 @@ public class DocumentComponent
         )
     {
         _http = http;
-        //_logger = logger;
+        _logger = logger;
         _utilities = utilities;
         _dataservice = dataservice;
         _configuration = configuration;
@@ -990,91 +990,107 @@ public class DocumentComponent
     }
 
     // ================================================================================
-    // Word Template Merge -- NOT yet wired into the live Document Creation flow. The
-    // client's current Word templates (e.g. "A- Format SOP Template.docx") don't have the
-    // placeholders this expects; they've been asked to resend updated templates with them.
-    // Once those arrive, this can replace the raw file-copy behavior in
-    // AttachOrUpdateTemplateAsync for TemplateType == 2 (Word).
+    // Word Template Merge -- wired into the live flow at *download* time
+    // (DMSDocumentController.DownloadDraftDocument, "download-submitted-document-template"),
+    // not at upload/AttachOrUpdateTemplateAsync time. Merging fresh on every download instead
+    // of once at upload keeps this correct for two things that are only known/final as of
+    // "right now": the signature block reflects however much of the approval workflow has
+    // actually happened by the time someone downloads (not a stale snapshot from upload time),
+    // and metadata like EffectiveDate isn't even set until the document goes EFFECTIVE, well
+    // after content is first uploaded. The uploaded content file itself (Documents.DocumentURL)
+    // is left exactly as uploaded -- this only ever produces a derived, in-memory copy.
     //
     // Expected placeholders in the template:
     //   Metadata (anywhere in header/body/footer): {{DocumentTitle}}, {{DocumentNumber}},
     //     {{Version}}, {{EffectiveDate}}, {{ReviewDate}}, {{Supersede}}
-    //   Content: {{DocumentContent}} -- replaced with the uploaded content file's body.
+    //   Content: {{DocumentContent}} -- replaced with the uploaded content file's body. Only
+    //     ever looked for in the document body -- a variable-length content section doesn't
+    //     make sense in a header/footer, which is fixed content that repeats identically on
+    //     every page.
     //   Signature block: ONE table row containing {{ApproverRole}}, {{ApproverName}},
     //     {{ApproverDesignation}}, {{ApproverSignature}}, {{ApprovalDate}} -- cloned once
     //     per step actually configured on this Document's approval workflow (as few as one,
-    //     or many, depending on the policy -- not a fixed 4 roles).
+    //     or many, depending on the policy -- not a fixed 4 roles). Looked for in the body AND
+    //     every header/footer, since templates commonly put the full approval matrix in a
+    //     footer so it repeats on every printed page (all clones landing in that same footer,
+    //     since a footer's content is identical on every page regardless).
     // ================================================================================
 
-    public async Task<byte[]> MergeDocumentTemplateAsync(int documentId, IFormFile contentFile, IDbTransaction transaction = null)
+    public async Task<byte[]> MergeDocumentTemplateAsync(int documentId, Stream contentStream, IDbTransaction transaction = null)
     {
-        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-        int companyId = int.Parse(_CompanyId);
+        try
+        {
 
-        if (contentFile == null || contentFile.Length == 0)
-            throw new CustomException("Content file is required.", 400);
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int companyId = int.Parse(_CompanyId);
 
-        //-------------------------------------------------
-        // 1. Document metadata (from the DB, not the uploaded file)
-        //-------------------------------------------------
+            if (contentStream == null || contentStream.Length == 0)
+                throw new CustomException("Content file is required.", 400);
 
-        var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            //-------------------------------------------------
+            // 1. Document metadata (from the DB, not the uploaded file)
+            //-------------------------------------------------
+
+            var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT Id, DocumentNumber, Title, DocumentTypeCode, NextReviewDate, ParentDocumentId,
                    DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode
             FROM Documents
             WHERE Id = @DocumentId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
-            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+                new { DocumentId = documentId, CompanyId = companyId }, transaction);
 
-        if (doc == null)
-            throw new CustomException("Document not found.", 404);
+            if (doc == null)
+                throw new CustomException("Document not found.", 404);
 
-        string version = await _common.ExecuteScalarAsync<string>(@"
+            // Prefer the Effective version (2); every document has a Draft version (1) from the
+            // moment it's created (see CreateAsync), so this still shows the current working
+            // version for a document that hasn't gone Effective yet instead of a blank field.
+            string version = await _common.ExecuteScalarAsync<string>(@"
             SELECT Version FROM DocumentVersions
-            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 2 AND IsActive = TRUE
-            ORDER BY CreatedAt DESC LIMIT 1;",
-            new { DocumentId = documentId, CompanyId = companyId }, transaction) ?? "";
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
+            ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
+                new { DocumentId = documentId, CompanyId = companyId }, transaction) ?? "";
 
-        string supersede = "";
-        if (doc.parentdocumentid != null)
-        {
-            supersede = await _common.ExecuteScalarAsync<string>(@"
+            string supersede = "";
+            if (doc.parentdocumentid != null)
+            {
+                supersede = await _common.ExecuteScalarAsync<string>(@"
                 SELECT DocumentNumber FROM Documents WHERE Id = @ParentId AND CompanyId = @CompanyId;",
-                new { ParentId = (int)doc.parentdocumentid, CompanyId = companyId }, transaction) ?? "";
-        }
+                    new { ParentId = (int)doc.parentdocumentid, CompanyId = companyId }, transaction) ?? "";
+            }
 
-        DateTime? effectiveDate = await _common.ExecuteScalarAsync<DateTime?>(@"
+            DateTime? effectiveDate = await _common.ExecuteScalarAsync<DateTime?>(@"
             SELECT dsh.ChangedAt
             FROM DocumentStateHistory dsh
             JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
             WHERE dsh.DocumentId = @DocumentId AND ds.Code = 'EFFECTIVE'
             ORDER BY dsh.ChangedAt DESC LIMIT 1;",
-            new { DocumentId = documentId }, transaction);
+                new { DocumentId = documentId }, transaction);
 
-        string reviewDate = doc.nextreviewdate != null
-            ? Convert.ToDateTime((object)doc.nextreviewdate).ToString("dd-MMM-yyyy")
-            : "";
+            string reviewDate = doc.nextreviewdate != null
+                ? FormatMergeDate((object)doc.nextreviewdate)
+                : "";
 
-        var placeholders = new Dictionary<string, string>
+            var placeholders = new Dictionary<string, string>
         {
             { "DocumentTitle", (string)doc.title ?? "" },
             { "DocumentNumber", (string)doc.documentnumber ?? "" },
             { "Version", version },
-            { "EffectiveDate", effectiveDate.HasValue ? effectiveDate.Value.ToString("dd-MMM-yyyy") : "" },
+            { "EffectiveDate", effectiveDate.HasValue ? effectiveDate.Value.ToString("dd-MMM-yyyy") : "N/A" },
             { "ReviewDate", reviewDate },
             { "Supersede", string.IsNullOrWhiteSpace(supersede) ? "N/A" : supersede }
         };
 
-        //-------------------------------------------------
-        // 2. The DocumentType's Word template
-        //-------------------------------------------------
+            //-------------------------------------------------
+            // 2. The DocumentType's Word template
+            //-------------------------------------------------
 
-        // Same scoped-then-default resolution as AttachOrUpdateTemplateAsync -- a DocumentType
-        // can have more than one active Template row (per cabinet scope, plus an IsDefault
-        // fallback); this picks the one that actually applies to this document's placement.
-        var templatePath = await _common.ExecuteScalarAsync<string>(@"
+            // Same scoped-then-default resolution as AttachOrUpdateTemplateAsync -- a DocumentType
+            // can have more than one active Template row (per cabinet scope, plus an IsDefault
+            // fallback); this picks the one that actually applies to this document's placement.
+            var templatePath = await _common.ExecuteScalarAsync<string>(@"
             SELECT TemplateFileUrl FROM Templates
             WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
-              AND TemplateType = 2 AND IsActive = TRUE AND IsDeleted = FALSE
+              AND TemplateType IN (1,2) AND IsActive = TRUE AND IsDeleted = FALSE
               AND (
                     IsDefault = TRUE
                     OR (
@@ -1086,103 +1102,129 @@ public class DocumentComponent
                   )
             ORDER BY IsDefault ASC
             LIMIT 1;",
-            new
-            {
-                DocumentTypeCode = (string)doc.documenttypecode,
-                CompanyId = companyId,
-                DivisionCode = (string)doc.divisioncode,
-                DepartmentCode = (string)doc.departmentcode,
-                SubDepartmentCode = (string)doc.subdepartmentcode,
-                BusinessDomainCode = (string)doc.businessdomaincode
-            }, transaction);
+                new
+                {
+                    DocumentTypeCode = (string)doc.documenttypecode,
+                    CompanyId = companyId,
+                    DivisionCode = (string)doc.divisioncode,
+                    DepartmentCode = (string)doc.departmentcode,
+                    SubDepartmentCode = (string)doc.subdepartmentcode,
+                    BusinessDomainCode = (string)doc.businessdomaincode
+                }, transaction);
 
-        if (string.IsNullOrWhiteSpace(templatePath))
-            throw new CustomException("No Word template configured for this Document Type.", 404);
+            if (string.IsNullOrWhiteSpace(templatePath))
+                throw new CustomException("No Word template configured for this Document Type.", 404);
 
-        var templateFullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", templatePath.TrimStart('/'));
-        if (!File.Exists(templateFullPath))
-            throw new CustomException("Template file is missing on disk.", 404);
+            var templateFullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", templatePath.TrimStart('/'));
+            if (!File.Exists(templateFullPath))
+                throw new CustomException("Template file is missing on disk.", 404);
 
-        //-------------------------------------------------
-        // 3. Approvers for this Document's workflow -- however many are actually configured,
-        //    not a fixed set of roles. Signature/date are only populated for steps already
-        //    actioned; a step still pending is included with a blank signature and date.
-        //-------------------------------------------------
+            //-------------------------------------------------
+            // 3. Approvers for this Document's workflow -- however many are actually configured,
+            //    not a fixed set of roles. Signature/date are only populated for steps already
+            //    actioned; a step still pending is included with a blank signature and date.
+            //-------------------------------------------------
 
-        var approvers = (await _common.QueryAsync<dynamic>(@"
+            var approvers = (await _common.QueryAsync<dynamic>(@"
             SELECT
                 wsd.StepType AS ApproverRole,
                 LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS ApproverName,
                 desig.name AS ApproverDesignation,
                 wes.Decision,
                 wes.ActionAt,
-                es.SignatureData,
-                es.FileType AS SignatureFileType
+                es.SignatureURL,
+                wes.AssignedUserId AS RawAssignedUserId
             FROM WorkflowExecutionSteps wes
             JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
             JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
-            LEFT JOIN tblEmployee e ON e.empCode = wes.AssignedUserId AND e.CompanyId = @CompanyId
+            LEFT JOIN tblEmployee e ON TRIM(e.empCode) = TRIM(wes.AssignedUserId) AND e.CompanyId = @CompanyId
             LEFT JOIN public.tblempjobprofile ejp ON ejp.empid = e.empid AND ejp.Active = TRUE AND ejp.CompanyId = @CompanyId
             LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid AND desig.CompanyId = @CompanyId
-            LEFT JOIN ESignatures es ON es.UserId = e.empid AND es.CompanyId = @CompanyId AND es.IsActive = TRUE AND es.IsDeleted = FALSE
+            LEFT JOIN ESignatures es ON TRIM(es.UserId) = TRIM(e.empCode) AND es.CompanyId = @CompanyId AND es.IsActive = TRUE AND es.IsDeleted = FALSE
             WHERE wes.CompanyId = @CompanyId AND we.EntityId = @DocumentId AND we.EntityType = 'Document'
             ORDER BY wes.StepOrder;",
-            new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
+                new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
 
-        //-------------------------------------------------
-        // 4. Body content of the uploaded file (the page-setup sectPr is excluded -- that
-        //    belongs to the uploaded file's own page layout, not the template's).
-        //-------------------------------------------------
+            //-------------------------------------------------
+            // 4. Body content of the uploaded file (the page-setup sectPr is excluded -- that
+            //    belongs to the uploaded file's own page layout, not the template's).
+            //-------------------------------------------------
 
-        List<OpenXmlElement> contentBodyElements;
-        using (var contentStream = new MemoryStream())
-        {
-            await contentFile.CopyToAsync(contentStream);
-            contentStream.Position = 0;
-
-            using var contentDoc = WordprocessingDocument.Open(contentStream, false);
-            var contentBody = contentDoc.MainDocumentPart?.Document?.Body
-                ?? throw new CustomException("Uploaded content file is not a valid Word document.", 400);
-
-            contentBodyElements = contentBody.Elements()
-                .Where(el => el is not SectionProperties)
-                .Select(el => el.CloneNode(true))
-                .ToList();
-        }
-
-        //-------------------------------------------------
-        // 5. Merge everything into a copy of the template
-        //-------------------------------------------------
-
-        using var outputStream = new MemoryStream();
-        using (var templateFileStream = new FileStream(templateFullPath, FileMode.Open, FileAccess.Read))
-        {
-            await templateFileStream.CopyToAsync(outputStream);
-        }
-        outputStream.Position = 0;
-
-        using (var wordDoc = WordprocessingDocument.Open(outputStream, true))
-        {
-            var mainPart = wordDoc.MainDocumentPart ?? throw new CustomException("Template file is invalid.", 400);
-            var body = mainPart.Document.Body ?? throw new CustomException("Template file is invalid.", 400);
-
-            var textContainers = new List<OpenXmlElement> { body };
-            textContainers.AddRange(mainPart.HeaderParts.Select(h => (OpenXmlElement)h.Header));
-            textContainers.AddRange(mainPart.FooterParts.Select(f => (OpenXmlElement)f.Footer));
-
-            foreach (var container in textContainers)
+            List<OpenXmlElement> contentBodyElements;
             {
-                foreach (var placeholder in placeholders)
-                    ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
+                // Buffered into a private MemoryStream rather than opening the caller's stream
+                // directly -- WordprocessingDocument.Open wants to own/seek the stream freely, and
+                // the caller's stream (e.g. a FileStream held open by the download endpoint) may be
+                // needed again or simply shouldn't be handed over.
+                using var bufferedContentStream = new MemoryStream();
+                contentStream.Position = 0;
+                await contentStream.CopyToAsync(bufferedContentStream);
+                bufferedContentStream.Position = 0;
+
+                using var contentDoc = WordprocessingDocument.Open(bufferedContentStream, false);
+                var contentBody = contentDoc.MainDocumentPart?.Document?.Body
+                    ?? throw new CustomException("Uploaded content file is not a valid Word document.", 400);
+
+                contentBodyElements = contentBody.Elements()
+                    .Where(el => el is not SectionProperties)
+                    .Select(el => el.CloneNode(true))
+                    .ToList();
             }
 
-            InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
-            PopulateSignatureBlock(mainPart, body, approvers);
+            //-------------------------------------------------
+            // 5. Merge everything into a copy of the template
+            //-------------------------------------------------
 
-            mainPart.Document.Save();
+            using var outputStream = new MemoryStream();
+            using (var templateFileStream = new FileStream(templateFullPath, FileMode.Open, FileAccess.Read))
+            {
+                await templateFileStream.CopyToAsync(outputStream);
+            }
+            outputStream.Position = 0;
+
+            using (var wordDoc = WordprocessingDocument.Open(outputStream, true))
+            {
+                var mainPart = wordDoc.MainDocumentPart ?? throw new CustomException("Template file is invalid.", 400);
+                var body = mainPart.Document.Body ?? throw new CustomException("Template file is invalid.", 400);
+
+                // Each container is paired with the OpenXmlPart that actually owns it -- every
+                // part (the main document, and each individual header/footer) has its own
+                // separate image-relationship id space in the OOXML package, so an image
+                // embedded into a footer MUST be added via that footer's own part, not
+                // mainPart. Using the wrong part silently produces a relationship id the
+                // owning part's XML can't resolve -- Word shows nothing, no error.
+                var textContainers = new List<(OpenXmlElement Element, OpenXmlPart Part)> { (body, mainPart) };
+                textContainers.AddRange(mainPart.HeaderParts.Select(h => ((OpenXmlElement)h.Header, (OpenXmlPart)h)));
+                textContainers.AddRange(mainPart.FooterParts.Select(f => ((OpenXmlElement)f.Footer, (OpenXmlPart)f)));
+
+                foreach (var (container, _) in textContainers)
+                {
+                    foreach (var placeholder in placeholders)
+                        ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
+                }
+
+                InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
+
+                // The signature block's template row can live in the body, or (as in the SOP
+                // template) in a footer so the full approval matrix repeats on every page --
+                // check every text container, not just the body. drawingId is threaded through
+                // and incremented for every embedded signature image across all containers --
+                // OOXML requires each drawing's non-visual id to be unique document-wide, and a
+                // fixed id (as this used to hardcode) corrupts the file once 2+ approvers both
+                // have a saved signature.
+                uint drawingId = 1;
+                foreach (var (container, ownerPart) in textContainers)
+                    PopulateSignatureBlock(ownerPart, container, approvers, ref drawingId);
+
+                mainPart.Document.Save();
+            }
+
+            return outputStream.ToArray();
         }
-
-        return outputStream.ToArray();
+        catch(Exception ex)
+        {
+            throw ex;
+        }
     }
 
     // Replaces a {{placeholder}} token with a value, anywhere it appears within root. Handles
@@ -1237,16 +1279,18 @@ public class DocumentComponent
         targetParagraph.Remove();
     }
 
-    // Finds the signature block's template row (the one containing {{ApproverRole}}) and
-    // clones it once per actual approver on this document's workflow -- as many rows as are
-    // actually configured, not a fixed set of roles.
-    private void PopulateSignatureBlock(MainDocumentPart mainPart, Body body, List<dynamic> approvers)
+    // Finds the signature block's template row (the one containing {{ApproverRole}}) within the
+    // given container -- body, a header, or a footer -- and clones it once per actual approver
+    // on this document's workflow -- as many rows as are actually configured, not a fixed set of
+    // roles. Called once per text container (see callers); most templates only have the row in
+    // one of them, so this is a no-op for the rest.
+    private void PopulateSignatureBlock(OpenXmlPart ownerPart, OpenXmlElement container, List<dynamic> approvers, ref uint drawingId)
     {
-        var templateRow = body.Descendants<TableRow>()
+        var templateRow = container.Descendants<TableRow>()
             .FirstOrDefault(r => string.Concat(r.Descendants<Text>().Select(t => t.Text)).Contains("{{ApproverRole}}"));
 
         if (templateRow == null)
-            return; // Template doesn't have a signature block row -- nothing to populate.
+            return; // This container doesn't have a signature block row -- nothing to populate.
 
         if (approvers.Count == 0)
         {
@@ -1263,13 +1307,43 @@ public class DocumentComponent
             ReplacePlaceholderText(row, "{{ApproverDesignation}}", Convert.ToString(approver.approverdesignation) ?? "");
 
             bool actioned = approver.decision != null && approver.actionat != null;
-            ReplacePlaceholderText(row, "{{ApprovalDate}}", actioned ? Convert.ToDateTime((object)approver.actionat).ToString("dd-MMM-yyyy") : "");
+            ReplacePlaceholderText(row, "{{ApprovalDate}}", actioned ? FormatMergeDate((object)approver.actionat) : "");
 
-            byte[]? signatureData = approver.signaturedata as byte[];
+            // Signatures are stored as a file on disk (ESignatureComponent), not as bytes in the
+            // database -- read it from wwwroot the same way DMSDocumentController resolves any
+            // other uploaded file URL. Missing/unreadable file is treated the same as "no
+            // signature on file yet": leave the cell blank rather than failing the whole merge.
+            byte[]? signatureData = null;
+            string? signatureUrl = approver.signatureurl as string;
+            string? signaturePath = null;
+            if (!string.IsNullOrWhiteSpace(signatureUrl))
+            {
+                signaturePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot",
+                    signatureUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(signaturePath))
+                    signatureData = File.ReadAllBytes(signaturePath);
+            }
+
             if (signatureData != null && signatureData.Length > 0)
-                InsertSignatureImage(mainPart, row, "{{ApproverSignature}}", signatureData, Convert.ToString(approver.signaturefiletype));
+            {
+                string? approverNameForLog = Convert.ToString(approver.approvername);
+                _logger.LogInformation("MergeDocumentTemplateAsync: inserting signature image for approver {ApproverName} from {SignaturePath} ({ByteCount} bytes).",
+                    approverNameForLog, signaturePath, signatureData.Length);
+
+                bool inserted = InsertSignatureImage(ownerPart, row, "{{ApproverSignature}}", signatureData, signatureUrl, drawingId++);
+
+                if (inserted)
+                    _logger.LogInformation("MergeDocumentTemplateAsync: signature image inserted successfully for approver {ApproverName}.", approverNameForLog);
+                else
+                    _logger.LogWarning("MergeDocumentTemplateAsync: found signature file {SignaturePath} for approver {ApproverName} but no {{{{ApproverSignature}}}} paragraph was found in this row -- leaving cell as-is.", signaturePath, approverNameForLog);
+            }
             else
+            {
+                bool fileFound = signaturePath != null && File.Exists(signaturePath);
+                _logger.LogWarning("MergeDocumentTemplateAsync: no signature image for approver {ApproverName} (RawAssignedUserId={RawAssignedUserId}) -- SignatureURL={SignatureUrl}, ResolvedPath={SignaturePath}, FileExists={FileExists}. Leaving signature cell blank.",
+                    (string?)Convert.ToString(approver.approvername), (string?)Convert.ToString(approver.rawassigneduserid), signatureUrl, signaturePath, fileFound);
                 ReplacePlaceholderText(row, "{{ApproverSignature}}", ""); // No signature on file yet -- leave blank.
+            }
 
             templateRow.InsertBeforeSelf(row);
         }
@@ -1277,39 +1351,65 @@ public class DocumentComponent
         templateRow.Remove();
     }
 
-    private static PartTypeInfo GetSignatureImagePartType(string? fileType) => fileType?.Trim().ToLower() switch
+    // Npgsql maps a Postgres `date` column to System.DateOnly (not DateTime) when read into a
+    // dynamic row, and DateOnly doesn't implement IConvertible -- Convert.ToDateTime(object)
+    // throws InvalidCastException on it. `timestamp`/`timestamptz` columns still come back as
+    // DateTime as usual. Handles both rather than assuming which one a given column actually is.
+    private static string FormatMergeDate(object? value) => value switch
     {
-        "jpg" or "jpeg" => ImagePartType.Jpeg,
-        "bmp" => ImagePartType.Bmp,
-        "gif" => ImagePartType.Gif,
-        _ => ImagePartType.Png
+        null => "",
+        DateOnly d => d.ToString("dd-MMM-yyyy"),
+        DateTime dt => dt.ToString("dd-MMM-yyyy"),
+        _ => Convert.ToDateTime(value).ToString("dd-MMM-yyyy")
+    };
+
+    // Signature images have no FileType column of their own -- the saved file's extension
+    // (from ESignatureComponent.SaveSignatureFile) is the source of truth for its format.
+    private static string GetSignatureImageContentType(string? signatureUrl) => Path.GetExtension(signatureUrl)?.TrimStart('.').Trim().ToLower() switch
+    {
+        "jpg" or "jpeg" => "image/jpeg",
+        "bmp" => "image/bmp",
+        "gif" => "image/gif",
+        _ => "image/png"
     };
 
     // Replaces the {{ApproverSignature}} placeholder with an embedded signature image.
-    private static void InsertSignatureImage(MainDocumentPart mainPart, OpenXmlElement container, string placeholder, byte[] imageBytes, string? fileType)
+    // Returns false if the placeholder wasn't found in this container (nothing was inserted).
+    // ownerPart MUST be the specific part (MainDocumentPart, or the exact HeaderPart/FooterPart)
+    // that actually owns `container` -- every part has its own separate relationship id space in
+    // the OOXML package, so an image added via the wrong part produces a relationship id the
+    // owning part's XML can't resolve. Word then renders nothing, with no error at all.
+    private static bool InsertSignatureImage(OpenXmlPart ownerPart, OpenXmlElement container, string placeholder, byte[] imageBytes, string? signatureUrl, uint drawingId)
     {
         var paragraph = container.Descendants<Paragraph>()
             .FirstOrDefault(p => string.Concat(p.Descendants<Text>().Select(t => t.Text)).Contains(placeholder));
 
         if (paragraph == null)
-            return;
+            return false;
 
-        // Clears the placeholder text (same collapsing behavior as ReplacePlaceholderText),
-        // leaving one Run in the paragraph to attach the image's Drawing to.
-        ReplacePlaceholderText(paragraph, placeholder, "");
+        // Can't reuse ReplacePlaceholderText here -- it clears text by walking
+        // root.Descendants<Paragraph>(), which is empty when root is already the target
+        // paragraph itself (a Paragraph can't contain a nested Paragraph), so it would be a
+        // silent no-op and leave the literal "{{ApproverSignature}}" text behind. Clear the
+        // paragraph's own runs directly instead, keeping the first run's formatting.
+        var existingFormatting = paragraph.Elements<Run>().FirstOrDefault()?.RunProperties?.CloneNode(true) as RunProperties;
+        foreach (var oldRun in paragraph.Elements<Run>().ToList())
+            oldRun.Remove();
 
-        var run = paragraph.Elements<Run>().FirstOrDefault();
-        if (run == null)
-        {
-            run = new Run();
-            paragraph.AppendChild(run);
-        }
+        var run = new Run();
+        if (existingFormatting != null)
+            run.RunProperties = existingFormatting;
+        paragraph.AppendChild(run);
 
-        var imagePart = mainPart.AddImagePart(GetSignatureImagePartType(fileType));
+        // Generic AddNewPart<T> (rather than the type-specific AddImagePart(ImagePartType)
+        // convenience method) since ownerPart's static type here is the common OpenXmlPart base
+        // -- it works identically whether ownerPart is the MainDocumentPart, a HeaderPart, or a
+        // FooterPart, all of which derive from OpenXmlPartContainer.
+        var imagePart = ownerPart.AddNewPart<ImagePart>(GetSignatureImageContentType(signatureUrl));
         using (var ms = new MemoryStream(imageBytes))
             imagePart.FeedData(ms);
 
-        string relationshipId = mainPart.GetIdOfPart(imagePart);
+        string relationshipId = ownerPart.GetIdOfPart(imagePart);
 
         const long emuPerPixelAt96Dpi = 9525;
         const int widthPx = 120;
@@ -1319,13 +1419,13 @@ public class DocumentComponent
             new DW.Inline(
                 new DW.Extent { Cx = widthPx * emuPerPixelAt96Dpi, Cy = heightPx * emuPerPixelAt96Dpi },
                 new DW.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
-                new DW.DocProperties { Id = 1, Name = "Signature" },
+                new DW.DocProperties { Id = drawingId, Name = "Signature" + drawingId },
                 new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
                 new A.Graphic(
                     new A.GraphicData(
                         new PIC.Picture(
                             new PIC.NonVisualPictureProperties(
-                                new PIC.NonVisualDrawingProperties { Id = 0, Name = "Signature" },
+                                new PIC.NonVisualDrawingProperties { Id = drawingId, Name = "Signature" + drawingId },
                                 new PIC.NonVisualPictureDrawingProperties()),
                             new PIC.BlipFill(
                                 new A.Blip { Embed = relationshipId },
@@ -1349,6 +1449,7 @@ public class DocumentComponent
         );
 
         run.AppendChild(drawing);
+        return true;
     }
 
     private async Task ValidateAndSaveAttributesAsync(SubmitDocument input, dynamic documentInfo, IDbTransaction transaction)
