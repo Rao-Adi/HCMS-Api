@@ -89,6 +89,35 @@ public class DMSDocumentController : Controller
         }
     }
 
+    // Every Document the current user has created, any status -- lets an Initiator see
+    // everything they've created regardless of where it currently sits in the pipeline.
+    [HttpPost("get-my-documents")]
+    public async Task<IActionResult> GetMyDocuments(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyDocumentsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-all-document-list")]
     public async Task<IActionResult> GetAllSelectList()
     {

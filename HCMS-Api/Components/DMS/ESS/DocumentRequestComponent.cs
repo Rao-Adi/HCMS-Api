@@ -2078,7 +2078,12 @@ public class DocumentRequestComponent
 
             var whereClause = @"WHERE dr.CompanyId = @CompanyId
                 AND dr.CreatedBy = @CreatedBy
-                AND dr.IsDeleted = FALSE";
+                AND dr.IsDeleted = FALSE
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR dr.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR dr.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR dr.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR dr.BusinessDomainCode = @BusinessDomainCode)
+                AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR dr.DocumentTypeCode = @DocumentTypeCode)";
 
             // Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
@@ -2124,7 +2129,12 @@ public class DocumentRequestComponent
             var queryParams = new
             {
                 CompanyId,
-                CreatedBy = empCode
+                CreatedBy = empCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
             };
 
             var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);

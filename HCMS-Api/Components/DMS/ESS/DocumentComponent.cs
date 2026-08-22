@@ -4496,7 +4496,114 @@ public class DocumentComponent
         }
     }
 
+    // Every Document the current user has ever created, any status -- mirrors
+    // DocumentRequestComponent.GetMyTotalRequestsAsync's shape/intent (no RequestStatus filter,
+    // CreatedBy-scoped only), so an Initiator can see everything they've created regardless of
+    // where it currently sits in the approval/publication pipeline.
+    public async Task<PaginationResult<dynamic>> GetMyDocumentsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+            var whereClause = @"WHERE doc.CompanyId = @CompanyId
+                AND doc.CreatedBy = @CreatedBy
+                AND doc.IsDeleted = FALSE
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)
+                AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+                -- Exclude Documents still sitting in Draft (DocumentStates.Id = 1) -- this tab
+                -- is for tracking submitted work, not in-progress drafts never sent anywhere.
+                AND (
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = doc.Id
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) <> 1";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(doc.Title) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "doc.Title",
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"
+                SELECT DISTINCT
+                    doc.*,
+                    dv.Version,
+                    (SELECT ds.Name
+                     FROM DocumentStateHistory dsh
+                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                     WHERE dsh.DocumentId = doc.Id
+                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
+                    COALESCE(cn.EmployeeName, doc.CreatedBy) AS CreatedByName,
+                    COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS LastModifiedByName
+                FROM Vw_Documents doc
+                LEFT JOIN LATERAL (
+                    SELECT Version FROM DocumentVersions
+                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
+                    ORDER BY CreatedAt DESC LIMIT 1
+                ) dv ON TRUE
+                LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(doc.CreatedBy::text, '0')
+                LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(doc.LastModifiedBy::text, '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents doc {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                CreatedBy = empCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+            var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            return new PaginationResult<dynamic>
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw new CustomException("Failed to fetch your documents.", 500);
+        }
+    }
 
     public async Task<byte[]> ExportMyDocumentsAsync(GetDocumentDto input)
     {
