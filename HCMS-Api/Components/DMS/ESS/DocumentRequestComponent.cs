@@ -2197,6 +2197,161 @@ public class DocumentRequestComponent
         }
     }
 
+    // Excel export for the "Approved/Rejected Requests" tab -- mirrors GetMyTotalRequestsAsync's
+    // scope (CreatedBy + IsDeleted = FALSE, same optional cabinet/document-type filters) and the
+    // columns my-total-requests.ts's grid shows, following the same EPPlus pattern as
+    // ExportMyInboxRequestsAsync above.
+    public async Task<byte[]> ExportMyTotalRequestsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = @"WHERE dr.CompanyId = @CompanyId
+                AND dr.CreatedBy = @CreatedBy
+                AND dr.IsDeleted = FALSE
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR dr.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR dr.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR dr.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR dr.BusinessDomainCode = @BusinessDomainCode)
+                AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR dr.DocumentTypeCode = @DocumentTypeCode)";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(dr.DocumentName) LIKE '%{search}%'
+                    OR UPPER(dr.RequestNumber) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNAME" => "dr.DocumentName",
+                "REQUESTNUMBER" => "dr.RequestNumber",
+                "STATUS" => "dr.Status",
+                "CREATEDAT" => "dr.CreatedAt",
+                "CREATEDBY" => "dr.CreatedBy",
+                "LASTMODIFIEDAT" => "dr.LastModifiedAt",
+                "LASTMODIFIEDBY" => "dr.LastModifiedBy",
+                _ => "dr.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            // No DISTINCT here: Postgres rejects SELECT DISTINCT + ORDER BY once the ordered
+            // column (CreatedAt/Status) is only exposed in transformed form (TO_CHAR/CASE) --
+            // "for SELECT DISTINCT, ORDER BY expressions must appear in select list".
+            var dataSql = $@"SELECT
+                    dr.DocumentType AS ""Document Type"",
+                    dr.RequestNumber AS ""Request Number"",
+                    dr.DocumentName AS ""Document Name"",
+                    dr.Justification AS ""Justification"",
+                    dr.Division AS ""Division"",
+                    dr.Department AS ""Department"",
+                    dr.SubDepartment AS ""Sub-Department"",
+                    dr.BusinessDomain AS ""Business Domain"",
+                    CASE dr.Status
+                        WHEN 0 THEN CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN 'Reverted' ELSE 'Draft' END
+                        WHEN 1 THEN 'Submitted'
+                        WHEN 2 THEN 'In Approval'
+                        WHEN 3 THEN 'Approved'
+                        WHEN 4 THEN 'Rejected'
+                        ELSE 'Unknown'
+                    END AS ""Status"",
+                    COALESCE(cn.EmployeeName, dr.CreatedBy) AS ""Created By"",
+                    TO_CHAR(dr.CreatedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Created On"",
+                    COALESCE(mn.EmployeeName, dr.LastModifiedBy) AS ""Last Modified By"",
+                    TO_CHAR(dr.LastModifiedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Last Modified On""
+                FROM Vw_DocumentRequests dr
+                LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(dr.CreatedBy::text, '0')
+                LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(dr.LastModifiedBy::text, '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                CreatedBy = empCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+            var requests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+
+            if (!requests.Any())
+            {
+                return Array.Empty<byte>();
+            }
+
+            var headers = ((IDictionary<string, object>)requests.First()).Keys.ToList();
+
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Requests");
+
+            for (int col = 0; col < headers.Count; col++)
+            {
+                worksheet.Cells[1, col + 1].Value = headers[col];
+            }
+            using (var headerRange = worksheet.Cells[1, 1, 1, headers.Count])
+            {
+                headerRange.Style.Font.Bold = true;
+            }
+
+            int rowIndex = 2;
+            foreach (var row in requests)
+            {
+                var dict = (IDictionary<string, object>)row;
+                for (int col = 0; col < headers.Count; col++)
+                {
+                    worksheet.Cells[rowIndex, col + 1].Value = dict[headers[col]]?.ToString() ?? "";
+                }
+                rowIndex++;
+            }
+
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns(10, 60);
+
+            return await package.GetAsByteArrayAsync();
+        }
+        catch (Exception ex)
+        {
+            throw new CustomException("Failed to export data.", 500);
+        }
+    }
+
+    public async Task<int> GetMyTotalRequestCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            // Badge count -- always the overall total for the user, not scoped to any
+            // cabinet/document-type filters (those only apply to the paginated list view).
+            var countSql = @"SELECT COUNT(DISTINCT dr.Id) FROM Vw_DocumentRequests dr
+                WHERE dr.CompanyId = @CompanyId
+                AND dr.CreatedBy = @CreatedBy
+                AND dr.IsDeleted = FALSE;";
+
+            return await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId, CreatedBy = empCode });
+        }
+        catch (Exception ex)
+        {
+            throw new CustomException("Failed to fetch total requests.", 500);
+        }
+    }
+
     public async Task<PaginationResult<DocumentRequestReadDto>> GetDraftDocumentRequestAsync(GetDocumentDto input)
     {
         try

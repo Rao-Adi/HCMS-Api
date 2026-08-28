@@ -346,6 +346,72 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+    [HttpGet("get-my-total-request-count")]
+    public async Task<IActionResult> GetMyTotalRequestCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentRequestComponent.GetMyTotalRequestCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("export-my-total-requests")]
+    public async Task<IActionResult> ExportMyTotalRequests(GetDocumentDto input)
+    {
+        try
+        {
+            var fileBytes = await _documentRequestComponent.ExportMyTotalRequestsAsync(input);
+
+            if (fileBytes == null || fileBytes.Length == 0)
+            {
+                return NotFound(new HttpApiResponse<object>
+                {
+                    Success = false,
+                    Message = "No data available to export.",
+                    Code = 404
+                });
+            }
+
+            var fileName = $"My-Approved-Rejected-Requests-({DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture)}).xlsx";
+
+            // Without this, Angular cannot read the filename off Content-Disposition.
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
 
     [HttpPost("get-my-draft-request")]
     public async Task<IActionResult> GetMyDraftRequests(GetDocumentDto input)

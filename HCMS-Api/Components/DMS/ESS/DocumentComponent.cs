@@ -4605,6 +4605,178 @@ public class DocumentComponent
         }
     }
 
+    // Badge count for the "My Documents" tab -- mirrors GetMyDocumentsAsync's CreatedBy/
+    // IsDeleted/non-Draft scope, but always the overall total (not scoped to any
+    // cabinet/document-type filters, which only apply to the paginated list view).
+    public async Task<int> GetMyDocumentsCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var countSql = @"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents doc
+                WHERE doc.CompanyId = @CompanyId
+                AND doc.CreatedBy = @CreatedBy
+                AND doc.IsDeleted = FALSE
+                AND (
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = doc.Id
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) <> 1;";
+
+            return await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId, CreatedBy = empCode });
+        }
+        catch (Exception)
+        {
+            throw new CustomException("Failed to fetch your documents count.", 500);
+        }
+    }
+
+    // Excel export for the "My Documents" tab (create-update-document) -- mirrors
+    // GetMyDocumentsAsync's scope (CreatedBy + IsDeleted = FALSE + non-Draft, same optional
+    // cabinet/document-type filters) and the columns my-documents.ts's grid shows, following
+    // the same EPPlus pattern as this file's own ExportMyDocumentsAsync below (which exports a
+    // different dataset -- the "My Approvals" inbox, not documents the user created).
+    public async Task<byte[]> ExportMyDocumentsListAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = @"WHERE doc.CompanyId = @CompanyId
+                AND doc.CreatedBy = @CreatedBy
+                AND doc.IsDeleted = FALSE
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)
+                AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+                AND (
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = doc.Id
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) <> 1";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(doc.Title) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "doc.Title",
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            // No DISTINCT here: Postgres rejects SELECT DISTINCT + ORDER BY once the ordered
+            // column (CreatedAt) is only exposed in transformed form (TO_CHAR) -- "for SELECT
+            // DISTINCT, ORDER BY expressions must appear in select list".
+            var dataSql = $@"SELECT
+                    doc.DocumentNumber AS ""Document Number"",
+                    doc.DocumentType AS ""Document Type"",
+                    doc.Title AS ""Document Title"",
+                    dv.Version AS ""Version"",
+                    doc.Division AS ""Division"",
+                    doc.Department AS ""Department"",
+                    doc.SubDepartment AS ""Sub-Department"",
+                    doc.BusinessDomain AS ""Business Domain"",
+                    (SELECT ds.Name
+                     FROM DocumentStateHistory dsh
+                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                     WHERE dsh.DocumentId = doc.Id
+                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS ""Status"",
+                    COALESCE(cn.EmployeeName, doc.CreatedBy) AS ""Created By"",
+                    TO_CHAR(doc.CreatedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Created On"",
+                    COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS ""Last Modified By"",
+                    TO_CHAR(doc.LastModifiedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Last Modified On""
+                FROM Vw_Documents doc
+                LEFT JOIN LATERAL (
+                    SELECT Version FROM DocumentVersions
+                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
+                    ORDER BY CreatedAt DESC LIMIT 1
+                ) dv ON TRUE
+                LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(doc.CreatedBy::text, '0')
+                LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(doc.LastModifiedBy::text, '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                CreatedBy = empCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+            var items = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+
+            if (!items.Any())
+            {
+                return Array.Empty<byte>();
+            }
+
+            var headers = ((IDictionary<string, object>)items.First()).Keys.ToList();
+
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Documents");
+
+            for (int col = 0; col < headers.Count; col++)
+            {
+                worksheet.Cells[1, col + 1].Value = headers[col];
+            }
+            using (var headerRange = worksheet.Cells[1, 1, 1, headers.Count])
+            {
+                headerRange.Style.Font.Bold = true;
+            }
+
+            int rowIndex = 2;
+            foreach (var row in items)
+            {
+                var dict = (IDictionary<string, object>)row;
+                for (int col = 0; col < headers.Count; col++)
+                {
+                    worksheet.Cells[rowIndex, col + 1].Value = dict[headers[col]]?.ToString() ?? "";
+                }
+                rowIndex++;
+            }
+
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns(10, 60);
+
+            return await package.GetAsByteArrayAsync();
+        }
+        catch (Exception)
+        {
+            throw new CustomException("Failed to export data.", 500);
+        }
+    }
+
     public async Task<byte[]> ExportMyDocumentsAsync(GetDocumentDto input)
     {
         try

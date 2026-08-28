@@ -118,6 +118,71 @@ public class DMSDocumentController : Controller
         }
     }
 
+    [HttpGet("get-my-documents-total-count")]
+    public async Task<IActionResult> GetMyDocumentsTotalCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyDocumentsCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("export-my-documents-list")]
+    public async Task<IActionResult> ExportMyDocumentsList(GetDocumentDto input)
+    {
+        try
+        {
+            var fileBytes = await _documentComponent.ExportMyDocumentsListAsync(input);
+
+            if (fileBytes == null || fileBytes.Length == 0)
+            {
+                return NotFound(new HttpApiResponse<object>
+                {
+                    Success = false,
+                    Message = "No data available to export.",
+                    Code = 404
+                });
+            }
+
+            var fileName = $"My Documents - ({DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture)}).xlsx";
+
+            // Without this, Angular cannot read the filename off Content-Disposition.
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-all-document-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
