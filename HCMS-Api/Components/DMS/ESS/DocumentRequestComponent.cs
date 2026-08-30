@@ -182,20 +182,25 @@ public class DocumentRequestComponent
 
             if (dto.UserIds?.Any() == true)
             {
-                foreach (var _userId in dto.UserIds)
+                foreach (var u in dto.UserIds)
                 {
                     await _common.ExecuteAsync(@"
                         INSERT INTO DocumentRequestUserDistributions
-                        (CompanyId,DocumentRequestId,EmployeeCode,
+                        (CompanyId,DocumentRequestId,EmployeeCode,RoleId,DivisionCode,DepartmentCode,SubDepartmentCode,BusinessDomainCode,
                          CreatedBy,LastModifiedBy)
                         VALUES
-                        (@CompanyId,@RequestId,@EmployeeCode,
+                        (@CompanyId,@RequestId,@EmployeeCode,@RoleId,@DivisionCode,@DepartmentCode,@SubDepartmentCode,@BusinessDomainCode,
                          @CreatedBy,@LastModifiedBy);",
                     new
                     {
                         CompanyId,
                         RequestId = requestId,
-                        EmployeeCode = _userId,
+                        u.EmployeeCode,
+                        u.RoleId,
+                        u.DivisionCode,
+                        u.DepartmentCode,
+                        u.SubDepartmentCode,
+                        u.BusinessDomainCode,
                         CreatedBy = empCode,
                         LastModifiedBy = empCode
                     }, transaction);
@@ -576,7 +581,8 @@ public class DocumentRequestComponent
 
             if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr } };
+                var requestorName = await GetEmployeeDisplayNameAsync(empCode, transaction);
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr }, { "Employee Name", requestorName } };
                 foreach (var approver in approvers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
@@ -851,7 +857,8 @@ public class DocumentRequestComponent
 
             if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr } };
+                var requestorName = await GetEmployeeDisplayNameAsync(empCode, transaction);
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumberStr }, { "Employee Name", requestorName } };
                 foreach (var approver in approvers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
@@ -1261,7 +1268,8 @@ public class DocumentRequestComponent
 
             if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
+                var requestorName = await GetEmployeeDisplayNameAsync(empCode, tx);
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber }, { "Employee Name", requestorName } };
                 foreach (var approver in approvers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)submittedRequestId, approver, placeholders, tx);
@@ -1617,7 +1625,8 @@ public class DocumentRequestComponent
 
             if (approvers.Any())
             {
-                var placeholders = new Dictionary<string, string> { { "ID", requestNumber } };
+                var requestorName = await GetEmployeeDisplayNameAsync(empCode, tx);
+                var placeholders = new Dictionary<string, string> { { "ID", requestNumber }, { "Employee Name", requestorName } };
                 foreach (var approver in approvers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)submittedRequestId, approver, placeholders, tx);
@@ -1640,7 +1649,7 @@ public class DocumentRequestComponent
             int companyId,
             long requestId,
             IEnumerable<DistributionListCreateDto>? roles,
-            IEnumerable<string>? users,
+            IEnumerable<UserDistributionInputDto>? users,
             string empCode,
             IDbTransaction tx)
     {
@@ -1676,18 +1685,23 @@ public class DocumentRequestComponent
 
             if (users?.Any() == true)
             {
-                foreach (var uid in users)
+                foreach (var u in users)
                 {
                     await _common.ExecuteAsync(@"
                 INSERT INTO DocumentRequestUserDistributions
-                (CompanyId, DocumentRequestId, EmployeeCode, CreatedBy, LastModifiedBy)
+                (CompanyId, DocumentRequestId, EmployeeCode, RoleId, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy, LastModifiedBy)
                 VALUES
-                (@CompanyId, @RequestId, @EmployeeCode,  @CreatedBy, @LastModifiedBy);",
+                (@CompanyId, @RequestId, @EmployeeCode, @RoleId, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @CreatedBy, @LastModifiedBy);",
                     new
                     {
                         CompanyId = companyId,
                         RequestId = requestId,
-                        EmployeeCode = uid,
+                        u.EmployeeCode,
+                        u.RoleId,
+                        u.DivisionCode,
+                        u.DepartmentCode,
+                        u.SubDepartmentCode,
+                        u.BusinessDomainCode,
                         CreatedBy = empCode,
                         LastModifiedBy = empCode
                     }, tx);
@@ -1774,6 +1788,22 @@ public class DocumentRequestComponent
             ChangedBy = empCode,
             Comments = comments
         }, tx);
+    }
+
+    // Resolves an emp code to a display name via the same Vw_EmployeeNames/CleanEmpCode
+    // lookup already used elsewhere in this file (e.g. the CreatedBy joins in
+    // GetMyRequestsAsync) -- no CompanyId filter, matching every other join against this
+    // view in this codebase -- falls back to the raw code if no match, same as those.
+    private async Task<string> GetEmployeeDisplayNameAsync(string empCode, IDbTransaction tx)
+    {
+        if (string.IsNullOrWhiteSpace(empCode)) return empCode;
+
+        var name = await _common.QueryFirstOrDefaultAsync<string>(@"
+            SELECT EmployeeName FROM Vw_EmployeeNames
+            WHERE CleanEmpCode = @EmpCode;",
+            new { EmpCode = empCode.TrimStart('0') }, tx);
+
+        return string.IsNullOrWhiteSpace(name) ? empCode : name;
     }
 
     public async Task<PaginationResult<DocumentRequestReadDto>> GetMyInboxRequestsAsync(GetPendingRequestDto input)

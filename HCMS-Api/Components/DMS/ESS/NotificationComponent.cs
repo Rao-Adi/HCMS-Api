@@ -118,104 +118,111 @@ public class NotificationComponent
 
         return scenario switch
         {
+            // "?tab=" matches the Pending/Approved/Rejected tab keys both my-approval-request.ts
+            // and my-approval-document.ts already read via ActivatedRoute.queryParams -- without
+            // it, "View Request Details" landed on whatever tab happened to be the page's
+            // default rather than the one the notification is actually about.
             NotificationScenario.PendingRequest => (
-                "New Request Pending",
+                $"DMS – New Request Received (from {Get("Employee Name")})",
                 $"A new request (Request ID: {Get("ID")}) is pending your approval.",
                 "Request",
-                "/documents/my-approvals-request"
+                "/documents/my-approvals-request?tab=Pending"
             ),
             NotificationScenario.RequestApprovedForwarded => (
-                "Request Approved - Forwarded",
+                "DMS – Request Approved - Forwarded",
                 $"Request ID: {Get("ID")} has been approved and requires your action.",
                 "Request",
-                "/documents/my-approvals-request"
+                "/documents/my-approvals-request?tab=Pending"
             ),
             NotificationScenario.RequestRejected => (
-                "Request Rejected",
+                "DMS – Request Rejected",
                 $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Request",
-                "/documents/my-approvals-request"
+                "/documents/my-approvals-request?tab=Rejected"
             ),
             NotificationScenario.RequestRevertedForRework => (
-                "Request Rework Required",
+                "DMS – Request Rework Required",
                 $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Get("Observation")}.",
                 "Request",
-                $"/documents/my-approvals-request"
+                $"/documents/my-approvals-request?tab=Rejected"
             ),
             NotificationScenario.OverdueRequestReminder => (
-                "Overdue Action Required",
+                "DMS – Overdue Action Required",
                 $"ACTION REQUIRED: Request ID: {Get("ID")} is overdue. Please process immediately.",
                 "Request",
-                "/documents/my-approvals-request"
+                "/documents/my-approvals-request?tab=Pending"
             ),
             NotificationScenario.PendingDocumentApproval => (
-                "New Document Pending Review",
+                "DMS – New Document Pending Review",
                 $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) pending for your technical review.",
                 "Document",
-                "/documents/my-approvals-documents"
+                "/documents/my-approvals-documents?tab=Pending"
             ),
             NotificationScenario.DocumentApprovedForwarded => (
-                "Document Approved - Forwarded",
+                "DMS – Document Approved - Forwarded",
                 $"Document {Get("Doc Name")} has been approved and requires your action/authorization.",
                 "Document",
-                "/documents/my-approvals-documents"
+                "/documents/my-approvals-documents?tab=Pending"
             ),
             NotificationScenario.DocumentRejected => (
-                "Document Rejected",
+                "DMS – Document Rejected",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
                 "Document",
-                "/documents/my-approvals-request"
+                // Was pointed at my-approvals-request -- wrong page entirely for a Document-type
+                // notification, and inconsistent with its three siblings below which all
+                // correctly point at my-approvals-documents.
+                "/documents/my-approvals-documents?tab=Rejected"
             ),
             NotificationScenario.DocumentRevertedForRework => (
-                "Document Rework Required",
+                "DMS – Document Rework Required",
                 $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
                 "Document",
-                $"/documents/my-approvals-documents"
+                $"/documents/my-approvals-documents?tab=Rejected"
             ),
             NotificationScenario.TrainingProofRequired => (
-                "Training Proof Required",
+                "DMS – Training Proof Required",
                 $"Action needed: Upload Training Proof for document {Get("Doc Name")} (V:{Get("V#")}) for final authorization.",
                 "Authorization",
                 "/dms/authorization/post-training"
             ),
             NotificationScenario.TrainingProofSubmitted => (
-                "Proof Submitted - Final Authorization",
+                "DMS – Proof Submitted - Final Authorization",
                 $"Training proof has been submitted for {Get("Doc Name")} (V:{Get("V#")}). Final authorization is now pending.",
                 "Authorization",
                 "/dms/authorization/post-training"
             ),
             NotificationScenario.DocumentAuthorizedEffective => (
-                "Document Authorized & Effective",
+                "DMS – Document Authorized & Effective",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
                 "/documents/trainingauthorization"
             ),
             NotificationScenario.PeriodicReviewDue => (
-                "Document Review Due Soon",
+                "DMS – Document Review Due Soon",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is due for review on {Get("Date")}. Please initiate a Revision Request.",
                 "Review",
                 "/documents/trainingauthorization"
             ),
             NotificationScenario.DocumentObsoleted => (
-                "Document Obsoleted",
+                "DMS – Document Obsoleted",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) has been officially obsoleted as of {Get("Date")}.",
                 "Obsoletion",
                 "/documents/my-approvals-documents"
             ),
             NotificationScenario.PhysicalCopyRetrievalTask => (
-                "Task: Retrieve Physical Copies",
+                "DMS – Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
                 "/documents/my-approvals-documents"
             ),
             NotificationScenario.NewUserAccountCreated => (
-                "Welcome to DMS",
+                "DMS – Welcome to DMS",
                 "Your DMS account has been created. Use your credentials to log in.",
                 "Setup",
                 "/dashboard"
             ),
             NotificationScenario.TransferRequestApproval => (
-                "Responsibility Transfer Effective",
+                "DMS – Responsibility Transfer Effective",
                 $"Your responsibility transfer from {Get("Emp From")} to {Get("Emp To")} is now effective from {Get("Date From")} to {Get("Date To")}.",
                 "Setup",
                 "/documents/my-approvals-documents"

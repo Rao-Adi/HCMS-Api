@@ -123,9 +123,18 @@ public class DocumentRequestUserDistribution
 
     // UserId BIGINT NOT NULL
     public string EmployeeCode { get; set; }
-    public string EmployeeName { get; set; } 
-    public string Designation { get; set; } 
-    public string Role { get; set; } 
+    public string EmployeeName { get; set; }
+    public string Designation { get; set; }
+    public string Role { get; set; }
+
+    // Which Role + Cabinet grid row (DRUsersComponent) this employee was selected under --
+    // null for employees auto-expanded from the separate Distribution List (Role-only) section,
+    // which has its own DocumentRequestRoleDistributions table and doesn't need this grouping.
+    public int? RoleId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     // IsActive BOOLEAN NOT NULL DEFAULT TRUE
     public bool IsActive { get; set; } = true;
@@ -478,8 +487,22 @@ public class RevisionHistoryItemDto
 ///////////////////////////
 ///
 
+// One employee selected in the "Document Users" grid (DRUsersComponent), tagged with the
+// Role + Cabinet row it was selected under -- carried through to DocumentRequestUserDistributions
+// so that row grouping can be reconstructed when the draft is reopened (see
+// DocumentRequestUserDistribution.RoleId/*Code).
+public class UserDistributionInputDto
+{
+    public string EmployeeCode { get; set; } = null!;
+    public int? RoleId { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+}
+
 public class DraftDocumentRequestDto
-{ 
+{
     public string DocumentRequestTypeCode { get; set; }
     public string DocumentTypeCode { get; set; }
 
@@ -492,11 +515,11 @@ public class DraftDocumentRequestDto
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public int? ParentDocumentId { get; set; }
-     
+
 
     // 🟩 UC-22
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<string>? UserIds { get; set; }
+    public List<UserDistributionInputDto>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
@@ -508,12 +531,12 @@ public class UpdateDraftRequestDto
 
     public string DocumentName { get; set; }
     public string Justification { get; set; }
-    public string? ProposedContent { get; set; } 
-     
+    public string? ProposedContent { get; set; }
+
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<string>? UserIds { get; set; }
+    public List<UserDistributionInputDto>? UserIds { get; set; }
 
     public IFormFile? DraftFile { get; set; }
 }
@@ -566,7 +589,7 @@ public class SubmitDocumentRequestDto
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<string>? UserIds { get; set; }
+    public List<UserDistributionInputDto>? UserIds { get; set; }
 }
 
 public class SubmitRevisionDocumentRequestDto
@@ -575,7 +598,7 @@ public class SubmitRevisionDocumentRequestDto
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
-    public List<string>? UserIds { get; set; }
+    public List<UserDistributionInputDto>? UserIds { get; set; }
 }
 
 

@@ -642,11 +642,27 @@ public class DMSDocumentRequestController : Controller
 
         try
         {
+            var success = await _documentRequestComponent.TakeWorkflowActionAsync(input);
+
+            // Mirrors the decision switch in TakeWorkflowActionAsync -- kept here (not
+            // returned from that method) so the message is one source of truth the frontend
+            // just displays, instead of each tab (my-approval-request.ts /
+            // my-approval-document.ts) maintaining its own action-to-text mapping that can
+            // drift out of sync with what actually happened.
+            string message = input.Action?.Trim().ToUpperInvariant() switch
+            {
+                "APPROVED" => "Document approved successfully.",
+                "REJECTED" => "Document rejected successfully.",
+                "REWORKED" => "Document sent for rework successfully.",
+                "COMMENT" => "Comment added successfully.",
+                _ => "Action taken successfully."
+            };
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentRequestComponent.TakeWorkflowActionAsync(input),
-                Message = "Action taken successfully.",
+                Data = success,
+                Message = message,
                 Code = 200
             });
         }

@@ -330,38 +330,17 @@ public class PeoplePartnersComponent
 
         return item;
     }
+    // Returns every active employee holding the given Role -- no DocumentType requirement and
+    // no pagination, since this now backs a "select all by default" flow (DRUsersComponent) as
+    // well as the "modify selection" picker (UsersInRoleModal), both of which need the complete
+    // set of candidates in one shot rather than a browsable page.
     public async Task<PaginationResult<dynamic>> GetEmployeesByRoleIdAsync(int roleId, EmployeeFilterDto input)
     {
         string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(companyIdStr);
-        var offset = (input.PageNumber - 1) * input.PageSize;
         var search = input.SearchText?.Replace("'", "''").ToUpper();
 
-        if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
-            throw new CustomException("DocumentTypeCode is mandatory to fetch employees.", 400);
-
         var whereClause = "WHERE e.CompanyId = @CompanyId AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1";
-
-        var ualConditions = new List<string> {
-            "TRIM(LEADING '0' FROM TRIM(ual.EmployeeCode::text)) = TRIM(LEADING '0' FROM TRIM(e.empcode::text))",
-            "ual.IsActive = TRUE",
-            "ual.IsDeleted = FALSE",
-            "ual.DocumentTypeCode = @DocumentTypeCode"
-        };
-
-        if (!string.IsNullOrWhiteSpace(input.DivisionCode))
-            ualConditions.Add("ual.DivisionCode = @DivisionCode");
-
-        if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
-            ualConditions.Add("ual.DepartmentCode = @DepartmentCode");
-
-        if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
-            ualConditions.Add("ual.SubDepartmentCode = @SubDepartmentCode");
-
-        if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
-            ualConditions.Add("ual.BusinessDomainCode = @BusinessDomainCode");
-
-        //whereClause += $" AND EXISTS (SELECT 1 FROM UserAccessLevels ual WHERE {string.Join(" AND ", ualConditions)})";
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -376,14 +355,7 @@ public class PeoplePartnersComponent
         var queryParams = new
         {
             CompanyId = companyId,
-            RoleId = roleId,
-            Offset = offset,
-            PageSize = input.PageSize,
-            DocumentTypeCode = input.DocumentTypeCode,
-            DivisionCode = input.DivisionCode,
-            DepartmentCode = input.DepartmentCode,
-            SubDepartmentCode = input.SubDepartmentCode,
-            BusinessDomainCode = input.BusinessDomainCode
+            RoleId = roleId
         };
 
         string baseQuery = $@"
@@ -393,16 +365,14 @@ public class PeoplePartnersComponent
             LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
             LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid";
 
-        string dataSql = $@"SELECT e.*, COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role {baseQuery} {whereClause} ORDER BY {sortColumn} {sortDirection} OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
-        string countSql = $@"SELECT COUNT(1) {baseQuery} {whereClause};";
+        string dataSql = $@"SELECT e.*, COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role {baseQuery} {whereClause} ORDER BY {sortColumn} {sortDirection};";
 
         var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
-        var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
         return new PaginationResult<dynamic>
         {
             Items = items,
-            TotalCount = totalCount
+            TotalCount = items.Count
         };
     }
 

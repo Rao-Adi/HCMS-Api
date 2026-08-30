@@ -82,15 +82,18 @@ namespace HCMS_Api.Components.DMS.Common
         private readonly IConfiguration _configuration;
         private readonly ClientContextService _clientContextService;
         private readonly IDMSDapperDataService _dapperService;
+        private readonly IWebHostEnvironment _env;
         private IDatabase? _redisDatabase = null;
 
         public DMSUtilities(IConfiguration configuration
-            , ClientContextService clientContextService, DMSDataServices dataservice, IDMSDapperDataService dapper)
+            , ClientContextService clientContextService, DMSDataServices dataservice, IDMSDapperDataService dapper
+            , IWebHostEnvironment env)
         {
             _configuration = configuration;
             _clientContextService = clientContextService;
             _dataservice = dataservice;
             _dapperService = dapper;
+            _env = env;
             string connectionString = _configuration.GetRequiredConnectionString("ConnectionString");
             _dataservice.BeginProcess(connectionString);
         }
@@ -1735,11 +1738,28 @@ namespace HCMS_Api.Components.DMS.Common
 
                 if (!string.IsNullOrEmpty(body) && body.Contains($"cid:{DmsLogoContentId}"))
                 {
-                    var logoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "logo", "Doc.Partners.png");
+                    // Directory.GetCurrentDirectory() only happens to equal the content root when
+                    // running via `dotnet run`/Visual Studio -- under IIS or a Windows Service the
+                    // process's working directory is often something else entirely (e.g. System32),
+                    // so this silently resolved to a path where the file never existed, File.Exists
+                    // returned false, and the logo was skipped with no error -- leaving the <img
+                    // src='cid:...'> in the email with nothing embedded to back it, which is exactly
+                    // the "linked image cannot be displayed" Outlook shows. WebRootPath is the
+                    // framework's actual wwwroot location regardless of hosting model.
+                    var webRoot = _env.WebRootPath;
+                    if (string.IsNullOrWhiteSpace(webRoot))
+                    {
+                        webRoot = Path.Combine(_env.ContentRootPath, "wwwroot");
+                    }
+                    var logoPath = Path.Combine(webRoot, "images", "logo", "Doc.Partners.png");
                     if (File.Exists(logoPath))
                     {
                         var logo = builder.LinkedResources.Add(logoPath);
                         logo.ContentId = DmsLogoContentId;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[SMTP WARNING] Logo not found at '{logoPath}' -- email will send without the embedded logo.");
                     }
                 }
 
