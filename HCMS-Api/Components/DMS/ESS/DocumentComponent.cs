@@ -12,6 +12,7 @@ using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
 using OfficeOpenXml;
 using System.Data;
+using System.Text.Json;
 using A = DocumentFormat.OpenXml.Drawing;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
@@ -31,6 +32,7 @@ public class DocumentComponent
     private readonly NotificationComponent _notificationComponent;
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
     private readonly WorkflowStepComponent _workflowStepComponent;
+    private readonly AuditLogComponent _auditLogComponent;
     public DocumentComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -42,7 +44,8 @@ public class DocumentComponent
         DMSCommon common,
         NotificationComponent notificationComponent,
         PeoplePartnersComponent peoplePartnersComponent,
-        WorkflowStepComponent workflowStepComponent
+        WorkflowStepComponent workflowStepComponent,
+        AuditLogComponent auditLogComponent
         )
     {
         _http = http;
@@ -56,7 +59,38 @@ public class DocumentComponent
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
         _workflowStepComponent = workflowStepComponent;
+        _auditLogComponent = auditLogComponent;
     }
+
+    // Full current-state snapshot of a document for the audit log -- see
+    // DocumentRequestComponent.BuildRequestSnapshotJson for why this is assembled at the app
+    // level (after all of an action's writes complete) instead of via the generic DB trigger:
+    // a document's meaningful state spans the Documents row plus its user/role distribution
+    // tables, and a row-level trigger can't see writes that happen later in the same transaction.
+    private async Task<string?> BuildDocumentSnapshotJson(int companyId, int documentId, IDbTransaction transaction)
+    {
+        var document = await _common.QueryFirstOrDefaultAsync<dynamic>(
+            "SELECT * FROM Documents WHERE Id = @documentId AND CompanyId = @companyId;",
+            new { documentId, companyId }, transaction);
+        var userDistributions = await _common.QueryAsync<dynamic>(
+            "SELECT * FROM DocumentUserDistributions WHERE DocumentId = @documentId AND CompanyId = @companyId;",
+            new { documentId, companyId }, transaction);
+        var roleDistributions = await _common.QueryAsync<dynamic>(
+            "SELECT * FROM DocumentRoleDistributions WHERE DocumentId = @documentId AND CompanyId = @companyId;",
+            new { documentId, companyId }, transaction);
+
+        if (document == null) return null;
+
+        return JsonSerializer.Serialize(new
+        {
+            Document = ToDict(document),
+            UserDistributions = userDistributions.Select(ToDict).ToList(),
+            RoleDistributions = roleDistributions.Select(ToDict).ToList()
+        });
+    }
+
+    private static Dictionary<string, object>? ToDict(object? row) =>
+        row == null ? null : new Dictionary<string, object>((IDictionary<string, object>)row);
     static DocumentComponent()
     {
         // Required for EPPlus in non-Windows environments or when running in certain contexts.
@@ -177,6 +211,10 @@ public class DocumentComponent
                 @CompanyId, @DocumentId, 1, @UserId
             )
             ", new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
+
+            var createSnapshotJson = await BuildDocumentSnapshotJson(CompanyId, newId, tx);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Created", "Document",
+                newId, _clientContextService.GetRequestIpAddress(), newValues: createSnapshotJson, transaction: tx);
 
             await tx.CommitAsync();
 
@@ -1819,6 +1857,10 @@ public class DocumentComponent
                 }
             }
 
+            var approveSnapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Approved", "Document",
+                input.DocumentId, _clientContextService.GetRequestIpAddress(), newValues: approveSnapshotJson, transaction: transaction);
+
             await transaction.CommitAsync();
 
             return true;
@@ -2212,6 +2254,10 @@ public class DocumentComponent
                 empCode
             }, transaction);
 
+            var rejectSnapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Rejected", "Document",
+                input.DocumentId, _clientContextService.GetRequestIpAddress(), newValues: rejectSnapshotJson, transaction: transaction);
+
             await transaction.CommitAsync();
 
             string initiatorId = "";
@@ -2342,6 +2388,10 @@ public class DocumentComponent
                 Comments = input.Observation,
                 empCode
             }, transaction);
+
+            var reworkSnapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Reverted for Rework", "Document",
+                input.DocumentId, _clientContextService.GetRequestIpAddress(), newValues: reworkSnapshotJson, transaction: transaction);
 
             await transaction.CommitAsync();
 

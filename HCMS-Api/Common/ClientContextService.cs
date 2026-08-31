@@ -39,5 +39,28 @@ namespace HCMS_Api.Common
 
             return "";
         }
+
+        // GetClientIP() above returns the "login" session-key header/token despite its name --
+        // it's used everywhere else in this codebase for session/company/employee resolution,
+        // not as a network address, so it's left alone. This is the actual client network IP,
+        // for audit logging. Checks X-Forwarded-For first since this API sits behind a reverse
+        // proxy/load balancer in production, where Connection.RemoteIpAddress would otherwise
+        // just be the proxy's own address; X-Forwarded-For can carry a comma-separated chain
+        // (client, proxy1, proxy2, ...) when there are multiple hops, so the first entry is the
+        // original client.
+        public string GetRequestIpAddress()
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext == null) return "";
+
+            var forwardedFor = httpContext.Request?.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(forwardedFor))
+            {
+                var firstHop = forwardedFor.Split(',')[0].Trim();
+                if (!string.IsNullOrWhiteSpace(firstHop)) return firstHop;
+            }
+
+            return httpContext.Connection?.RemoteIpAddress?.ToString() ?? "";
+        }
     }
 }

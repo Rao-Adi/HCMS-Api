@@ -9,6 +9,7 @@ using HCMS_Api.Components.DMS.Common.Models.Enums;
 using Npgsql;
 using OfficeOpenXml;
 using System.Data;
+using System.Text.Json;
 
 namespace HCMS_Api.Components.DMS.ESS;
 
@@ -26,6 +27,7 @@ public class DocumentRequestComponent
     private readonly NotificationComponent _notificationComponent;
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
     private readonly WorkflowStepComponent _workflowStepComponent;
+    private readonly AuditLogComponent _auditLogComponent;
     public DocumentRequestComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -38,7 +40,8 @@ public class DocumentRequestComponent
         DocumentComponent documentComponent,
         NotificationComponent notificationComponent,
         PeoplePartnersComponent peoplePartnersComponent,
-        WorkflowStepComponent workflowStepComponent
+        WorkflowStepComponent workflowStepComponent,
+        AuditLogComponent auditLogComponent
         )
     {
         _http = http;
@@ -53,7 +56,37 @@ public class DocumentRequestComponent
         _notificationComponent = notificationComponent;
         _peoplePartnersComponent = peoplePartnersComponent;
         _workflowStepComponent = workflowStepComponent;
+        _auditLogComponent = auditLogComponent;
     }
+
+    // Full current-state snapshot of a request for the audit log -- called after all of an
+    // action's writes complete (never mid-transaction), so it reflects the final, committed-
+    // pending picture including the distribution lists, which live in separate tables and would
+    // otherwise need their own audit rows to be visible at all (see LogActionAsync's doc comment).
+    private async Task<string?> BuildRequestSnapshotJson(int companyId, long requestId, IDbTransaction transaction)
+    {
+        var request = await _common.QueryFirstOrDefaultAsync<dynamic>(
+            "SELECT * FROM DocumentRequests WHERE Id = @requestId AND CompanyId = @companyId;",
+            new { requestId, companyId }, transaction);
+        var userDistributions = await _common.QueryAsync<dynamic>(
+            "SELECT * FROM DocumentRequestUserDistributions WHERE DocumentRequestId = @requestId AND CompanyId = @companyId;",
+            new { requestId, companyId }, transaction);
+        var roleDistributions = await _common.QueryAsync<dynamic>(
+            "SELECT * FROM DocumentRequestRoleDistributions WHERE DocumentRequestId = @requestId AND CompanyId = @companyId;",
+            new { requestId, companyId }, transaction);
+
+        if (request == null) return null;
+
+        return JsonSerializer.Serialize(new
+        {
+            Request = ToDict(request),
+            UserDistributions = userDistributions.Select(ToDict).ToList(),
+            RoleDistributions = roleDistributions.Select(ToDict).ToList()
+        });
+    }
+
+    private static Dictionary<string, object>? ToDict(object? row) =>
+        row == null ? null : new Dictionary<string, object>((IDictionary<string, object>)row);
 
     // Uploaded file names sometimes arrive with the extension duplicated (e.g. a browser-downloaded
     // "Template.docx" gets re-saved by the OS/browser as "Template.docx.docx" before the user
@@ -224,6 +257,10 @@ public class DocumentRequestComponent
                 UserId = empCode
             }, transaction);
 
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, requestId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Draft Created", "DocumentRequest",
+                (int)requestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: transaction);
+
             await transaction.CommitAsync();
             return requestId;
         }
@@ -337,6 +374,10 @@ public class DocumentRequestComponent
                     UserId = empCode
                 },
                 transaction);
+
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, dto.RequestId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Draft Updated", "DocumentRequest",
+                (int)dto.RequestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: transaction);
 
             await transaction.CommitAsync();
             return 1; // 1= success
@@ -588,6 +629,10 @@ public class DocumentRequestComponent
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
                 }
             }
+
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, requestId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Created and Submitted", "DocumentRequest",
+                (int)requestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: transaction);
 
             // 8. Commit
             await transaction.CommitAsync();
@@ -864,6 +909,10 @@ public class DocumentRequestComponent
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)requestId, approver, placeholders, transaction);
                 }
             }
+
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, requestId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Created and Submitted", "DocumentRequest",
+                (int)requestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: transaction);
 
             // 8. Commit
             await transaction.CommitAsync();
@@ -1276,6 +1325,10 @@ public class DocumentRequestComponent
                 }
             }
 
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, submittedRequestId, tx);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Submitted", "DocumentRequest",
+                (int)submittedRequestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: tx);
+
             await tx.CommitAsync();
 
             return true;
@@ -1632,6 +1685,10 @@ public class DocumentRequestComponent
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PendingRequest, CompanyId, (int)submittedRequestId, approver, placeholders, tx);
                 }
             }
+
+            var snapshotJson = await BuildRequestSnapshotJson(CompanyId, submittedRequestId, tx);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Submitted", "DocumentRequest",
+                (int)submittedRequestId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: tx);
 
             await tx.CommitAsync();
 
@@ -2753,6 +2810,10 @@ public class DocumentRequestComponent
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
                 }
 
+                var rejectSnapshotJson = await BuildRequestSnapshotJson(CompanyId, (long)requestInfo!.id, tx);
+                await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Rejected", "DocumentRequest",
+                    (int)requestInfo!.id, _clientContextService.GetRequestIpAddress(), newValues: rejectSnapshotJson, transaction: tx);
+
                 await tx.CommitAsync();
 
                 return true;
@@ -2787,6 +2848,10 @@ public class DocumentRequestComponent
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
                 }
+
+                var reworkSnapshotJson = await BuildRequestSnapshotJson(CompanyId, (long)requestInfo!.id, tx);
+                await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Reverted for Rework", "DocumentRequest",
+                    (int)requestInfo!.id, _clientContextService.GetRequestIpAddress(), newValues: reworkSnapshotJson, transaction: tx);
 
                 await tx.CommitAsync();
 
@@ -2917,6 +2982,13 @@ public class DocumentRequestComponent
             else if (requestInfo != null && !string.IsNullOrEmpty(initiatorId))
             {
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, initiatorId, notifyPlaceholders, tx);
+            }
+
+            if (requestInfo != null)
+            {
+                var approveSnapshotJson = await BuildRequestSnapshotJson(CompanyId, (long)requestInfo.id, tx);
+                await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Approved", "DocumentRequest",
+                    (int)requestInfo.id, _clientContextService.GetRequestIpAddress(), newValues: approveSnapshotJson, transaction: tx);
             }
 
             await tx.CommitAsync();

@@ -40,6 +40,35 @@ public class AuditLogComponent
         _common = common;
     }
 
+    // For DocumentRequests/Documents specifically -- these are excluded from the generic
+    // fn_dms_audit_log DB trigger (see the AuditLogs migration) because their meaningful state
+    // spans multiple tables (the request/document row plus its user/role distribution lists),
+    // and a row-level AFTER trigger fires immediately after its own statement, not after the
+    // later statements in the same transaction that rewrite those distributions -- it would
+    // capture a half-updated picture. Called explicitly once per action, after all of that
+    // action's writes complete, with a single JSON snapshot assembled by the caller (see
+    // DocumentRequestComponent.BuildRequestSnapshotJson / DocumentComponent's equivalent) so one
+    // audit row tells the whole story instead of the ~10 child-table rows the trigger used to
+    // produce for a single submit/update.
+    public async Task LogActionAsync(int companyId, string employeeCode, string action, string entityType, int entityId, string ipAddress, string? oldValues = null, string? newValues = null, IDbTransaction? transaction = null)
+    {
+        await _common.ExecuteAsync(@"
+            INSERT INTO AuditLogs
+            (CompanyId, EmployeeCode, Action, EntityType, EntityId, OldValues, NewValues, Timestamp, IPAddress)
+            VALUES
+            (@CompanyId, @EmployeeCode, @Action, @EntityType, @EntityId, @OldValues::jsonb, @NewValues::jsonb, NOW(), @IPAddress);",
+            new
+            {
+                CompanyId = companyId,
+                EmployeeCode = employeeCode,
+                Action = action,
+                EntityType = entityType,
+                EntityId = entityId,
+                OldValues = oldValues,
+                NewValues = newValues,
+                IPAddress = ipAddress
+            }, transaction);
+    }
 
     public async Task<AuditLogReadDto> CreateAsync(AuditLogCreateDto input)
     {
@@ -67,6 +96,10 @@ public class AuditLogComponent
                 throw new CustomException("AuditLog already exists", 409);
 
             // Insert (PostgreSQL syntax)
+            // Column list previously read "EntityType, EntityTid" (typo -- the real column is
+            // EntityId) while the values below supplied EntityId then EntityType, i.e. both the
+            // column name and the value order were wrong. That mismatch meant this INSERT could
+            // never have succeeded against the real table -- AuditLogs had 0 rows.
             string insertQuery = $@"
             INSERT INTO AuditLogs
             (
@@ -74,21 +107,21 @@ public class AuditLogComponent
                 EmployeeCode,
                 Action,
                 EntityType,
-                EntityTid,
+                EntityId,
                 OldValues,
                 NewValues,
                 Timestamp,
-                ipaddress 
+                ipaddress
             )
             VALUES
             (
                 '{CompanyId}',
                 '{input.EmployeeCode}',
                 '{input.Action.Replace("'", "''")}',
-                '{input.EntityId}',
                 '{input.EntityType}',
+                '{input.EntityId}',
                 '{input.OldValues}',
-                '{input.NewValues}', 
+                '{input.NewValues}',
                 NOW(),
                 '{input.IPAddress}'
             )

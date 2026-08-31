@@ -1,6 +1,7 @@
 ﻿
 using Dapper;
 using global::HCMS_Api.Models;
+using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -14,11 +15,76 @@ public class DMSCommon
 {
     private readonly string _connectionString;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ClientContextService _clientContextService;
+    private readonly DMSUtilities _utilities;
 
-    public DMSCommon(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
+    // Resolved once per request (DMSCommon is Scoped) and pushed onto every connection this
+    // instance opens, via Postgres session variables read by the DMS audit trigger
+    // (fn_dms_audit_trigger, see the AuditLogs migration) -- that's how the trigger knows *who*
+    // made a given row change without every table needing app-level plumbing of its own.
+    // Lazy + cached so the Redis-backed employee lookup only happens once per request, not once
+    // per connection/query.
+    private (string EmpCode, string Ip)? _auditContext;
+
+    public DMSCommon(IConfiguration configuration, IHttpContextAccessor httpContextAccessor,
+        ClientContextService clientContextService, DMSUtilities utilities)
     {
         _connectionString = configuration.GetConnectionString("DMSConnectionString");
         _httpContextAccessor = httpContextAccessor;
+        _clientContextService = clientContextService;
+        _utilities = utilities;
+    }
+
+    private (string EmpCode, string Ip) ResolveAuditContext()
+    {
+        if (_auditContext.HasValue) return _auditContext.Value;
+
+        string empCode = "";
+        try
+        {
+            var sessionKey = _clientContextService.GetClientIP();
+            if (!string.IsNullOrWhiteSpace(sessionKey))
+            {
+                var empId = _utilities.GetEmpid(sessionKey);
+                empCode = _utilities.GetEmpCodeForHCMS(empId.ToString()) ?? "";
+            }
+        }
+        catch { /* best-effort -- an unresolved session just means an unattributed row */ }
+
+        var ip = _clientContextService.GetRequestIpAddress();
+        _auditContext = (empCode, ip);
+        return _auditContext.Value;
+    }
+
+    // Best-effort: audit attribution must never break the actual DB call it's piggybacking on.
+    private async Task ApplyAuditSessionContextAsync(NpgsqlConnection connection)
+    {
+        try
+        {
+            var (empCode, ip) = ResolveAuditContext();
+            await using var cmd = new NpgsqlCommand(
+                "SELECT set_config('app.employee_code', @EmpCode, false), set_config('app.ip_address', @Ip, false);",
+                connection);
+            cmd.Parameters.AddWithValue("EmpCode", empCode);
+            cmd.Parameters.AddWithValue("Ip", ip);
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
+    }
+
+    private void ApplyAuditSessionContext(NpgsqlConnection connection)
+    {
+        try
+        {
+            var (empCode, ip) = ResolveAuditContext();
+            using var cmd = new NpgsqlCommand(
+                "SELECT set_config('app.employee_code', @EmpCode, false), set_config('app.ip_address', @Ip, false);",
+                connection);
+            cmd.Parameters.AddWithValue("EmpCode", empCode);
+            cmd.Parameters.AddWithValue("Ip", ip);
+            cmd.ExecuteNonQuery();
+        }
+        catch { }
     }
 
     //------------------------------------------------
@@ -29,6 +95,7 @@ public class DMSCommon
     {
         var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync();
+        await ApplyAuditSessionContextAsync(conn);
         return conn;
     }
 
@@ -81,6 +148,7 @@ public class DMSCommon
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
+                await ApplyAuditSessionContextAsync(connection);
 
                 using (var command = new NpgsqlCommand(query, connection))
                 using (var adapter = new NpgsqlDataAdapter(command))
@@ -107,6 +175,7 @@ public class DMSCommon
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
+                await ApplyAuditSessionContextAsync(connection);
 
                 using (var command = new NpgsqlCommand(query, connection))
                 using (var adapter = new NpgsqlDataAdapter(command))
@@ -134,6 +203,7 @@ public class DMSCommon
         using (var connection = new NpgsqlConnection(_connectionString))
         {
             await connection.OpenAsync();
+            await ApplyAuditSessionContextAsync(connection);
 
             using (var command = new NpgsqlCommand(query, connection))
             using (var reader = await command.ExecuteReaderAsync())
@@ -175,6 +245,7 @@ public class DMSCommon
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 connection.Open();
+                ApplyAuditSessionContext(connection);
 
                 using (var command = new NpgsqlCommand(query, connection))
                 {
@@ -199,6 +270,7 @@ public class DMSCommon
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 connection.Open();
+                ApplyAuditSessionContext(connection);
 
                 using (var command = new NpgsqlCommand(query, connection))
                 {
@@ -260,6 +332,7 @@ public class DMSCommon
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 connection.Open();
+                ApplyAuditSessionContext(connection);
 
                 using (var command = new NpgsqlCommand(query, connection))
                 {

@@ -105,6 +105,12 @@ builder.Services.AddControllers()
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
 
+// Audit logging for the DMS application is handled at the database level -- a trigger
+// (fn_dms_audit_log) attached to every DMS table, fed by the app.employee_code/app.ip_address
+// session variables DMSCommon sets on every connection it opens. That supersedes the
+// action-filter approach previously here (which could only guess at entity IDs and had no way
+// to see prior row state); see DMSCommon.cs and the AuditLogs migration for details.
+
 // Add SignalR
 builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
 builder.Services.AddSignalR();
