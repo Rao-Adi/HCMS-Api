@@ -23,6 +23,7 @@ using HCMS_Api.Services.LookupService;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.AspNetCore.SignalR;
@@ -104,6 +105,19 @@ builder.Services.AddControllers()
         options.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver();
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
+
+// The DMS document-request form submits its Distribution List / Document Users as indexed
+// form fields (DistributionList[i].*, UserIds[i].*) -- selecting "ALL" in either Role dropdown
+// now legitimately expands into one row per real role/employee, which can push the total form
+// field count well past ASP.NET Core's default 1024-field guard (FormOptions.ValueCountLimit),
+// failing with "Form value count limit 1024 exceeded" before the request even reaches a
+// controller. Raised generously rather than tuned to today's org size, since this is an
+// internal, authenticated app -- the same posture already taken for pagesize:1000000 "fetch
+// everything" calls used throughout the DMS frontend.
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.ValueCountLimit = 20000;
+});
 
 // Audit logging for the DMS application is handled at the database level -- a trigger
 // (fn_dms_audit_log) attached to every DMS table, fed by the app.employee_code/app.ip_address

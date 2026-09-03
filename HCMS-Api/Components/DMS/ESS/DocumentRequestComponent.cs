@@ -1771,13 +1771,13 @@ public class DocumentRequestComponent
             if (roles?.Any() == true)
             {
                 await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentRequestUserDistributions 
+                    INSERT INTO DocumentRequestUserDistributions
                     (CompanyId, DocumentRequestId, EmployeeCode, CreatedBy, LastModifiedBy)
-                    SELECT DISTINCT 
-                        dr.CompanyId, 
-                        dr.DocumentRequestId, 
-                        TRIM(e.empcode), 
-                        @CreatedBy, 
+                    SELECT DISTINCT
+                        dr.CompanyId,
+                        dr.DocumentRequestId,
+                        TRIM(e.empcode),
+                        @CreatedBy,
                         @LastModifiedBy
                     FROM DocumentRequestRoleDistributions dr
                     INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1  AND e.CompanyId = @CompanyId
@@ -1791,8 +1791,8 @@ public class DocumentRequestComponent
                       AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
                       AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)
                       AND NOT EXISTS (
-                          SELECT 1 FROM DocumentRequestUserDistributions u 
-                          WHERE u.DocumentRequestId = dr.DocumentRequestId 
+                          SELECT 1 FROM DocumentRequestUserDistributions u
+                          WHERE u.DocumentRequestId = dr.DocumentRequestId
                             AND u.EmployeeCode = TRIM(e.empcode)
                       );",
                     new
@@ -3763,7 +3763,7 @@ public class DocumentRequestComponent
                     COALESCE(apEmp.Name, apprv.ChangedBy) AS ApprovedBy,
                     eff.ChangedAt AS EffectiveOn,
                     COALESCE(efEmp.Name, eff.ChangedBy) AS EffectiveBy,
-                    curState.Code AS CurrentStatus,
+                    curState.Name AS CurrentStatus,
                     NOT EXISTS (
                         SELECT 1 FROM Documents child
                         WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
@@ -3818,7 +3818,7 @@ public class DocumentRequestComponent
                     LIMIT 1
                 ) efEmp ON TRUE
                 LEFT JOIN LATERAL (
-                    SELECT ds.Code
+                    SELECT ds.Name
                     FROM DocumentStateHistory dsh
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId

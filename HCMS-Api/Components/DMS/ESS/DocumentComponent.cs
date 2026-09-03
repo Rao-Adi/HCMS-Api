@@ -3950,12 +3950,22 @@ public class DocumentComponent
             // 5. Fetch Distribution Lists for the retrieved documents
             var documentIds = documents.Select(x => (int)x.id).ToArray();
 
+            // LEFT JOINs to TblEmpJobProfile/tblEmployee resolve each role-distribution row to the
+            // employee(s) actually holding that role -- a role held by several people fans out
+            // into one row per employee here, and a role nobody currently holds still shows once
+            // with blank employee columns (LEFT, not INNER, so a role rule is never silently
+            // dropped just because it's unstaffed). This is a display-only resolution for this
+            // report; it doesn't touch DocumentUserDistributions or how that table gets populated.
             var roleDistributions = (await _common.QueryAsync<dynamic>(@"
-                SELECT drd.DocumentId, r.Name AS RoleName, div.Name AS Division, dep.Name AS Department
+                SELECT drd.DocumentId, r.sdlid AS RoleId, r.Name AS RoleName, div.Name AS Division, dep.Name AS Department,
+                       e.empCode AS EmployeeCode,
+                       LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
                 FROM DocumentRoleDistributions drd
-                LEFT JOIN Roles r ON drd.RoleId = r.Id 
-                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code 
+                LEFT JOIN tblsetupsdetail r ON drd.RoleId = r.sdlid
+                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code
                 LEFT JOIN Departments dep ON drd.DepartmentCode = dep.Code
+                LEFT JOIN TblEmpJobProfile ejp ON ejp.roleid = drd.RoleId AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = drd.CompanyId
+                LEFT JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = drd.CompanyId AND COALESCE(e.Active, 1) = 1
                 WHERE drd.CompanyId = @CompanyId AND drd.DocumentId = ANY(@DocumentIds);",
                 new { CompanyId, DocumentIds = documentIds })).ToList();
 
