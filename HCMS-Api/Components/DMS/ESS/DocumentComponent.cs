@@ -1054,16 +1054,18 @@ public class DocumentComponent
     //     since a footer's content is identical on every page regardless).
     // ================================================================================
 
-    public async Task<byte[]> MergeDocumentTemplateAsync(int documentId, Stream contentStream, IDbTransaction transaction = null)
+    // contentStream is now optional: DocumentVersions.Content (the rich-text editor's HTML, see
+    // HtmlToOpenXmlConverter) is preferred whenever it's been saved, since it reflects whatever
+    // the user last reviewed/edited there -- the uploaded file might no longer match if they
+    // edited the preview. contentStream is the fallback, for documents saved before this HTML
+    // content existed, or if HTML conversion ever comes back empty.
+    public async Task<byte[]> MergeDocumentTemplateAsync(int documentId, Stream? contentStream, IDbTransaction transaction = null)
     {
         try
         {
 
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int companyId = int.Parse(_CompanyId);
-
-            if (contentStream == null || contentStream.Length == 0)
-                throw new CustomException("Content file is required.", 400);
 
             //-------------------------------------------------
             // 1. Document metadata (from the DB, not the uploaded file)
@@ -1082,11 +1084,15 @@ public class DocumentComponent
             // Prefer the Effective version (2); every document has a Draft version (1) from the
             // moment it's created (see CreateAsync), so this still shows the current working
             // version for a document that hasn't gone Effective yet instead of a blank field.
-            string version = await _common.ExecuteScalarAsync<string>(@"
-            SELECT Version FROM DocumentVersions
+            // Content comes from the same row -- the rich-text editor's HTML for this version,
+            // if it was ever saved (see HtmlToOpenXmlConverter's use below).
+            var currentVersion = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT Version, Content FROM DocumentVersions
             WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
             ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
-                new { DocumentId = documentId, CompanyId = companyId }, transaction) ?? "";
+                new { DocumentId = documentId, CompanyId = companyId }, transaction);
+            string version = (string?)currentVersion?.version ?? "";
+            string? versionHtmlContent = (string?)currentVersion?.content;
 
             string supersede = "";
             if (doc.parentdocumentid != null)
@@ -1184,11 +1190,18 @@ public class DocumentComponent
                 new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
 
             //-------------------------------------------------
-            // 4. Body content of the uploaded file (the page-setup sectPr is excluded -- that
-            //    belongs to the uploaded file's own page layout, not the template's).
+            // 4. Content: the rich-text editor's HTML if it was saved for this version (reflects
+            //    whatever the user actually reviewed/edited there), otherwise the uploaded file's
+            //    own body (the page-setup sectPr is excluded -- that belongs to the uploaded
+            //    file's own page layout, not the template's).
             //-------------------------------------------------
 
             List<OpenXmlElement> contentBodyElements;
+            if (!string.IsNullOrWhiteSpace(versionHtmlContent))
+            {
+                contentBodyElements = HtmlToOpenXmlConverter.Convert(versionHtmlContent);
+            }
+            else if (contentStream != null && contentStream.Length > 0)
             {
                 // Buffered into a private MemoryStream rather than opening the caller's stream
                 // directly -- WordprocessingDocument.Open wants to own/seek the stream freely, and
@@ -1207,6 +1220,10 @@ public class DocumentComponent
                     .Where(el => el is not SectionProperties)
                     .Select(el => el.CloneNode(true))
                     .ToList();
+            }
+            else
+            {
+                throw new CustomException("No content available for this document (neither saved rich-text content nor an uploaded content file).", 400);
             }
 
             //-------------------------------------------------

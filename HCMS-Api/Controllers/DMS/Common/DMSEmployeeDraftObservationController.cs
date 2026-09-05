@@ -35,12 +35,12 @@ public class DMSEmployeeDraftObservationController : Controller
         _observationComponent = observationComponent;
     }
 
-    [HttpGet("get-by-employeecode/{employeeCode}")]
-    public async Task<IActionResult> GetByEmployeeCode(string employeeCode)
+    [HttpGet("get-draft-observation/{entityType}/{entityId}")]
+    public async Task<IActionResult> GetDraftObservation(string entityType, int entityId)
     {
         try
         {
-            var data = await _observationComponent.GetByEmployeeCodeAsync(employeeCode);
+            var data = await _observationComponent.GetDraftObservationAsync(entityType, entityId);
             return Ok(new HttpApiResponse<EmployeeDraftObservation?>()
             {
                 Success = true,

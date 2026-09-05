@@ -490,7 +490,76 @@ public class DMSDocumentController : Controller
         try
         {
             var request = await _documentComponent.GetByIdAsync(id);
-            if (string.IsNullOrEmpty(request.DocumentURL))
+
+            string? filePath = null;
+            string? extension = null;
+            if (!string.IsNullOrEmpty(request.DocumentURL))
+            {
+                var relativePath = request.DocumentURL.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+                if (System.IO.File.Exists(candidatePath))
+                {
+                    filePath = candidatePath;
+                    extension = Path.GetExtension(candidatePath).ToLowerInvariant();
+                }
+            }
+
+            byte[] fileBytes;
+            string contentType;
+            string fileName;
+
+            // The merge (DocumentComponent.MergeDocumentTemplateAsync) prefers this version's
+            // saved rich-text HTML content over the uploaded file when both exist (see that
+            // method's own comments), and works even with no uploaded file at all as long as HTML
+            // content was saved -- so this is attempted whenever there's *either* a docx file or
+            // HTML content to work with, not gated on a physical file being present. Never lets a
+            // merge problem (no template configured yet, template file missing, HTML conversion
+            // issue, etc.) block the download itself -- falls back to the raw uploaded file if one
+            // exists, matching the previous behavior for that case.
+            bool canAttemptMerge = extension == ".doc" || extension == ".docx" || filePath == null;
+            if (canAttemptMerge)
+            {
+                try
+                {
+                    Stream? contentFileStream = filePath != null
+                        ? new FileStream(filePath, FileMode.Open, FileAccess.Read)
+                        : null;
+                    await using (contentFileStream)
+                    {
+                        fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream);
+                    }
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    fileName = Path.GetFileNameWithoutExtension(filePath ?? request.DocumentNumber ?? "Document") + ".docx";
+                }
+                catch (Exception mergeEx)
+                {
+                    _logger.LogWarning(mergeEx, "Template merge failed for Document {DocumentId}; falling back to the raw uploaded file.", id);
+                    if (filePath == null)
+                    {
+                        return NotFound(new HttpApiResponse<object>()
+                        {
+                            Success = false,
+                            Data = new { },
+                            Message = "No content available for this document to download.",
+                            Code = 404
+                        });
+                    }
+                    fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    fileName = Path.GetFileName(filePath);
+                }
+            }
+            else if (filePath != null)
+            {
+                fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+                if (!provider.TryGetContentType(filePath, out contentType))
+                {
+                    contentType = "application/octet-stream";
+                }
+                fileName = Path.GetFileName(filePath);
+            }
+            else
             {
                 return NotFound(new HttpApiResponse<object>()
                 {
@@ -500,58 +569,6 @@ public class DMSDocumentController : Controller
                     Code = 404
                 });
             }
-
-            var relativePath = request.DocumentURL.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
-
-            if (!System.IO.File.Exists(filePath))
-            {
-                return NotFound(new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Physical file does not exist on the server.",
-                    Code = 404
-                });
-            }
-
-            byte[] fileBytes;
-            string contentType;
-            var extension = Path.GetExtension(filePath).ToLowerInvariant();
-
-            // For Word content (the only case the merge understands), try to hand back the
-            // DocumentType's official template populated with this document's metadata, the
-            // uploaded content, and the approval history recorded so far -- instead of the raw
-            // uploaded file -- so whoever downloads (approver reviewing, or the initiator
-            // checking their own submission) sees the actual finished document, not a bare
-            // content fragment. Never lets a merge problem (no template configured yet, template
-            // file missing, etc.) block the download itself -- falls back to the raw file.
-            if (extension == ".doc" || extension == ".docx")
-            {
-                try
-                {
-                    await using var contentFileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                    fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream);
-                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                }
-                catch (Exception mergeEx)
-                {
-                    _logger.LogWarning(mergeEx, "Template merge failed for Document {DocumentId}; falling back to the raw uploaded file.", id);
-                    fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                }
-            }
-            else
-            {
-                fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-                var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-                if (!provider.TryGetContentType(filePath, out contentType))
-                {
-                    contentType = "application/octet-stream";
-                }
-            }
-
-            var fileName = Path.GetFileName(filePath);
 
             // Important for frontend reading of the File Name
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");

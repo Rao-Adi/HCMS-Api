@@ -83,8 +83,13 @@ public class DashboardComponent
                         AND EXISTS (SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request')
                         AND NOT EXISTS (SELECT 1 FROM DocumentRequests child WHERE child.ParentRequestId = dr.Id AND child.CompanyId = dr.CompanyId)) AS MyRevertedRequests,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.CompanyId = @CompanyId AND dut.EmployeeCode = @EmployeeCode AND dut.TrainingStatus = 0 AND dut.IsDeleted = FALSE) AS PendingTrainings,
+                    -- Previously company-wide (no CreatedBy filter at all), so every user saw the
+                    -- same shared number regardless of whether any of it was theirs. Scoped to
+                    -- documents you created, matching MyApprovedDocuments above -- both are
+                    -- creator stats, so the dashboard only shows them (see the *ngIf gates in
+                    -- dashboard.html) to someone who has actually created something.
                     (SELECT COUNT(1) FROM DocumentTraining tr JOIN Documents doc ON tr.DocumentId = doc.Id
-                        WHERE doc.CompanyId = @CompanyId AND tr.ReadyForAuthorization = TRUE AND tr.IsActive = TRUE) AS PendingAuthorizations;";
+                        WHERE doc.CompanyId = @CompanyId AND doc.CreatedBy = @UserId AND tr.ReadyForAuthorization = TRUE AND tr.IsActive = TRUE) AS PendingAuthorizations;";
 
             var summary = await _common.QueryFirstOrDefaultAsync<DashboardSummaryDto>(summaryQuery, new { CompanyId = CompanyId, UserId = empCode, EmployeeCode = empCode })
                 ?? new DashboardSummaryDto();
