@@ -1241,7 +1241,15 @@ namespace HCMS_Api.Components.HCMS.Common
             {
                 string exx = ex.Message;
             }
-            return _value;
+            // RedisValue's implicit conversion to string yields null (not "") when Key doesn't
+            // exist in Redis -- the normal case for most users, since e.g. "{userId}ChangePassword"
+            // is only ever set reactively when a password change is forced. Every caller chains
+            // .ToString() straight onto this return value with no null check (this file's own
+            // CheckSessionTimeOut below, plus UserPermission.CheckSessionTimeOut and
+            // DMSUtilities' copy of both this method and CheckSessionTimeOut), so that null was
+            // throwing a NullReferenceException on effectively every request for any user
+            // without that key set.
+            return _value ?? "";
         }
 
 

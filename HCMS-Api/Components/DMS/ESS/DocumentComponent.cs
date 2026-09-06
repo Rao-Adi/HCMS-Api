@@ -1180,7 +1180,11 @@ public class DocumentComponent
                 wes.AssignedUserId AS RawAssignedUserId
             FROM WorkflowExecutionSteps wes
             JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
-            JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+            -- LEFT, not INNER: wsd is only used for display (ApproverRole below) -- a step
+            -- whose StepDefinitionId was deleted out from under it (e.g. by a later edit to the
+            -- Workflow Policy) would otherwise make that approver vanish from the merged Word
+            -- document's signature block entirely, instead of just leaving their role blank.
+            LEFT JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
             LEFT JOIN tblEmployee e ON TRIM(e.empCode) = TRIM(wes.AssignedUserId) AND e.CompanyId = @CompanyId
             LEFT JOIN public.tblempjobprofile ejp ON ejp.empid = e.empid AND ejp.Active = TRUE AND ejp.CompanyId = @CompanyId
             LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid AND desig.CompanyId = @CompanyId

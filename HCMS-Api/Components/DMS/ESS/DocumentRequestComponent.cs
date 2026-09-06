@@ -3556,7 +3556,11 @@ public class DocumentRequestComponent
                         AND we.Id = wes.WorkflowExecutionId
                         AND we.EntityType = @EntityType
 
-                    INNER JOIN WorkflowStepDefinitions wsd
+                    -- LEFT, not INNER: wsd is only used for display (StepType below) -- a step
+                    -- whose StepDefinitionId was deleted out from under it (e.g. by a later edit
+                    -- to the Workflow Policy) would otherwise vanish from this history entirely
+                    -- instead of just showing a blank step type.
+                    LEFT JOIN WorkflowStepDefinitions wsd
                         ON wsd.CompanyId = wes.CompanyId
                         AND wsd.Id = wes.StepDefinitionId
 
@@ -3645,7 +3649,16 @@ public class DocumentRequestComponent
                     we.Status AS ExecutionStatus,
                     we.StartedAt,
                     we.CompletedAt,
-                    COALESCE(wes.ActionAt, we.StartedAt) AS ReceivedOn,
+                    -- When this step actually became actionable: for step 1, that's when the
+                    -- whole execution started; for every later step, it's the moment the
+                    -- previous step was decided (that's what hands the task to this step's
+                    -- approver). The old COALESCE(wes.ActionAt, we.StartedAt) used THIS step's
+                    -- own ActionAt first, so once a step had a decision, ReceivedOn was just a
+                    -- duplicate of StatusUpdatedOn instead of showing when it was received.
+                    COALESCE(
+                        LAG(wes.ActionAt) OVER (PARTITION BY wes.WorkflowExecutionId ORDER BY wes.StepOrder),
+                        we.StartedAt
+                    ) AS ReceivedOn,
                     ualc.Division,
                     ualc.Department,
                     ualc.SubDepartment,
@@ -3654,7 +3667,11 @@ public class DocumentRequestComponent
                 INNER JOIN WorkflowExecutions we
                     ON we.CompanyId = wes.CompanyId
                     AND we.Id = wes.WorkflowExecutionId
-                INNER JOIN WorkflowStepDefinitions wsd
+                -- LEFT, not INNER: wsd is only used for display (StepType below) -- a step
+                -- whose StepDefinitionId was deleted out from under it (e.g. by a later edit
+                -- to the Workflow Policy) would otherwise silently vanish from this history
+                -- entirely, showing no workflow details regardless of the decision filter.
+                LEFT JOIN WorkflowStepDefinitions wsd
                     ON wsd.CompanyId = wes.CompanyId
                     AND wsd.Id = wes.StepDefinitionId
                 LEFT JOIN tblEmployee e
@@ -4222,8 +4239,7 @@ public class DocumentRequestComponent
              FROM WorkflowExecutionSteps wes
              JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
              JOIN Vw_DocumentRequests dr ON dr.Id = we.EntityId AND dr.CompanyId = we.CompanyId
-             JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
-             WHERE wes.CompanyId = @CompanyId 
+             WHERE wes.CompanyId = @CompanyId
                AND we.EntityType = 'Request'
                AND (
                  wes.AssignedUserId = @empCode
