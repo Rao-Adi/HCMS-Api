@@ -502,7 +502,76 @@ public class DMSDocumentRequestController : Controller
         try
         {
             var request = await _documentRequestComponent.GetByIdAsync(id);
-            if (string.IsNullOrEmpty(request.DraftFileUrl))
+
+            string? filePath = null;
+            string? extension = null;
+            if (!string.IsNullOrEmpty(request.DraftFileUrl))
+            {
+                var relativePath = request.DraftFileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+                if (System.IO.File.Exists(candidatePath))
+                {
+                    filePath = candidatePath;
+                    extension = Path.GetExtension(candidatePath).ToLowerInvariant();
+                }
+            }
+
+            byte[] fileBytes;
+            string contentType;
+            string fileName;
+
+            // Mirrors DMSDocumentController.DownloadDraftDocument: merges the content into the
+            // DocumentType's Word template (DocumentRequestComponent.MergeDocumentRequestTemplateAsync)
+            // whenever there's either a docx file or saved rich-text content to work with -- not
+            // gated on a physical file being present, so a request drafted purely via the rich
+            // text editor (no upload at all) can still be downloaded with the approver's template
+            // applied. Never lets a merge problem (no template configured yet, template file
+            // missing, etc.) block the download itself -- falls back to the raw uploaded file if
+            // one exists, matching the previous behavior for that case.
+            bool canAttemptMerge = extension == ".doc" || extension == ".docx" || filePath == null;
+            if (canAttemptMerge)
+            {
+                try
+                {
+                    Stream? contentFileStream = filePath != null
+                        ? new FileStream(filePath, FileMode.Open, FileAccess.Read)
+                        : null;
+                    await using (contentFileStream)
+                    {
+                        fileBytes = await _documentRequestComponent.MergeDocumentRequestTemplateAsync(id, contentFileStream);
+                    }
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    fileName = Path.GetFileNameWithoutExtension(filePath ?? request.RequestNumber ?? "Document") + ".docx";
+                }
+                catch (Exception mergeEx)
+                {
+                    _logger.LogWarning(mergeEx, "Template merge failed for Document Request {RequestId}; falling back to the raw uploaded file.", id);
+                    if (filePath == null)
+                    {
+                        return NotFound(new HttpApiResponse<object>()
+                        {
+                            Success = false,
+                            Data = new { },
+                            Message = "No content available for this request to download.",
+                            Code = 404
+                        });
+                    }
+                    fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    fileName = Path.GetFileName(filePath);
+                }
+            }
+            else if (filePath != null)
+            {
+                fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+                if (!provider.TryGetContentType(filePath, out contentType))
+                {
+                    contentType = "application/octet-stream";
+                }
+                fileName = Path.GetFileName(filePath);
+            }
+            else
             {
                 return NotFound(new HttpApiResponse<object>()
                 {
@@ -513,39 +582,10 @@ public class DMSDocumentRequestController : Controller
                 });
             }
 
-            var relativePath = request.DraftFileUrl.TrimStart('/');
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
-
-            if (!System.IO.File.Exists(filePath))
-            {
-                return NotFound(new HttpApiResponse<object>()
-                {
-                    Success = false,
-                    Data = new { },
-                    Message = "Physical file does not exist on the server.",
-                    Code = 404
-                });
-            }
-
-            var memory = new MemoryStream();
-            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-            {
-                await stream.CopyToAsync(memory);
-            }
-            memory.Position = 0;
-
-            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
-            {
-                contentType = "application/octet-stream";
-            }
-
-            var fileName = Path.GetFileName(filePath);
-
             // Important for frontend reading of the File Name
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
 
-            return File(memory, contentType, fileName);
+            return File(fileBytes, contentType, fileName);
         }
         catch (CustomException ex)
         {

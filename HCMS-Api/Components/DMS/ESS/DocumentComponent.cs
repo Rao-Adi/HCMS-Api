@@ -1125,46 +1125,7 @@ public class DocumentComponent
         };
 
             //-------------------------------------------------
-            // 2. The DocumentType's Word template
-            //-------------------------------------------------
-
-            // Same scoped-then-default resolution as AttachOrUpdateTemplateAsync -- a DocumentType
-            // can have more than one active Template row (per cabinet scope, plus an IsDefault
-            // fallback); this picks the one that actually applies to this document's placement.
-            var templatePath = await _common.ExecuteScalarAsync<string>(@"
-            SELECT TemplateFileUrl FROM Templates
-            WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
-              AND TemplateType IN (1,2) AND IsActive = TRUE AND IsDeleted = FALSE
-              AND (
-                    IsDefault = TRUE
-                    OR (
-                        (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                        AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                        AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                        AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
-                    )
-                  )
-            ORDER BY IsDefault ASC
-            LIMIT 1;",
-                new
-                {
-                    DocumentTypeCode = (string)doc.documenttypecode,
-                    CompanyId = companyId,
-                    DivisionCode = (string)doc.divisioncode,
-                    DepartmentCode = (string)doc.departmentcode,
-                    SubDepartmentCode = (string)doc.subdepartmentcode,
-                    BusinessDomainCode = (string)doc.businessdomaincode
-                }, transaction);
-
-            if (string.IsNullOrWhiteSpace(templatePath))
-                throw new CustomException("No Word template configured for this Document Type.", 404);
-
-            var templateFullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", templatePath.TrimStart('/'));
-            if (!File.Exists(templateFullPath))
-                throw new CustomException("Template file is missing on disk.", 404);
-
-            //-------------------------------------------------
-            // 3. Approvers for this Document's workflow -- however many are actually configured,
+            // 2. Approvers for this Document's workflow -- however many are actually configured,
             //    not a fixed set of roles. Signature/date are only populated for steps already
             //    actioned; a step still pending is included with a blank signature and date.
             //-------------------------------------------------
@@ -1193,97 +1154,167 @@ public class DocumentComponent
             ORDER BY wes.StepOrder;",
                 new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
 
-            //-------------------------------------------------
-            // 4. Content: the rich-text editor's HTML if it was saved for this version (reflects
-            //    whatever the user actually reviewed/edited there), otherwise the uploaded file's
-            //    own body (the page-setup sectPr is excluded -- that belongs to the uploaded
-            //    file's own page layout, not the template's).
-            //-------------------------------------------------
-
-            List<OpenXmlElement> contentBodyElements;
-            if (!string.IsNullOrWhiteSpace(versionHtmlContent))
-            {
-                contentBodyElements = HtmlToOpenXmlConverter.Convert(versionHtmlContent);
-            }
-            else if (contentStream != null && contentStream.Length > 0)
-            {
-                // Buffered into a private MemoryStream rather than opening the caller's stream
-                // directly -- WordprocessingDocument.Open wants to own/seek the stream freely, and
-                // the caller's stream (e.g. a FileStream held open by the download endpoint) may be
-                // needed again or simply shouldn't be handed over.
-                using var bufferedContentStream = new MemoryStream();
-                contentStream.Position = 0;
-                await contentStream.CopyToAsync(bufferedContentStream);
-                bufferedContentStream.Position = 0;
-
-                using var contentDoc = WordprocessingDocument.Open(bufferedContentStream, false);
-                var contentBody = contentDoc.MainDocumentPart?.Document?.Body
-                    ?? throw new CustomException("Uploaded content file is not a valid Word document.", 400);
-
-                contentBodyElements = contentBody.Elements()
-                    .Where(el => el is not SectionProperties)
-                    .Select(el => el.CloneNode(true))
-                    .ToList();
-            }
-            else
-            {
-                throw new CustomException("No content available for this document (neither saved rich-text content nor an uploaded content file).", 400);
-            }
-
-            //-------------------------------------------------
-            // 5. Merge everything into a copy of the template
-            //-------------------------------------------------
-
-            using var outputStream = new MemoryStream();
-            using (var templateFileStream = new FileStream(templateFullPath, FileMode.Open, FileAccess.Read))
-            {
-                await templateFileStream.CopyToAsync(outputStream);
-            }
-            outputStream.Position = 0;
-
-            using (var wordDoc = WordprocessingDocument.Open(outputStream, true))
-            {
-                var mainPart = wordDoc.MainDocumentPart ?? throw new CustomException("Template file is invalid.", 400);
-                var body = mainPart.Document.Body ?? throw new CustomException("Template file is invalid.", 400);
-
-                // Each container is paired with the OpenXmlPart that actually owns it -- every
-                // part (the main document, and each individual header/footer) has its own
-                // separate image-relationship id space in the OOXML package, so an image
-                // embedded into a footer MUST be added via that footer's own part, not
-                // mainPart. Using the wrong part silently produces a relationship id the
-                // owning part's XML can't resolve -- Word shows nothing, no error.
-                var textContainers = new List<(OpenXmlElement Element, OpenXmlPart Part)> { (body, mainPart) };
-                textContainers.AddRange(mainPart.HeaderParts.Select(h => ((OpenXmlElement)h.Header, (OpenXmlPart)h)));
-                textContainers.AddRange(mainPart.FooterParts.Select(f => ((OpenXmlElement)f.Footer, (OpenXmlPart)f)));
-
-                foreach (var (container, _) in textContainers)
-                {
-                    foreach (var placeholder in placeholders)
-                        ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
-                }
-
-                InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
-
-                // The signature block's template row can live in the body, or (as in the SOP
-                // template) in a footer so the full approval matrix repeats on every page --
-                // check every text container, not just the body. drawingId is threaded through
-                // and incremented for every embedded signature image across all containers --
-                // OOXML requires each drawing's non-visual id to be unique document-wide, and a
-                // fixed id (as this used to hardcode) corrupts the file once 2+ approvers both
-                // have a saved signature.
-                uint drawingId = 1;
-                foreach (var (container, ownerPart) in textContainers)
-                    PopulateSignatureBlock(ownerPart, container, approvers, ref drawingId);
-
-                mainPart.Document.Save();
-            }
-
-            return outputStream.ToArray();
+            // Steps 3-5 (template resolution, content, and the actual OpenXML merge) are shared
+            // with DocumentRequestComponent.MergeDocumentRequestTemplateAsync -- a pending request
+            // being reviewed by an approver needs the exact same "drop this content into the
+            // DocumentType's Word template, with whichever approvers are on the workflow so far"
+            // treatment as a finalized Document, just sourced from a different table.
+            return await MergeContentIntoTemplateAsync(
+                (string)doc.documenttypecode,
+                (string?)doc.divisioncode, (string?)doc.departmentcode, (string?)doc.subdepartmentcode, (string?)doc.businessdomaincode,
+                placeholders, versionHtmlContent, contentStream, approvers);
         }
         catch(Exception ex)
         {
             throw ex;
         }
+    }
+
+    // Shared core of the template merge: resolves the DocumentType's Word template for the given
+    // cabinet placement, drops in the content (rich-text HTML if present, else the uploaded
+    // file's own body) and a signature-block row per approver. See MergeDocumentTemplateAsync
+    // (finalized Documents) and DocumentRequestComponent.MergeDocumentRequestTemplateAsync
+    // (pending requests) for the two callers -- everything past "which template, whose
+    // approvers, what content" is identical between them.
+    public async Task<byte[]> MergeContentIntoTemplateAsync(
+        string documentTypeCode,
+        string? divisionCode,
+        string? departmentCode,
+        string? subDepartmentCode,
+        string? businessDomainCode,
+        Dictionary<string, string> placeholders,
+        string? htmlContent,
+        Stream? contentStream,
+        List<dynamic> approvers)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        //-------------------------------------------------
+        // The DocumentType's Word template
+        //-------------------------------------------------
+
+        // Same scoped-then-default resolution as AttachOrUpdateTemplateAsync -- a DocumentType
+        // can have more than one active Template row (per cabinet scope, plus an IsDefault
+        // fallback); this picks the one that actually applies to this document's placement.
+        var templatePath = await _common.ExecuteScalarAsync<string>(@"
+            SELECT TemplateFileUrl FROM Templates
+            WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
+              AND TemplateType IN (1,2) AND IsActive = TRUE AND IsDeleted = FALSE
+              AND (
+                    IsDefault = TRUE
+                    OR (
+                        (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
+                        AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
+                        AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
+                        AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                    )
+                  )
+            ORDER BY IsDefault ASC
+            LIMIT 1;",
+            new
+            {
+                DocumentTypeCode = documentTypeCode,
+                CompanyId = companyId,
+                DivisionCode = divisionCode,
+                DepartmentCode = departmentCode,
+                SubDepartmentCode = subDepartmentCode,
+                BusinessDomainCode = businessDomainCode
+            });
+
+        if (string.IsNullOrWhiteSpace(templatePath))
+            throw new CustomException("No Word template configured for this Document Type.", 404);
+
+        var templateFullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", templatePath.TrimStart('/'));
+        if (!File.Exists(templateFullPath))
+            throw new CustomException("Template file is missing on disk.", 404);
+
+        //-------------------------------------------------
+        // Content: the rich-text editor's HTML if it was saved (reflects whatever the user
+        // actually reviewed/edited there), otherwise the uploaded file's own body (the
+        // page-setup sectPr is excluded -- that belongs to the uploaded file's own page
+        // layout, not the template's).
+        //-------------------------------------------------
+
+        List<OpenXmlElement> contentBodyElements;
+        if (!string.IsNullOrWhiteSpace(htmlContent))
+        {
+            contentBodyElements = HtmlToOpenXmlConverter.Convert(htmlContent);
+        }
+        else if (contentStream != null && contentStream.Length > 0)
+        {
+            // Buffered into a private MemoryStream rather than opening the caller's stream
+            // directly -- WordprocessingDocument.Open wants to own/seek the stream freely, and
+            // the caller's stream (e.g. a FileStream held open by the download endpoint) may be
+            // needed again or simply shouldn't be handed over.
+            using var bufferedContentStream = new MemoryStream();
+            contentStream.Position = 0;
+            await contentStream.CopyToAsync(bufferedContentStream);
+            bufferedContentStream.Position = 0;
+
+            using var contentDoc = WordprocessingDocument.Open(bufferedContentStream, false);
+            var contentBody = contentDoc.MainDocumentPart?.Document?.Body
+                ?? throw new CustomException("Uploaded content file is not a valid Word document.", 400);
+
+            contentBodyElements = contentBody.Elements()
+                .Where(el => el is not SectionProperties)
+                .Select(el => el.CloneNode(true))
+                .ToList();
+        }
+        else
+        {
+            throw new CustomException("No content available (neither saved rich-text content nor an uploaded content file).", 400);
+        }
+
+        //-------------------------------------------------
+        // Merge everything into a copy of the template
+        //-------------------------------------------------
+
+        using var outputStream = new MemoryStream();
+        using (var templateFileStream = new FileStream(templateFullPath, FileMode.Open, FileAccess.Read))
+        {
+            await templateFileStream.CopyToAsync(outputStream);
+        }
+        outputStream.Position = 0;
+
+        using (var wordDoc = WordprocessingDocument.Open(outputStream, true))
+        {
+            var mainPart = wordDoc.MainDocumentPart ?? throw new CustomException("Template file is invalid.", 400);
+            var body = mainPart.Document.Body ?? throw new CustomException("Template file is invalid.", 400);
+
+            // Each container is paired with the OpenXmlPart that actually owns it -- every
+            // part (the main document, and each individual header/footer) has its own
+            // separate image-relationship id space in the OOXML package, so an image
+            // embedded into a footer MUST be added via that footer's own part, not
+            // mainPart. Using the wrong part silently produces a relationship id the
+            // owning part's XML can't resolve -- Word shows nothing, no error.
+            var textContainers = new List<(OpenXmlElement Element, OpenXmlPart Part)> { (body, mainPart) };
+            textContainers.AddRange(mainPart.HeaderParts.Select(h => ((OpenXmlElement)h.Header, (OpenXmlPart)h)));
+            textContainers.AddRange(mainPart.FooterParts.Select(f => ((OpenXmlElement)f.Footer, (OpenXmlPart)f)));
+
+            foreach (var (container, _) in textContainers)
+            {
+                foreach (var placeholder in placeholders)
+                    ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
+            }
+
+            InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
+
+            // The signature block's template row can live in the body, or (as in the SOP
+            // template) in a footer so the full approval matrix repeats on every page --
+            // check every text container, not just the body. drawingId is threaded through
+            // and incremented for every embedded signature image across all containers --
+            // OOXML requires each drawing's non-visual id to be unique document-wide, and a
+            // fixed id (as this used to hardcode) corrupts the file once 2+ approvers both
+            // have a saved signature.
+            uint drawingId = 1;
+            foreach (var (container, ownerPart) in textContainers)
+                PopulateSignatureBlock(ownerPart, container, approvers, ref drawingId);
+
+            mainPart.Document.Save();
+        }
+
+        return outputStream.ToArray();
     }
 
     // Replaces a {{placeholder}} token with a value, anywhere it appears within root. Handles

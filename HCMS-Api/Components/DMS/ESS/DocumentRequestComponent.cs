@@ -4406,6 +4406,61 @@ public class DocumentRequestComponent
         }
     }
 
+    // Same "content into the DocumentType's Word template" treatment as
+    // DocumentComponent.MergeDocumentTemplateAsync (see that method / MergeContentIntoTemplateAsync
+    // for the shared core), but for a request that hasn't been promoted to a Document yet -- an
+    // approver reviewing a pending request should see/download it exactly as it will look once
+    // approved, including whichever approvers have actioned their step on this workflow so far.
+    public async Task<byte[]> MergeDocumentRequestTemplateAsync(int requestId, Stream? contentStream)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        var request = await GetByIdAsync(requestId);
+
+        // No DocumentNumber/Version/EffectiveDate/ReviewDate exist yet at this stage -- those
+        // are assigned when the request is actually approved and becomes a Document (see
+        // DocumentComponent.CreateAsync) -- so those placeholders are left blank/"N/A" rather
+        // than guessed at.
+        var placeholders = new Dictionary<string, string>
+        {
+            { "DocumentTitle", request.DocumentName ?? "" },
+            { "DocumentNumber", request.RequestNumber ?? "" },
+            { "Version", "" },
+            { "EffectiveDate", "N/A" },
+            { "ReviewDate", "" },
+            { "Supersede", "N/A" },
+        };
+
+        // Same shape as DocumentComponent.MergeDocumentTemplateAsync's approvers query, scoped to
+        // this request's own workflow (EntityType = 'Request', matching every other
+        // WorkflowExecutions lookup in this file) instead of a finalized Document's.
+        var approvers = (await _common.QueryAsync<dynamic>(@"
+            SELECT
+                wsd.StepType AS ApproverRole,
+                LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS ApproverName,
+                desig.name AS ApproverDesignation,
+                wes.Decision,
+                wes.ActionAt,
+                es.SignatureURL,
+                wes.AssignedUserId AS RawAssignedUserId
+            FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
+            LEFT JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+            LEFT JOIN tblEmployee e ON TRIM(e.empCode) = TRIM(wes.AssignedUserId) AND e.CompanyId = @CompanyId
+            LEFT JOIN public.tblempjobprofile ejp ON ejp.empid = e.empid AND ejp.Active = TRUE AND ejp.CompanyId = @CompanyId
+            LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid AND desig.CompanyId = @CompanyId
+            LEFT JOIN ESignatures es ON TRIM(es.UserId) = TRIM(e.empCode) AND es.CompanyId = @CompanyId AND es.IsActive = TRUE AND es.IsDeleted = FALSE
+            WHERE wes.CompanyId = @CompanyId AND we.EntityId = @RequestId AND we.EntityType = 'Request'
+            ORDER BY wes.StepOrder;",
+            new { CompanyId = companyId, RequestId = requestId })).ToList();
+
+        return await _documentComponent.MergeContentIntoTemplateAsync(
+            request.DocumentTypeCode,
+            request.DivisionCode, request.DepartmentCode, request.SubDepartmentCode, request.BusinessDomainCode,
+            placeholders, request.ProposedContent, contentStream, approvers);
+    }
+
 
     public async Task<DocumentRequestReadDto> GetByDivisionCodeAsync(string dCode)
     {
