@@ -3081,7 +3081,7 @@ public class DocumentComponent
                   JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                   WHERE dsh.DocumentId = doc.Id 
                   ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED', 'REVISED')";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -3194,7 +3194,7 @@ public class DocumentComponent
     //                  JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
     //                  WHERE dsh.DocumentId = doc.Id 
     //                  ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-    //              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED')";
+    //              ) NOT IN ('DRAFT', 'EFFECTIVE', 'CLOSED', 'REJECTED', 'OBSOLETE', 'OBSOLETED', 'REVISED')";
 
     //        if (!string.IsNullOrWhiteSpace(input.SearchText))
     //        {
@@ -4960,6 +4960,21 @@ public class DocumentComponent
                 return Array.Empty<byte>();
             }
 
+            // Which of the 4 cabinet levels are actually enabled for this company (the grid
+            // itself already hides a disabled level's column entirely -- see the
+            // activeLevelDefs filter in my-approval-document.ts -- but this export used to
+            // include all 4 unconditionally, e.g. showing a "Business Domain" column for
+            // companies that have that level turned off).
+            var activeCabinetLevels = (await _common.QueryAsync<string>(@"
+                SELECT Name FROM CabinetStructureTabsConfig
+                WHERE CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE;",
+                new { CompanyId })).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            bool showDivision = activeCabinetLevels.Contains("Division1111") || activeCabinetLevels.Any(n => n.StartsWith("Division", StringComparison.OrdinalIgnoreCase));
+            bool showDepartment = activeCabinetLevels.Any(n => n.StartsWith("Department", StringComparison.OrdinalIgnoreCase));
+            bool showSubDepartment = activeCabinetLevels.Any(n => n.StartsWith("SubDepartment", StringComparison.OrdinalIgnoreCase));
+            bool showBusinessDomain = activeCabinetLevels.Any(n => n.StartsWith("BusinessDomain", StringComparison.OrdinalIgnoreCase));
+
             // Limited to the same columns the "My Approvals – Documents" grid shows
             // (leadingColumnDefs/trailingColumnDefs in my-approval-document.ts) instead of every
             // internal field on AllDocumentDto (ExecutionId, StepId, draftFileUrl, etc.) — the
@@ -4969,10 +4984,16 @@ public class DocumentComponent
             {
                 "Document Type", "Document ID", "Document Name", "Justification", "Company",
                 "Proposed Document Number", "Proposed Version Number",
-                "Division", "Department", "Sub-Department", "Business Domain",
+            };
+            if (showDivision) headers.Add("Division");
+            if (showDepartment) headers.Add("Department");
+            if (showSubDepartment) headers.Add("Sub-Department");
+            if (showBusinessDomain) headers.Add("Business Domain");
+            headers.AddRange(new[]
+            {
                 "Date of Creation", "Requested By", "Requested On",
                 "Previous Version Created By", "Previous Version Created On"
-            };
+            });
 
             // Real .xlsx via EPPlus (bold header row, auto-fit column widths) -- see
             // DocumentRequestComponent.ExportMyInboxRequestsAsync for the matching Request-side
@@ -5001,16 +5022,19 @@ public class DocumentComponent
                     row.Company ?? "",
                     row.DocumentNumber ?? "",
                     row.ProposedVersionNumber ?? "1.0",
-                    row.Division ?? "",
-                    row.Department ?? "",
-                    row.SubDepartment ?? "",
-                    row.BusinessDomain ?? "",
+                };
+                if (showDivision) values.Add(row.Division ?? "");
+                if (showDepartment) values.Add(row.Department ?? "");
+                if (showSubDepartment) values.Add(row.SubDepartment ?? "");
+                if (showBusinessDomain) values.Add(row.BusinessDomain ?? "");
+                values.AddRange(new[]
+                {
                     FormatExportDate(row.CreatedAt),
                     row.RequestCreatedBy ?? "",
                     FormatExportDate(row.RequestCreatedAt),
                     row.PreviousVersionCreatedBy ?? "",
                     FormatExportDate(row.PreviousVersionCreatedOn),
-                };
+                });
 
                 for (int col = 0; col < values.Count; col++)
                 {

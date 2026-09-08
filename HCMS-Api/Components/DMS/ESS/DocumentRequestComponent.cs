@@ -141,7 +141,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // Insert Draft Request
             //-------------------------------------------------
-            string nextRowVersion = IncrementMinorVersion(null);// At the time of Request creation, the RowVersion is initialized to "0.1" (minor version 1)
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
@@ -432,7 +432,7 @@ public class DocumentRequestComponent
             }
 
             // 3. Insert Document Request with 'Submitted' status
-            string nextRowVersion = IncrementMinorVersion(null);
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
@@ -710,18 +710,22 @@ public class DocumentRequestComponent
             }
 
             // 3. Insert Document Request with 'Submitted' status
+            // ParentDocumentId is guaranteed non-null here (validated above), so this always
+            // seeds RowVersion from the target document's current version bumped to the next
+            // major release (e.g. "1.0" -> "2.0") -- see ResolveInitialProposedVersionAsync.
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
                     CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
                     DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
-                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId
+                    Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId, RowVersion
                 )
                 VALUES
                 (
                     @CompanyId, 'DR-' || nextval('document_request_seq'), @DocumentRequestTypeCode, @DocumentTypeCode, @DocumentName, @Justification, @ProposedContent,
                     @DraftFileUrl, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode,
-                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId
+                    @Status, @UserId, @UserId, TRUE, NOW(), @UserId, @ParentDocumentId, @RowVersion
                 )
                 RETURNING Id;",
             new
@@ -739,7 +743,8 @@ public class DocumentRequestComponent
                 dto.BusinessDomainCode,
                 Status = DocumentRequestStatus.Submitted,
                 UserId = empCode,
-                dto.ParentDocumentId
+                dto.ParentDocumentId,
+                RowVersion = nextRowVersion
             }, transaction);
 
             // 4. Insert Distribution Lists
@@ -1822,6 +1827,40 @@ public class DocumentRequestComponent
                 return $"{major}.{minor + 1}";
         }
         return "1.0";
+    }
+
+    // Bumps the major component of a "Proposed Version Number" (e.g. "1.0" -> "2.0"), resetting
+    // the minor component to 0. Used to seed a Revision/Obsoletion request's proposed version
+    // from the target document's current version -- distinct from IncrementMinorVersion, which
+    // bumps the minor component for a *resubmission* of the same request after being reverted.
+    private static string IncrementMajorVersion(string? current)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            var parts = current.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major))
+                return $"{major + 1}.0";
+        }
+        return "1.0";
+    }
+
+    // A Revision or Obsoletion request targets an existing document via ParentDocumentId -- its
+    // "Proposed Version Number" should reflect that document's CURRENT version bumped to the
+    // next major release (e.g. "1.0" -> "2.0"), not restart at "1.0" as if it were a brand-new
+    // document (the previous behavior for every request type, Creation included). A plain
+    // Creation request (no ParentDocumentId) still starts at "1.0".
+    private async Task<string> ResolveInitialProposedVersionAsync(int companyId, int? parentDocumentId, IDbTransaction transaction)
+    {
+        if (!parentDocumentId.HasValue)
+            return IncrementMinorVersion(null);
+
+        var parentVersion = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Version FROM DocumentVersions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
+            ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
+            new { DocumentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+        return IncrementMajorVersion(parentVersion);
     }
 
     private async Task InsertHistoryAsync(
@@ -3985,8 +4024,15 @@ public class DocumentRequestComponent
             }, transaction);
 
             //-----------------------------------------
-            // 3️⃣ Create Draft Version 1.0
+            // 3️⃣ Create Draft Version
             //-----------------------------------------
+            // The request's RowVersion already holds the correctly resolved proposed version
+            // (e.g. "2.0" for a Revision, bumped off the parent document's current version by
+            // ResolveInitialProposedVersionAsync at request-creation time) -- this was previously
+            // hardcoded to '1.0' here, silently discarding that value and making every approved
+            // document's first DocumentVersions row (and hence Revision History) show "1.0"
+            // regardless of what was actually proposed/approved.
+            string documentVersion = (string?)request.rowversion ?? "1.0";
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
             (
@@ -3994,12 +4040,13 @@ public class DocumentRequestComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, '1.0', 1, @Content, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, @Version, 1, @Content, @CreatedBy, @LastModifiedBy
             )
             ", new
             {
                 companyId,
                 documentId,
+                Version = documentVersion,
                 Content = request.proposedcontent,
                 CreatedBy = request.createdby,
                 LastModifiedBy = request.createdby
@@ -4027,6 +4074,46 @@ public class DocumentRequestComponent
                 SET DocumentId = @DocumentId
                 WHERE Id = @RequestId AND CompanyId = @CompanyId
                 ", new { documentId, requestId, CompanyId = companyId }, transaction);
+
+            //-----------------------------------------
+            // 5.5️⃣ A Revision or Obsoletion request targets an existing document via
+            //     ParentDocumentId -- transition THAT document's own lifecycle state to reflect
+            //     the action just completed. Previously the parent document was left exactly as
+            //     it was (typically still "Effective") even after being revised or obsoleted,
+            //     with nothing ever recording that it had been superseded. Same
+            //     DocumentStateHistory insert shape as MakeDocumentEffectiveAsync's Approved ->
+            //     Effective transition, just resolving the target state from the request type.
+            //-----------------------------------------
+            int? parentDocumentId = (int?)request.parentdocumentid;
+            string? parentTargetStateCode = ((string)request.documentrequesttypecode) switch
+            {
+                "DRT-0002" => "REVISED",  // Revision of existing document
+                "DRT-0003" => "OBSOLETE", // Obsoletion of existing document
+                _ => null
+            };
+
+            if (parentDocumentId.HasValue && parentTargetStateCode != null)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory
+                    (
+                        CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy
+                    )
+                    VALUES
+                    (
+                        @CompanyId, @ParentDocumentId,
+                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @ParentDocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                        (SELECT Id FROM DocumentStates WHERE Code = @TargetStateCode),
+                        @EmpCode
+                    )",
+                new
+                {
+                    companyId,
+                    ParentDocumentId = parentDocumentId.Value,
+                    TargetStateCode = parentTargetStateCode,
+                    EmpCode = empCode
+                }, transaction);
+            }
 
             //-----------------------------------------
             // 6️⃣ Promote Role Distribution
