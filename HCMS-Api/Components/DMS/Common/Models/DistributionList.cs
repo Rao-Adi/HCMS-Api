@@ -54,8 +54,10 @@ public class DistributionListReadDto : AuditableEntity
 
     public string? BusinessDomain { get; set; }
     public string? BusinessDomainCode { get; set; }
-    public int RoleId { get; set; }
-    public string Role { get; set; }
+    // Null while still a Draft means "Any role" -- not yet expanded into concrete roles (that
+    // happens at submit time). Role (name) is naturally null/blank alongside it.
+    public int? RoleId { get; set; }
+    public string? Role { get; set; }
 
     public string Distribution { get; set; }
     public int DistributionTypeId { get; set; }
@@ -65,7 +67,7 @@ public class DistributionListReadDto : AuditableEntity
 
 
 public class DistributionListCreateDto
-{ 
+{
     // 🔑 Tenant
     public int CompanyId { get; set; }
 
@@ -75,7 +77,10 @@ public class DistributionListCreateDto
     public string? DepartmentCode { get; set; }
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
-    public int RoleId { get; set; }
+    // Null means "Any role" -- same meaning as a null/blank cabinet code above. The DB column is
+    // NOT NULL, so this never gets inserted as-is: InsertDistributionsAsync expands a null RoleId
+    // into one row per actual role for the company before insert.
+    public int? RoleId { get; set; }
 
     public int DistributionTypeId { get; set; }
 }

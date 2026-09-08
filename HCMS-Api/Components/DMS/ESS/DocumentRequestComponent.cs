@@ -180,6 +180,10 @@ public class DocumentRequestComponent
 
             if (dto.DistributionList?.Any() == true)
             {
+                // A null RoleId ("Any role") is stored as-is here -- this is a Draft, and
+                // expanding "Any" into concrete rows only happens at actual submission
+                // (InsertDistributionsAsync's expandAnyRole:true callers), so reopening this
+                // draft later still shows the original single "Any" row instead of N rows.
                 foreach (var d in dto.DistributionList)
                 {
                     await _common.ExecuteAsync(@"
@@ -347,10 +351,10 @@ public class DocumentRequestComponent
                 WHERE DocumentRequestId = @RequestId AND CompanyId = @CompanyId;",
                 new { dto.RequestId, CompanyId }, transaction);
 
-            // Insert new distributions
+            // Insert new distributions -- still a Draft here, so "Any role" stays unexpanded.
             await InsertDistributionsAsync(CompanyId, dto.RequestId,
                 dto!.DistributionList, dto!.UserIds,
-                empCode, transaction);
+                empCode, transaction, expandAnyRole: false);
 
 
             //-------------------------------------------------
@@ -466,8 +470,9 @@ public class DocumentRequestComponent
                 RowVersion = nextRowVersion
             }, transaction);
 
-            // 4. Insert Distribution Lists
-            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction);
+            // 4. Insert Distribution Lists -- submitting directly (no separate draft stage), so
+            // "Any role" expands into concrete rows now.
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction, expandAnyRole: true);
 
 
             // 5. Workflow Execution Logic
@@ -747,8 +752,9 @@ public class DocumentRequestComponent
                 RowVersion = nextRowVersion
             }, transaction);
 
-            // 4. Insert Distribution Lists
-            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction);
+            // 4. Insert Distribution Lists -- submitting directly (no separate draft stage), so
+            // "Any role" expands into concrete rows now.
+            await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction, expandAnyRole: true);
 
 
             // 5. Workflow Execution Logic
@@ -1115,7 +1121,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
-                empCode, tx);
+                empCode, tx, expandAnyRole: true);
 
 
             //-------------------------------------------------
@@ -1472,7 +1478,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
-                empCode, tx);
+                empCode, tx, expandAnyRole: true);
 
             //-------------------------------------------------
             // Resolve Correct Policy FIRST (Scope Routing)
@@ -1707,41 +1713,74 @@ public class DocumentRequestComponent
     }
 
 
+    // All role ids currently assigned to at least one active employee, scoped to the company --
+    // the exact same set PeoplePartnersComponent.GetRoleListAsync returns (the Role dropdown's
+    // data source), so a null RoleId ("Any role") expands into precisely what the dropdown
+    // itself would let someone pick one-by-one.
+    private async Task<List<int>> GetAllActiveRoleIdsAsync(int companyId, IDbTransaction tx)
+    {
+        var roleIds = await _common.QueryAsync<int>(@"
+            SELECT DISTINCT a.roleid
+            FROM tblempjobprofile a
+            INNER JOIN tblsetupsdetail b ON a.roleid = b.sdlid
+            WHERE b.smsid = 189 AND a.roleid IS NOT NULL AND a.CompanyId = @CompanyId AND a.Active = TRUE;",
+            new { CompanyId = companyId }, tx);
+        return roleIds.ToList();
+    }
+
     private async Task InsertDistributionsAsync(
             int companyId,
             long requestId,
             IEnumerable<DistributionListCreateDto>? roles,
             IEnumerable<UserDistributionInputDto>? users,
             string empCode,
-            IDbTransaction tx)
+            IDbTransaction tx,
+            // false while still a Draft: a null RoleId ("Any role") is stored as-is so the
+            // original "Any" intent survives re-opening the draft for editing, instead of being
+            // irreversibly expanded into N concrete rows the moment it's saved. true at actual
+            // submission (CreateAndSubmit*/Submit*), where "Any" needs to become real rows for
+            // the approval workflow/notifications to act on.
+            bool expandAnyRole = false)
     {
         try
         {
 
             if (roles?.Any() == true)
             {
+                // Cached across the loop so multiple "Any role" rows in one submission only hit
+                // the DB once.
+                List<int>? allRoleIds = null;
+
                 foreach (var d in roles)
                 {
-                    await _common.ExecuteAsync(@"
+                    var targetRoleIds = (!expandAnyRole || d.RoleId.HasValue)
+                        ? new List<int?> { d.RoleId }
+                        : (allRoleIds ??= await GetAllActiveRoleIdsAsync(companyId, tx))
+                            .Select(r => (int?)r).ToList();
+
+                    foreach (var roleId in targetRoleIds)
+                    {
+                        await _common.ExecuteAsync(@"
                 INSERT INTO DocumentRequestRoleDistributions
                 (CompanyId, DocumentRequestId, DivisionCode, DepartmentCode, SubDepartmentCode,
                  BusinessDomainCode, RoleId, DistributionTypeId, CreatedBy, LastModifiedBy)
                 VALUES
                 (@CompanyId, @DocumentRequestId, @DivisionCode, @DepartmentCode, @SubDepartmentCode,
                  @BusinessDomainCode, @RoleId, @DistributionTypeId, @CreatedBy, @LastModifiedBy);",
-                    new
-                    {
-                        CompanyId = companyId,
-                        DocumentRequestId = requestId,
-                        d.DivisionCode,
-                        d.DepartmentCode,
-                        d.SubDepartmentCode,
-                        d.BusinessDomainCode,
-                        d.RoleId,
-                        d.DistributionTypeId,
-                        CreatedBy = empCode,
-                        LastModifiedBy = empCode
-                    }, tx);
+                        new
+                        {
+                            CompanyId = companyId,
+                            DocumentRequestId = requestId,
+                            d.DivisionCode,
+                            d.DepartmentCode,
+                            d.SubDepartmentCode,
+                            d.BusinessDomainCode,
+                            RoleId = roleId,
+                            d.DistributionTypeId,
+                            CreatedBy = empCode,
+                            LastModifiedBy = empCode
+                        }, tx);
+                    }
                 }
             }
 
