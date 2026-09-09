@@ -912,9 +912,9 @@ public class DocumentComponent
 
     // A Document created from an approved Request may not have had its template attached yet
     // (the Request Creation form allows submitting without one). This lets it be attached here,
-    // at Document Creation/Submission time, instead. Which input is expected depends entirely on
-    // the DocumentType's configured Template: a file-based template (PDF/Word, TemplateType 1/2)
-    // expects DocumentFile; an HTML template (TemplateType 3) expects ProposedContent.
+    // at Document Creation/Submission time, instead. A file and typed/existing content are
+    // treated as interchangeable ways to satisfy this -- see the comment further below for why
+    // this no longer branches on the DocumentType's configured TemplateType.
     private async Task AttachOrUpdateTemplateAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
     {
         bool hasFile = !string.IsNullOrWhiteSpace((string)doc.documenturl);
@@ -925,105 +925,56 @@ public class DocumentComponent
                   AND Content IS NOT NULL AND Content <> ''
             );", new { input.DocumentId, CompanyId = companyId }, transaction);
 
-        // A DocumentType can have more than one active Template row -- one scoped to a specific
-        // Division/Department/SubDepartment/BusinessDomain, plus a company-wide IsDefault
-        // fallback. Prefer the scoped match for this document's actual cabinet placement (NULL-
-        // tolerant, matching the same pattern used for WorkflowPolicies/ReviewPolicies elsewhere),
-        // falling back to the default only when no scoped template applies. Without this, "LIMIT 1"
-        // with no ORDER BY over multiple candidate rows is non-deterministic and can silently pick
-        // a template with the wrong TemplateType (e.g. HTML instead of Word), causing an uploaded
-        // file to be routed into the wrong branch below and dropped without error.
-        int? templateType = await _common.ExecuteScalarAsync<int?>(@"
-            SELECT TemplateType FROM Templates
-            WHERE DocumentTypeCode = @DocumentTypeCode AND CompanyId = @CompanyId
-              AND IsActive = TRUE AND IsDeleted = FALSE
-              AND (
-                    IsDefault = TRUE
-                    OR (
-                        (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                        AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                        AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                        AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
-                    )
-                  )
-            ORDER BY IsDefault ASC
-            LIMIT 1;",
-            new
-            {
-                DocumentTypeCode = (string)doc.documenttypecode,
-                CompanyId = companyId,
-                DivisionCode = (string)doc.divisioncode,
-                DepartmentCode = (string)doc.departmentcode,
-                SubDepartmentCode = (string)doc.subdepartmentcode,
-                BusinessDomainCode = (string)doc.businessdomaincode
-            }, transaction);
-
-        bool expectsFile = templateType == 1 || templateType == 2; // 1 = PDF, 2 = Word
-        bool expectsContent = templateType == 3;                    // 3 = HTML
-
         bool fileProvided = input.DocumentFile != null && input.DocumentFile.Length > 0;
         bool contentProvided = !string.IsNullOrWhiteSpace(input.ProposedContent);
 
-        // No Template configured for this DocumentType at all -- don't block submission over a
-        // setup gap that isn't the caller's fault; accept whichever of the two was actually sent,
-        // falling back to whichever already exists from Request Creation time if neither was sent now.
-        if (templateType == null)
-        {
-            expectsFile = fileProvided || (!contentProvided && hasFile);
-            expectsContent = !expectsFile && (contentProvided || hasContent);
-        }
-
-        if (expectsFile)
+        // A file and typed/existing content are both acceptable ways to satisfy this,
+        // regardless of the DocumentType's configured TemplateType (templateType above is no
+        // longer used to force one or the other) -- the Create/Update form always shows both a
+        // "Document File" upload AND a "type the content manually below" editor side by side,
+        // so a document that already has real content (or gets it typed in now) must not be
+        // blocked just because no separate file was attached, even when the configured template
+        // is file-based (PDF/Word). Previously TemplateType 1/2 only ever checked for a file and
+        // never looked at content at all, which is what was rejecting exactly that case.
+        if (fileProvided)
         {
             // A new file at Document Creation time overwrites whatever was set at Request time.
-            // If none is provided now, keep the existing file (already attached at Request time).
-            if (fileProvided)
+            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+            if (!Directory.Exists(uploadsRoot))
+                Directory.CreateDirectory(uploadsRoot);
+
+            var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
-                if (!Directory.Exists(uploadsRoot))
-                    Directory.CreateDirectory(uploadsRoot);
-
-                var fileName = SanitizeDuplicatedExtension(input.DocumentFile!.FileName);
-                var filePath = Path.Combine(uploadsRoot, fileName);
-
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await input.DocumentFile.CopyToAsync(stream);
-                }
-
-                var documentUrl = $"/uploads/documents/{fileName}";
-
-                await _common.ExecuteAsync(@"
-                    UPDATE Documents
-                    SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
-                    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
-                    new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+                await input.DocumentFile.CopyToAsync(stream);
             }
-            else if (!hasFile)
-            {
-                throw new CustomException("A document file is required before this document can be submitted.", 400);
-            }
+
+            var documentUrl = $"/uploads/documents/{fileName}";
+
+            await _common.ExecuteAsync(@"
+                UPDATE Documents
+                SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
         }
-        else if (expectsContent)
+
+        if (contentProvided)
         {
             // New content at Document Creation time overwrites whatever was set at Request time.
-            // If none is provided now, keep the existing content (already attached at Request time).
-            if (contentProvided)
-            {
-                await _common.ExecuteAsync(@"
-                    UPDATE DocumentVersions
-                    SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
-                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
-                    new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
-            }
-            else if (!hasContent)
-            {
-                throw new CustomException("Document content is required before this document can be submitted.", 400);
-            }
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions
+                SET Content = @Content, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
+                new { Content = input.ProposedContent, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
         }
-        else
+
+        // Nothing new provided now, and the document doesn't already have a file or content
+        // from Request Creation time either -- genuinely nothing to submit.
+        if (!fileProvided && !contentProvided && !hasFile && !hasContent)
         {
-            throw new CustomException("A document template (file or content) is required before this document can be submitted.", 400);
+            throw new CustomException("A document file or content is required before this document can be submitted.", 400);
         }
     }
 
@@ -3275,10 +3226,27 @@ public class DocumentComponent
     public async Task<bool> AuthorizeDocumentPostTrainingAsync(AuthorizeDocumentDto input)
     {
         await using var transaction = await _common.BeginTransactionAsync();
+
+        // TriggerNotificationAsync does real network I/O (a SignalR broadcast, then an SMTP
+        // email send) -- calling it while still inside this transaction meant a slow/stuck
+        // SMTP call kept the row lock on DocumentVersions held indefinitely. Any other request
+        // touching the same document's version rows (e.g. a retry, or another approver) then
+        // queued up behind it and hit Npgsql's 30s command timeout -- this is the actual cause
+        // of the "Exception while reading from stream" / Npgsql.NpgsqlException 500s reported
+        // against this endpoint (confirmed directly in the server log: the failing statement
+        // was a trivial single-row UPDATE that should be instant, and a later retry for the
+        // same document eventually succeeded only after ~204s once the blocker cleared).
+        // Fix: collect what notifications are needed while still inside the transaction (cheap
+        // SELECTs only), then dispatch them after the transaction has committed and released
+        // its locks.
+        var pendingNotifications =
+            new List<(NotificationScenario Scenario, int DocumentId, string Recipient, Dictionary<string, string> Placeholders)>();
+        int CompanyId;
+
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
-            int CompanyId = int.Parse(_CompanyId);
+            CompanyId = int.Parse(_CompanyId);
             var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
@@ -3354,7 +3322,7 @@ public class DocumentComponent
 
                 foreach (var dcaUser in dcaUsers)
                 {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.PhysicalCopyRetrievalTask, CompanyId, input.DocumentId, dcaUser, placeholders, transaction);
+                    pendingNotifications.Add((NotificationScenario.PhysicalCopyRetrievalTask, input.DocumentId, dcaUser, placeholders));
                 }
             }
             else if (input.Action.Equals("REJECTED", StringComparison.OrdinalIgnoreCase))
@@ -3382,17 +3350,15 @@ public class DocumentComponent
                         { "Approver", empCode },
                         { "Observation", input.Observation }
                     };
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, docInfo.createdby, placeholders, transaction);
+                    pendingNotifications.Add((NotificationScenario.DocumentRejected, input.DocumentId, docInfo.createdby, placeholders));
                 }
             }
             else
             {
-                throw new CustomException("Invalid action specified. Must be 'APPROVE' or 'REJECTE'.", 400);
+                throw new CustomException("Invalid action specified. Must be 'APPROVED' or 'REJECTED'.", 400);
             }
 
             await transaction.CommitAsync();
-
-            return true;
 
 
             //if (string.IsNullOrWhiteSpace(input.Observation))
@@ -3467,6 +3433,26 @@ public class DocumentComponent
             await transaction.RollbackAsync();
             throw;
         }
+
+        // Dispatched only after a successful commit, without the (now-completed) transaction --
+        // a failure here (e.g. SMTP down) must not roll back the already-committed
+        // authorization/rejection. Caught and logged rather than left to propagate: the
+        // document action already succeeded at this point, and letting a notification failure
+        // turn that into a 500 would tell the caller the action failed when it didn't.
+        foreach (var n in pendingNotifications)
+        {
+            try
+            {
+                await _notificationComponent.TriggerNotificationAsync(n.Scenario, CompanyId, n.DocumentId, n.Recipient, n.Placeholders);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AuthorizeDocumentPostTrainingAsync: notification dispatch failed for DocumentId={DocumentId}, Recipient={Recipient}, Scenario={Scenario} -- the document action itself already committed successfully.",
+                    n.DocumentId, n.Recipient, n.Scenario);
+            }
+        }
+
+        return true;
     }
 
     public async Task<PaginationResult<dynamic>> GetAuthorizedDocumentsAsync(GetAuthorizedDocumentsDto input)

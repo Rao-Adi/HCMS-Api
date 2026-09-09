@@ -2131,21 +2131,41 @@ public class DocumentRequestComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
 
+            // Which of the 4 cabinet levels are actually enabled for this company -- mirrors the
+            // same fix in DocumentComponent.ExportMyDocumentsAsync; this export previously
+            // included all 4 unconditionally, e.g. a "Business Domain" column for companies that
+            // have that level turned off.
+            var activeCabinetLevels = (await _common.QueryAsync<string>(@"
+                SELECT Name FROM CabinetStructureTabsConfig
+                WHERE CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE;",
+                new { CompanyId })).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            bool showDivision = activeCabinetLevels.Contains("Division1111") || activeCabinetLevels.Any(n => n.StartsWith("Division", StringComparison.OrdinalIgnoreCase));
+            bool showDepartment = activeCabinetLevels.Any(n => n.StartsWith("Department", StringComparison.OrdinalIgnoreCase));
+            bool showSubDepartment = activeCabinetLevels.Any(n => n.StartsWith("SubDepartment", StringComparison.OrdinalIgnoreCase));
+            bool showBusinessDomain = activeCabinetLevels.Any(n => n.StartsWith("BusinessDomain", StringComparison.OrdinalIgnoreCase));
+
+            var cabinetColumnsSql = string.Concat(
+                showDivision ? @",division AS ""Division""" : "",
+                showDepartment ? @",department AS ""Department""" : "",
+                showSubDepartment ? @",subdepartment AS ""Sub-Department""" : "",
+                showBusinessDomain ? @",businessdomain AS ""Business Domain""" : "");
+
             // Limited to the same columns the "My Approvals – Request for Document Creation/Update"
             // grid shows (documentColumnDefsWithoutStatus in my-approval-request.ts) instead of
             // SELECT * — the export previously dumped every raw column from the underlying
             // function (ids, codes, internal flags, etc.) instead of matching what's on screen.
             // Dates are formatted in SQL to match the UI's "Mon DD, YYYY HH24:MI:SS" display.
+            // Headers below are derived automatically from whichever columns this SELECT actually
+            // returns, so omitting a disabled cabinet level's column here is enough to also drop
+            // it from the exported .xlsx.
             var dataSql = $@"SELECT
                     documenttype AS ""Document Type"",
                     requestnumber AS ""Request ID"",
                     documentname AS ""Document Name"",
                     justification AS ""Justification"",
-                    rowversion AS ""Proposed Version Number"",
-                    division AS ""Division"",
-                    department AS ""Department"",
-                    subdepartment AS ""Sub-Department"",
-                    businessdomain AS ""Business Domain"",
+                    rowversion AS ""Proposed Version Number""
+                    {cabinetColumnsSql},
                     createdby AS ""Request Created By"",
                     TO_CHAR(createdat, 'Mon DD, YYYY HH24:MI:SS') AS ""Request Created On"",
                     previousversioncreatedby AS ""Previous Version Created By"",
@@ -3671,7 +3691,11 @@ public class DocumentRequestComponent
                             NULLIF(TRIM(@Decision), '') IS NULL
                             OR @Decision = 'All'
                             OR (
-                                @Decision IN ('Rejected', 'Reworked')
+                                @Decision = 'Rejected'
+                                AND wes.Decision = 'Rejected'
+                            )
+                            OR (
+                                @Decision = 'Reworked'
                                 AND wes.Decision = 'Reworked'
                             )
                             OR (
@@ -3778,7 +3802,11 @@ public class DocumentRequestComponent
                         NULLIF(TRIM(@Decision), '') IS NULL
                         OR @Decision = 'All'
                         OR (
-                            @Decision IN ('Rejected', 'Reworked')
+                            @Decision = 'Rejected'
+                            AND wes.Decision = 'Rejected'
+                        )
+                        OR (
+                            @Decision = 'Reworked'
                             AND wes.Decision = 'Reworked'
                         )
                         OR (

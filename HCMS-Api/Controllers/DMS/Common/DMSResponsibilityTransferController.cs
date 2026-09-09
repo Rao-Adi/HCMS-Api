@@ -118,11 +118,24 @@ public class DMSResponsibilityTransferController : Controller
     {
         try
         {
+            var result = await _responsibilityTransferComponent.TakeActionAsync(input);
+
+            // Mirrors the valid Action values TakeActionAsync itself switches on
+            // (ResponsibilityTransferComponent.cs) so the message reflects what was actually
+            // done instead of a generic "Action taken successfully." regardless of outcome.
+            string message = input.Action?.Trim().ToUpperInvariant() switch
+            {
+                "APPROVE" => "Responsibility transfer approved successfully.",
+                "REJECT" => "Responsibility transfer rejected successfully.",
+                "REVERT" => "Responsibility transfer sent back for rework successfully.",
+                _ => "Action taken successfully."
+            };
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _responsibilityTransferComponent.TakeActionAsync(input),
-                Message = "Action taken successfully.",
+                Data = result,
+                Message = message,
                 Code = 200
             });
         }
@@ -155,7 +168,7 @@ public class DMSResponsibilityTransferController : Controller
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.CreateAsync(input),
-                Message = "Action taken successfully.",
+                Message = "Responsibility transfer created successfully.",
                 Code = 200
             });
         }
@@ -182,7 +195,7 @@ public class DMSResponsibilityTransferController : Controller
             {
                 Success = true,
                 Data = await _responsibilityTransferComponent.UpdateAsync(input),
-                Message = "Action taken successfully.",
+                Message = "Responsibility transfer updated successfully.",
                 Code = 200
             });
         }

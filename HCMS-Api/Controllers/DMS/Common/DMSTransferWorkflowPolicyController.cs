@@ -303,11 +303,24 @@ public class DMSTransferWorkflowPolicyController : Controller
     {
         try
         {
+            var result = await _transferWorkflowPolicyComponent.TakeActionAsync(input);
+
+            // Mirrors the valid Action values TakeActionAsync itself switches on
+            // (TransferWorkflowPolicyComponent.cs) so the message reflects what was actually
+            // done instead of a generic "Action submitted successfully." regardless of outcome.
+            string message = input.Action?.Trim().ToUpperInvariant() switch
+            {
+                "APPROVE" => "Responsibility transfer approved successfully.",
+                "REJECT" => "Responsibility transfer rejected successfully.",
+                "REVERT" => "Responsibility transfer sent back for rework successfully.",
+                _ => "Action submitted successfully."
+            };
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _transferWorkflowPolicyComponent.TakeActionAsync(input),
-                Message = "Action submitted successfully.",
+                Data = result,
+                Message = message,
                 Code = 200
             });
         }
