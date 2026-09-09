@@ -3887,10 +3887,31 @@ public class DocumentRequestComponent
                     eff.ChangedAt AS EffectiveOn,
                     COALESCE(efEmp.Name, eff.ChangedBy) AS EffectiveBy,
                     curState.Name AS CurrentStatus,
-                    NOT EXISTS (
-                        SELECT 1 FROM Documents child
-                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
-                    ) AS IsCurrentVersion
+                    -- A document chain is meant to be linear, but nothing DB-side stops two
+                    -- separate Revision requests from both being approved against the same
+                    -- ParentDocumentId (a data/workflow gap, not something this read-only query
+                    -- can prevent) -- when that happens there are two leaf documents (neither
+                    -- has a child yet) instead of one, and the old NOT EXISTS-child check
+                    -- marked both as current. Ranking leaves with EFFECTIVE first, then most
+                    -- recently created, guarantees exactly one row is ever current even when
+                    -- that branching exists, without needing to touch how revisions get created.
+                    (
+                        ROW_NUMBER() OVER (
+                            ORDER BY
+                                CASE
+                                    WHEN NOT EXISTS (
+                                        SELECT 1 FROM Documents child
+                                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
+                                    ) AND curState.Code = 'EFFECTIVE' THEN 0
+                                    WHEN NOT EXISTS (
+                                        SELECT 1 FROM Documents child
+                                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
+                                    ) THEN 1
+                                    ELSE 2
+                                END ASC,
+                                d.CreatedAt DESC
+                        )
+                    ) = 1 AS IsCurrentVersion
                 FROM Chain c
                 INNER JOIN Documents d ON d.Id = c.Id AND d.CompanyId = @CompanyId
                 LEFT JOIN DocumentRequests dr ON dr.Id = d.RequestId AND dr.CompanyId = @CompanyId
@@ -3941,13 +3962,16 @@ public class DocumentRequestComponent
                     LIMIT 1
                 ) efEmp ON TRUE
                 LEFT JOIN LATERAL (
-                    SELECT ds.Name
+                    SELECT ds.Name, ds.Code
                     FROM DocumentStateHistory dsh
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId
                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                 ) curState ON TRUE
-                ORDER BY d.CreatedAt ASC;";
+                -- Current version pinned to the top (reuses the IsCurrentVersion column computed
+                -- above rather than repeating its ranking logic); everything else stays in its
+                -- existing chronological order below it.
+                ORDER BY IsCurrentVersion DESC, d.CreatedAt ASC;";
 
             return await _common.QueryAsync<RevisionHistoryItemDto>(sql, new { DocumentId = documentId, CompanyId });
         }
