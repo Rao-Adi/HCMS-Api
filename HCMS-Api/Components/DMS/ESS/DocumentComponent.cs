@@ -621,6 +621,20 @@ public class DocumentComponent
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
             //-------------------------------------------------
+            // 0️⃣ "Create Document Directly" -- the caller skipped the Request/approval stage
+            // entirely and never got a DocumentId from it, so one gets created right here,
+            // inside this same transaction, before anything below (template attach, attributes,
+            // training users, workflow kickoff) runs against it exactly as it would for a
+            // request-driven document. When DocumentId is already a real id (today's flow),
+            // this never runs and nothing below changes.
+            //-------------------------------------------------
+
+            if (input.DocumentId <= 0)
+            {
+                input.DocumentId = await CreateBareDocumentForSubmissionAsync(input, CompanyId, empCode, transaction);
+            }
+
+            //-------------------------------------------------
             // 1️⃣ Lock Document
             //-------------------------------------------------
 
@@ -814,6 +828,51 @@ public class DocumentComponent
                 throw new CustomException("Workflow misconfigured — no steps copied.", 404);
 
             //-------------------------------------------------
+            // 6.5️⃣ Ad-hoc Approver(s) -- this-document-only, appended after every policy-defined
+            // step. Deliberately placed after the "no steps copied" check above: an ad-hoc
+            // approver is additive only, never a substitute for a genuinely configured policy, so
+            // a document type with zero configured steps still fails exactly as it does today
+            // even if one was supplied.
+            //-------------------------------------------------
+
+            if (input.AdHocApprovers != null && input.AdHocApprovers.Any())
+            {
+                foreach (var adHoc in input.AdHocApprovers)
+                {
+                    var employeeActive = await _common.ExecuteScalarAsync<int>(@"
+                        SELECT COUNT(1)
+                        FROM tblEmployee e
+                        INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
+                        WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
+                          AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE;",
+                        new { CompanyId, EmployeeCode = adHoc.EmployeeCode }, transaction);
+
+                    if (employeeActive < 1)
+                        throw new CustomException($"Selected ad-hoc approver ({adHoc.EmployeeCode}) was not found or is not active.", 404);
+
+                    string actualUserId = adHoc.EmployeeCode;
+                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                        SELECT EmployeeTo FROM ResponsibilityTransfers
+                        WHERE EmployeeFrom = @EmpFrom
+                        AND CompanyId = @CompanyId AND Status = 2
+                        AND EffectiveDateFrom <= CURRENT_DATE
+                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                        ORDER BY Id DESC LIMIT 1;",
+                        new { EmpFrom = actualUserId, CompanyId }, transaction);
+
+                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+                    var adHocStepDefId = await EnsureAdHocApproverStepDefinitionAsync(CompanyId, empCode, actualUserId, transaction);
+
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = adHocStepDefId, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
+                    runningStepOrder++;
+                }
+            }
+
+            //-------------------------------------------------
             // 7️⃣ Activate First Step
             //-------------------------------------------------
 
@@ -910,6 +969,189 @@ public class DocumentComponent
         return fileName;
     }
 
+    // "Create Document Directly" path -- called from SubmitDocumentAsync only when the caller
+    // doesn't supply an existing DocumentId (input.DocumentId <= 0), i.e. the user skipped the
+    // Request/approval stage entirely. Mirrors DocumentRequestComponent's
+    // CreateDocumentFromApprovedRequestAsync Documents/DocumentVersions/DocumentStateHistory
+    // insert shape, minus the Request/ParentDocumentId/distribution-promotion parts that don't
+    // apply (there is no Request at all for this path -- RequestId and ParentDocumentId are left
+    // NULL, same convention DocumentCreateDto's legacy-upload path already uses). Runs inside
+    // SubmitDocumentAsync's own transaction, so any failure anywhere still rolls back everything
+    // -- nothing is left half-created if e.g. the workflow-policy resolution fails afterward.
+    private async Task<int> CreateBareDocumentForSubmissionAsync(SubmitDocument input, int companyId, string empCode, IDbTransaction transaction)
+    {
+        if (string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+            throw new CustomException("Document Type is required.", 400);
+        if (string.IsNullOrWhiteSpace(input.DocumentName))
+            throw new CustomException("Document Name is required.", 400);
+
+        // Request-driven creation skips this check because the Request itself was already
+        // vetted before approval; this path takes freshly-typed, unvetted input instead.
+        var duplicateCount = await _common.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(1) FROM Documents
+            WHERE CompanyId = @CompanyId AND Title = @Title AND IsDeleted = FALSE;",
+            new { CompanyId = companyId, Title = input.DocumentName }, transaction);
+        if (duplicateCount > 0)
+            throw new CustomException("A document with this name already exists.", 409);
+
+        var reviewYears = await _common.QueryFirstOrDefaultAsync<int?>(@"
+            SELECT ReviewPeriodYears
+            FROM DocumentReviewPolicies
+            WHERE DocumentTypeCode = @DocumentTypeCode
+              AND CompanyId = @CompanyId
+              AND IsActive = TRUE AND IsDeleted = FALSE
+            LIMIT 1;",
+            new { input.DocumentTypeCode, CompanyId = companyId }, transaction);
+
+        DateTime? nextReviewDate = null;
+        if (reviewYears.HasValue && reviewYears.Value > 0)
+            nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
+
+        string documentNumber = await GenerateDocumentNumberAsync(
+            companyId,
+            input.DivisionCode,
+            input.DepartmentCode,
+            input.SubDepartmentCode,
+            input.DocumentTypeCode,
+            parentDocumentId: null,
+            input.BusinessDomainCode,
+            transaction);
+
+        var documentId = await _common.ExecuteScalarAsync<int>(@"
+            INSERT INTO Documents
+            (
+                CompanyId, DocumentNumber, DocumentTypeCode, Title, NextReviewDate, DivisionCode,
+                DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentNumber, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode,
+                @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @CreatedBy, @LastModifiedBy
+            )
+            RETURNING Id;",
+            new
+            {
+                CompanyId = companyId,
+                DocumentNumber = documentNumber,
+                input.DocumentTypeCode,
+                Title = input.DocumentName,
+                NextReviewDate = nextReviewDate,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                CreatedBy = empCode,
+                LastModifiedBy = empCode
+            }, transaction);
+
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, CreatedBy, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, '1.0', 1, @CreatedBy, @LastModifiedBy
+            );",
+            new { CompanyId = companyId, DocumentId = documentId, CreatedBy = empCode, LastModifiedBy = empCode }, transaction);
+
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentStateHistory
+            (
+                CompanyId, DocumentId, ToStateId, ChangedBy
+            )
+            VALUES
+            (
+                @CompanyId, @DocumentId, 1, @ChangedBy
+            );",
+            new { CompanyId = companyId, DocumentId = documentId, ChangedBy = empCode }, transaction);
+
+        return documentId;
+    }
+
+    // Resolves (creating if needed) a real, fully-populated WorkflowStepDefinitions row for an
+    // ad-hoc, this-document-only approver -- WorkflowExecutionSteps.StepDefinitionId is NOT NULL
+    // in the live schema (verified directly, no migration made), and several existing readers
+    // (the Approval History modal's data source, the Word-merge signature block) LEFT JOIN
+    // WorkflowStepDefinitions and display its StepType/role name, so a real row here means they
+    // show "Ad-hoc Approver" correctly with zero changes needed in any of those consumers.
+    //
+    // The sentinel WorkflowPolicies/WorkflowPolicyVersions pair this hangs off is created once
+    // (IsActive=FALSE, IsDeleted=TRUE, no cabinet/document-type scoping) and is invisible to every
+    // policy-resolution query in the app (this method's own lookup above, CreateWorkflowStepsByFilterAsync,
+    // the admin Workflow Policies list) since they all filter on IsActive/IsDeleted -- it can never
+    // be resolved as a real policy for a future document, and never appears in any admin listing.
+    // Mirrors the mechanics (not the intent) of WorkflowStepComponent.CreateWorkflowStepsByFilterAsync's
+    // own lazy "System Generated" policy creation.
+    //
+    // A fresh WorkflowStepDefinitions row is inserted every call (never reused/looked-up) --
+    // simplest correct option given this app's document volume makes the extra rows negligible,
+    // and avoids any lookup/race complexity for what is, by definition, a one-off addition.
+    private async Task<int> EnsureAdHocApproverStepDefinitionAsync(int companyId, string empCode, string employeeCode, IDbTransaction transaction)
+    {
+        const string sentinelPolicyName = "System Generated - Ad-hoc Approvers";
+
+        var policyId = await _common.ExecuteScalarAsync<int?>(@"
+            SELECT Id FROM WorkflowPolicies
+            WHERE CompanyId = @CompanyId AND EntityType = 'Document' AND Name = @PolicyName
+            LIMIT 1;",
+            new { CompanyId = companyId, PolicyName = sentinelPolicyName }, transaction);
+
+        if (policyId == null)
+        {
+            policyId = await _common.ExecuteScalarAsync<int>(@"
+                INSERT INTO WorkflowPolicies
+                (
+                    CompanyId, Name, EntityType, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                    DocumentTypeCode, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                )
+                VALUES
+                (
+                    @CompanyId, @PolicyName, 'Document', NULL, NULL, NULL, NULL,
+                    NULL, FALSE, TRUE, NOW(), @CreatedBy, NOW(), @CreatedBy
+                )
+                RETURNING Id;",
+                new { CompanyId = companyId, PolicyName = sentinelPolicyName, CreatedBy = empCode }, transaction);
+        }
+
+        var versionId = await _common.ExecuteScalarAsync<int?>(@"
+            SELECT Id FROM WorkflowPolicyVersions
+            WHERE CompanyId = @CompanyId AND WorkflowPolicyId = @PolicyId
+            LIMIT 1;",
+            new { CompanyId = companyId, PolicyId = policyId }, transaction);
+
+        if (versionId == null)
+        {
+            versionId = await _common.ExecuteScalarAsync<int>(@"
+                INSERT INTO WorkflowPolicyVersions
+                (
+                    CompanyId, WorkflowPolicyId, VersionNumber, IsActive, CreatedAt, CreatedBy
+                )
+                VALUES
+                (
+                    @CompanyId, @PolicyId, 1, FALSE, NOW(), @CreatedBy
+                )
+                RETURNING Id;",
+                new { CompanyId = companyId, PolicyId = policyId, CreatedBy = empCode }, transaction);
+        }
+
+        var stepDefId = await _common.ExecuteScalarAsync<int>(@"
+            INSERT INTO WorkflowStepDefinitions
+            (
+                CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId,
+                RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+            )
+            VALUES
+            (
+                @CompanyId, @VersionId, 1, 1, 'Ad-hoc Approver', NULL, NULL, @EmployeeCode,
+                TRUE, FALSE, TRUE, NOW(), @CreatedBy, NOW(), @CreatedBy
+            )
+            RETURNING Id;",
+            new { CompanyId = companyId, VersionId = versionId, EmployeeCode = employeeCode, CreatedBy = empCode }, transaction);
+
+        return stepDefId;
+    }
+
     // A Document created from an approved Request may not have had its template attached yet
     // (the Request Creation form allows submitting without one). This lets it be attached here,
     // at Document Creation/Submission time, instead. A file and typed/existing content are
@@ -976,6 +1218,204 @@ public class DocumentComponent
         {
             throw new CustomException("A document file or content is required before this document can be submitted.", 400);
         }
+    }
+
+    // Relocated here from DocumentRequestComponent (which still calls this via its injected
+    // _documentComponent) so DocumentComponent's own direct-create path (see
+    // CreateBareDocumentForSubmissionAsync) can call it too without a circular DI reference
+    // (DocumentRequestComponent already depends on DocumentComponent, not the reverse).
+    public async Task<string> GenerateDocumentNumberAsync(int companyId, string divisionCode, string departmentCode, string subDepartmentCode, string documentTypeCode, int? parentDocumentId, string businessDomainCode = null, IDbTransaction transaction = null)
+    {
+        // 1. Lookup Document Type Name to use as TYP
+        var docTypeName = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Name FROM documenttypes
+            WHERE Code = @DocumentTypeCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1",
+            new { DocumentTypeCode = documentTypeCode, CompanyId = companyId }, transaction);
+
+        if (string.IsNullOrWhiteSpace(docTypeName))
+            docTypeName = "DOC"; // fallback
+
+        // 2. Lookup Names for Cabinet Hierarchy
+        var cabinetNames = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT
+                (SELECT Name FROM divisions WHERE Code = @DivisionCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS DivisionName,
+                (SELECT Name FROM departments WHERE Code = @DepartmentCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS DepartmentName,
+                (SELECT Name FROM subdepartments WHERE Code = @SubDepartmentCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS SubDepartmentName,
+                (SELECT Name FROM businessdomains WHERE Code = @BusinessDomainCode AND CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE LIMIT 1) AS BusinessDomainName",
+            new
+            {
+                DivisionCode = divisionCode,
+                DepartmentCode = departmentCode,
+                SubDepartmentCode = subDepartmentCode,
+                BusinessDomainCode = businessDomainCode,
+                CompanyId = companyId
+            }, transaction);
+
+        string GetAbbreviation(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            name = name.Trim().ToUpper();
+
+            // Remove noise words
+            var noiseWords = new[] { "DIVISION", "DEPARTMENT", "SUB-DEPARTMENT", "SUBDEPARTMENT", "SECTION", "DOMAIN" };
+            foreach (var nw in noiseWords)
+            {
+                name = name.Replace(nw, "").Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            // Common dictionary mappings
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "MARKETING", "MKT" },
+                { "QUALITY ASSURANCE", "QA" },
+                { "SOFTWARE DEVELOPMENT", "SD" },
+                { "INFORMATION TECHNOLOGY", "IT" },
+                { "HUMAN RESOURCES", "HR" },
+                { "PRODUCTION", "PROD" },
+                { "FINANCE", "FIN" },
+                { "TEST", "TST" }
+            };
+
+            if (mappings.TryGetValue(name, out string mapped))
+                return mapped;
+
+            // If it's already a short abbreviation
+            if (name.Length <= 4 && name.All(char.IsLetter))
+                return name;
+
+            var words = name.Split(new[] { ' ', '-', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 1)
+            {
+                var w = words[0];
+                return w.Length > 3 ? w.Substring(0, 3) : w;
+            }
+
+            var abbr = "";
+            foreach (var word in words)
+            {
+                if (char.IsLetterOrDigit(word[0]))
+                {
+                    abbr += word[0];
+                }
+            }
+            return abbr;
+        }
+
+        string div = null;
+        string dpt = null;
+        string sct = null;
+        string bsd = null;
+
+        if (cabinetNames != null)
+        {
+            div = GetAbbreviation((string)cabinetNames.divisionname);
+            dpt = GetAbbreviation((string)cabinetNames.departmentname);
+            sct = GetAbbreviation((string)cabinetNames.subdepartmentname);
+            bsd = GetAbbreviation((string)cabinetNames.businessdomainname);
+        }
+
+        string typ = GetAbbreviation(docTypeName) ?? docTypeName.ToUpper();
+
+        // 3. If it is an annexure (parentDocumentId is provided and > 0)
+        if (parentDocumentId.HasValue && parentDocumentId.Value > 0)
+        {
+            var parentDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                 SELECT DocumentNumber FROM documents
+                 WHERE Id = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+            if (parentDoc == null || string.IsNullOrWhiteSpace((string)parentDoc.documentnumber))
+                throw new Exception("Parent document not found for annexure generation.");
+
+            string parentNum = (string)parentDoc.documentnumber;
+
+            // Query existing annexures for this parent to determine the next letter suffix
+            var existingAnnexures = await _common.QueryAsync<string>(@"
+                 SELECT DocumentNumber FROM documents
+                 WHERE ParentDocumentId = @ParentId AND CompanyId = @CompanyId AND IsDeleted = FALSE",
+                new { ParentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+            var usedLetters = new HashSet<char>();
+            foreach (var annNum in existingAnnexures)
+            {
+                if (string.IsNullOrWhiteSpace(annNum)) continue;
+                var parts = annNum.Split('-');
+                var lastPart = parts[parts.Length - 1];
+                if (lastPart.Length == 1 && char.IsLetter(lastPart[0]))
+                {
+                    usedLetters.Add(char.ToUpper(lastPart[0]));
+                }
+            }
+
+            char nextLetter = 'A';
+            for (char c = 'A'; c <= 'Z'; c++)
+            {
+                if (!usedLetters.Contains(c))
+                {
+                    nextLetter = c;
+                    break;
+                }
+            }
+
+            return $"{parentNum}-{nextLetter}";
+        }
+
+        // 4. Otherwise, normal document numbering: Build prefix using only linked cabinet segments
+        var segments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(div)) segments.Add(div);
+        if (!string.IsNullOrWhiteSpace(dpt)) segments.Add(dpt);
+        if (!string.IsNullOrWhiteSpace(sct)) segments.Add(sct);
+        if (!string.IsNullOrWhiteSpace(bsd)) segments.Add(bsd);
+        segments.Add(typ);
+
+        string prefix = string.Join("-", segments) + "-";
+
+        var existingDocs = await _common.QueryAsync<string>(@"
+            SELECT DocumentNumber FROM documents
+            WHERE CompanyId = @CompanyId
+              AND (@DivisionCode IS NULL AND DivisionCode IS NULL OR DivisionCode = @DivisionCode)
+              AND (@DepartmentCode IS NULL AND DepartmentCode IS NULL OR DepartmentCode = @DepartmentCode)
+              AND (@SubDepartmentCode IS NULL AND SubDepartmentCode IS NULL OR SubDepartmentCode = @SubDepartmentCode)
+              AND (@BusinessDomainCode IS NULL AND BusinessDomainCode IS NULL OR BusinessDomainCode = @BusinessDomainCode)
+              AND DocumentTypeCode = @DocumentTypeCode
+              AND DocumentNumber LIKE @Prefix || '%'
+              AND IsDeleted = FALSE",
+            new
+            {
+                CompanyId = companyId,
+                DivisionCode = divisionCode,
+                DepartmentCode = departmentCode,
+                SubDepartmentCode = subDepartmentCode,
+                BusinessDomainCode = businessDomainCode,
+                DocumentTypeCode = documentTypeCode,
+                Prefix = prefix
+            }, transaction);
+
+        int maxSeq = 0;
+        foreach (var docNum in existingDocs)
+        {
+            if (string.IsNullOrWhiteSpace(docNum)) continue;
+            if (docNum.Length <= prefix.Length) continue;
+            var suffix = docNum.Substring(prefix.Length);
+            if (suffix.Length >= 3)
+            {
+                var seqStr = suffix.Substring(0, 3);
+                if (int.TryParse(seqStr, out int seqVal))
+                {
+                    if (seqVal > maxSeq)
+                    {
+                        maxSeq = seqVal;
+                    }
+                }
+            }
+        }
+
+        int nextSeq = maxSeq + 1;
+        string seqPart = nextSeq.ToString("D3");
+        return $"{prefix}{seqPart}";
     }
 
     // ================================================================================

@@ -148,6 +148,25 @@ public class SubmitDocument
     // DocumentFile for a file-based template (PDF/Word), ProposedContent for an HTML template.
     public IFormFile? DocumentFile { get; set; }
     public string? ProposedContent { get; set; }
+
+    // Only populated (and only used) when DocumentId is omitted/0 -- i.e. the "Create Document
+    // Directly" path that skips the Request/approval stage entirely. When DocumentId is a real
+    // existing id (today's request-driven flow), these are ignored.
+    public string? DocumentTypeCode { get; set; }
+    public string? DocumentName { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
+
+    // This-document-only approver(s), appended after the policy-resolved workflow steps.
+    // Never persisted to WorkflowPolicies/WorkflowStepDefinitions -- see
+    // DocumentComponent.EnsureAdHocApproverStepDefinitionAsync.
+    public List<AdHocApproverDto>? AdHocApprovers { get; set; }
+}
+public class AdHocApproverDto
+{
+    public string EmployeeCode { get; set; } = null!;
 }
 public class TraningUsers
 {

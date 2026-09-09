@@ -293,6 +293,9 @@ public class DMSDocumentController : Controller
             if (Request.Form.TryGetValue("trainingusers", out var trainingUsersJson) && !string.IsNullOrWhiteSpace(trainingUsersJson))
                 input.TrainingUsers = JsonSerializer.Deserialize<List<TraningUsers>>(trainingUsersJson!, jsonOptions) ?? new();
 
+            if (Request.Form.TryGetValue("adhocapprovers", out var adHocApproversJson) && !string.IsNullOrWhiteSpace(adHocApproversJson))
+                input.AdHocApprovers = JsonSerializer.Deserialize<List<AdHocApproverDto>>(adHocApproversJson!, jsonOptions) ?? new();
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
