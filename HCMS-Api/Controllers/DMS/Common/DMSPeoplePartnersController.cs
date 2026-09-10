@@ -177,6 +177,27 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    [HttpGet("get-employee-role-by-code/{employeeCode}")]
+    public async Task<IActionResult> GetEmployeeRoleByCode(string employeeCode)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<string?>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetEmployeeRoleByCodeAsync(employeeCode),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-employees-by-divisionId/{divId}")]
     public async Task<IActionResult> GetEmployeesByDivisionId(int divId)
     {

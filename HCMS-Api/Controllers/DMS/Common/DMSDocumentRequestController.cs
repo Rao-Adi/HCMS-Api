@@ -541,7 +541,14 @@ public class DMSDocumentRequestController : Controller
                         fileBytes = await _documentRequestComponent.MergeDocumentRequestTemplateAsync(id, contentFileStream);
                     }
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    fileName = Path.GetFileNameWithoutExtension(filePath ?? request.RequestNumber ?? "Document") + ".docx";
+                    // A request drafted purely via the rich text editor (no file ever uploaded)
+                    // has no filePath to name the download after -- this used to fall straight
+                    // to request.RequestNumber (e.g. "DR-297.docx"), which is meaningless to the
+                    // approver compared to the request's own Document Name. Prefer that instead,
+                    // sanitized since it's free-text user input rather than an already-valid
+                    // filesystem name the way filePath/RequestNumber are.
+                    var sanitizedDocumentName = SanitizeForFileName(request.DocumentName);
+                    fileName = Path.GetFileNameWithoutExtension(filePath ?? sanitizedDocumentName ?? request.RequestNumber ?? "Document") + ".docx";
                 }
                 catch (Exception mergeEx)
                 {
@@ -584,6 +591,11 @@ public class DMSDocumentRequestController : Controller
 
             // Important for frontend reading of the File Name
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+            // This same URL (requestId never changes) can legitimately return different bytes
+            // and a different filename on a later call -- e.g. after a merge-vs-raw-file
+            // fallback path changes, or the draft's content is edited -- so the browser must
+            // never reuse a cached response for it.
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
 
             return File(fileBytes, contentType, fileName);
         }
@@ -599,6 +611,27 @@ public class DMSDocumentRequestController : Controller
             var response = HttpResponseCatchReturn.ReturnException(ex, new { });
             return StatusCode(response.Code, response);
         }
+    }
+
+    // Strips characters that aren't valid in a filesystem file name -- unlike filePath (already
+    // a real path) or RequestNumber (a generated code), DocumentName is free-text the user typed
+    // and could contain "/", ":", "?", etc. Returns null (not empty string) when nothing usable
+    // is left, so callers can still fall through to their own further fallback.
+    private static string? SanitizeForFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (System.Array.IndexOf(invalidChars, c) < 0)
+                sb.Append(c);
+        }
+
+        var result = sb.ToString().Trim();
+        return result.Length > 0 ? result : null;
     }
 
     [HttpPost("create-draft-document-request")]

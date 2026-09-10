@@ -296,6 +296,12 @@ public class DMSDocumentController : Controller
             if (Request.Form.TryGetValue("adhocapprovers", out var adHocApproversJson) && !string.IsNullOrWhiteSpace(adHocApproversJson))
                 input.AdHocApprovers = JsonSerializer.Deserialize<List<AdHocApproverDto>>(adHocApproversJson!, jsonOptions) ?? new();
 
+            if (Request.Form.TryGetValue("distributionlist", out var distributionListJson) && !string.IsNullOrWhiteSpace(distributionListJson))
+                input.DistributionList = JsonSerializer.Deserialize<List<DistributionListCreateDto>>(distributionListJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("userids", out var userIdsJson) && !string.IsNullOrWhiteSpace(userIdsJson))
+                input.UserIds = JsonSerializer.Deserialize<List<UserDistributionInputDto>>(userIdsJson!, jsonOptions) ?? new();
+
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
@@ -532,7 +538,14 @@ public class DMSDocumentController : Controller
                         fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream);
                     }
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    fileName = Path.GetFileNameWithoutExtension(filePath ?? request.DocumentNumber ?? "Document") + ".docx";
+                    // A document with no uploaded file (content saved purely via the rich text
+                    // editor) has no filePath to name the download after -- this used to fall
+                    // straight to request.DocumentNumber (a generated code, e.g.
+                    // "QA-QA-QA-SOP-018.docx"), meaningless compared to the document's own
+                    // Title. Prefer that instead, sanitized since it's free-text the user typed
+                    // rather than an already-valid filesystem name.
+                    var sanitizedTitle = SanitizeForFileName(request.Title);
+                    fileName = Path.GetFileNameWithoutExtension(filePath ?? sanitizedTitle ?? request.DocumentNumber ?? "Document") + ".docx";
                 }
                 catch (Exception mergeEx)
                 {
@@ -575,6 +588,11 @@ public class DMSDocumentController : Controller
 
             // Important for frontend reading of the File Name
             Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+            // This same URL (documentId never changes) can legitimately return different bytes
+            // and a different filename on a later call -- e.g. after a merge-vs-raw-file
+            // fallback path changes, or the document's content is edited -- so the browser must
+            // never reuse a cached response for it.
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
 
             return File(fileBytes, contentType, fileName);
         }
@@ -590,6 +608,27 @@ public class DMSDocumentController : Controller
             var response = HttpResponseCatchReturn.ReturnException(ex, new { });
             return StatusCode(response.Code, response);
         }
+    }
+
+    // Strips characters that aren't valid in a filesystem file name -- unlike filePath (already
+    // a real path) or DocumentNumber (a generated code), Title is free-text the user typed and
+    // could contain "/", ":", "?", etc. Returns null (not empty string) when nothing usable is
+    // left, so callers can still fall through to their own further fallback.
+    private static string? SanitizeForFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (System.Array.IndexOf(invalidChars, c) < 0)
+                sb.Append(c);
+        }
+
+        var result = sb.ToString().Trim();
+        return result.Length > 0 ? result : null;
     }
 
     [HttpPost("get-pending-authorizations")]

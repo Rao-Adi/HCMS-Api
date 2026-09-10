@@ -313,6 +313,26 @@ public class PeoplePartnersComponent
     //    };
     //}
 
+    // Lightweight lookup backing the "Additional Approver (This Document Only)" picker on
+    // Create/Update Document -- it shows the picked employee's real job Role (not a generic
+    // placeholder) in the Workflow Authorities preview, matching what that same person's Role
+    // will show once the document is actually submitted (DocumentComponent's
+    // EnsureAdHocApproverStepDefinitionAsync resolves it the same way, from the same tables).
+    public async Task<string?> GetEmployeeRoleByCodeAsync(string employeeCode)
+    {
+        string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(companyIdStr);
+
+        return await _common.ExecuteScalarAsync<string?>(@"
+            SELECT r.Name
+            FROM tblEmployee e
+            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
+            WHERE LPAD(@EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+            LIMIT 1;",
+            new { CompanyId = companyId, EmployeeCode = employeeCode });
+    }
+
     public async Task<dynamic> GetEmployeeByEmpIdAsync(int empId)
     {
         string companyIdStr = _utilities.GetCompanyId(_clientContextService.GetClientIP());

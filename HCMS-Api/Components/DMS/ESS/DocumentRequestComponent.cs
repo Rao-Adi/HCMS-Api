@@ -2713,9 +2713,16 @@ public class DocumentRequestComponent
             // 5️⃣ Map Distributions Into Each Request
             //-------------------------------------------------
 
+            // A request reopened here (e.g. Reverted for rework) may have already been
+            // submitted once before -- its "Any role" picks were expanded into concrete rows at
+            // that submission and never revert back on their own. Collapsing them back to
+            // "Any" for display here matches what a never-submitted Draft already shows. See
+            // DMSUtilities.CollapseAnyRoleGroups.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
+
             foreach (var request in requests)
             {
-                request.DistributionList = roleDistributions
+                var rawDistributionList = roleDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
                     .Select(x => new DistributionListReadDto
                     {
@@ -2736,6 +2743,7 @@ public class DocumentRequestComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
+                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
@@ -3150,7 +3158,13 @@ public class DocumentRequestComponent
                 LEFT JOIN DistributionTypes dt ON drd.DistributionType = dt.Id
                 WHERE drd.DocumentId = @DocumentId AND drd.CompanyId = @CompanyId;";
 
-            document.DistributionList = (await _common.QueryAsync<DistributionListReadDto>(roleDistSql, new { DocumentId = documentId, CompanyId })).ToList();
+            // DocumentRoleDistributions is a straight copy of whatever DocumentRequestRoleDistributions
+            // had at approval time (see CreateDocumentFromApprovedRequestAsync's "Promote Role
+            // Distribution" step) -- if the original Request had "Any role" picked, it was
+            // already expanded into one row per then-active role before being copied here, so
+            // this collapses it back to "Any" for display the same way the Request-side reads do.
+            var rawDocDistributionList = (await _common.QueryAsync<DistributionListReadDto>(roleDistSql, new { DocumentId = documentId, CompanyId })).ToList();
+            document.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDocDistributionList, await GetAllActiveRoleIdsAsync(CompanyId, null));
 
             // 3. Fetch User Distributions (Mapping DocumentUserDistributions -> DocumentRequestUserDistribution)
             var userDistSql = @"
@@ -3342,9 +3356,16 @@ public class DocumentRequestComponent
             // 5️⃣ Map Distributions Into Each Request
             //-------------------------------------------------
 
+            // A request reopened here (e.g. Reverted for rework) may have already been
+            // submitted once before -- its "Any role" picks were expanded into concrete rows at
+            // that submission and never revert back on their own. Collapsing them back to
+            // "Any" for display here matches what a never-submitted Draft already shows. See
+            // DMSUtilities.CollapseAnyRoleGroups.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
+
             foreach (var request in requests)
             {
-                request.DistributionList = roleDistributions
+                var rawDistributionList = roleDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
                     .Select(x => new DistributionListReadDto
                     {
@@ -3365,6 +3386,7 @@ public class DocumentRequestComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
+                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
@@ -4596,15 +4618,19 @@ public class DocumentRequestComponent
 
         var request = await GetByIdAsync(requestId);
 
-        // No DocumentNumber/Version/EffectiveDate/ReviewDate exist yet at this stage -- those
-        // are assigned when the request is actually approved and becomes a Document (see
-        // DocumentComponent.CreateAsync) -- so those placeholders are left blank/"N/A" rather
-        // than guessed at.
+        // No real DocumentNumber/EffectiveDate/ReviewDate exist yet at this stage -- those are
+        // only assigned when the request is actually approved and becomes a Document (see
+        // DocumentComponent.CreateAsync) -- so those placeholders stay blank/"N/A"/RequestNumber
+        // rather than guessed at. Version is different: ResolveInitialProposedVersionAsync
+        // already computes and stores a real "Proposed Version Number" on RowVersion at request
+        // creation time (the same value the "Proposed Version Number" grid column already shows
+        // an approver, e.g. "1.0") -- it just wasn't being read into the merge here, leaving the
+        // template's "Version No:" blank even though the request genuinely has one.
         var placeholders = new Dictionary<string, string>
         {
             { "DocumentTitle", request.DocumentName ?? "" },
             { "DocumentNumber", request.RequestNumber ?? "" },
-            { "Version", "" },
+            { "Version", request.RowVersion ?? "" },
             { "EffectiveDate", "N/A" },
             { "ReviewDate", "" },
             { "Supersede", "N/A" },

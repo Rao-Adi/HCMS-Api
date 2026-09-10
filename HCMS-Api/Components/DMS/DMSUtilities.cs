@@ -18,6 +18,8 @@ using Dapper;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using CommandFlags = StackExchange.Redis.CommandFlags;
 using HCMS_Api.Components.HCMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.Models;
+using System.Linq;
 
 namespace HCMS_Api.Components.DMS.Common
 {
@@ -2109,6 +2111,75 @@ namespace HCMS_Api.Components.DMS.Common
             {
                 return date;
             }
+        }
+
+        // A DistributionListReadDto with RoleId == null represents "Any role" -- but that's only
+        // ever stored that way for a request/document that's never been submitted
+        // (InsertDistributionsAsync keeps it unexpanded while still a Draft). The moment
+        // something is actually submitted, "Any" gets expanded into one concrete row per
+        // then-active role, and that expansion is irreversible in the DB -- nothing records
+        // "these N rows all came from one Any pick". Every screen that displays a
+        // previously-submitted request/document's distribution list would otherwise show N
+        // separate role rows instead of the single "Any" the user actually chose (confirmed
+        // live: a Reverted-for-rework request reopened for editing showed every individual role
+        // in the grid, even though picking "Any" is correctly preserved for a still-Draft
+        // request that was never submitted).
+        //
+        // Restores that intent for display: any group of rows sharing the same cabinet scope +
+        // distribution type, whose RoleIds cover every currently-active role, collapses back
+        // into one synthetic "Any" row. Used by every place that reads back a saved
+        // Role Distribution list for display/editing -- Request-level
+        // (DocumentRequestRoleDistributions) and Document-level (DocumentRoleDistributions)
+        // alike, since the Document-level table is a straight copy of whatever the Request had
+        // at approval time (see CreateDocumentFromApprovedRequestAsync's "Promote Role
+        // Distribution" step) and carries the same already-expanded rows forward.
+        public static List<DistributionListReadDto> CollapseAnyRoleGroups(List<DistributionListReadDto> rows, IEnumerable<int> allActiveRoleIds)
+        {
+            if (rows == null || rows.Count == 0)
+                return rows ?? new List<DistributionListReadDto>();
+
+            var activeSet = new HashSet<int>(allActiveRoleIds ?? Enumerable.Empty<int>());
+            if (activeSet.Count == 0)
+                return rows;
+
+            var result = new List<DistributionListReadDto>();
+            var groups = rows.GroupBy(r => new { r.DivisionCode, r.DepartmentCode, r.SubDepartmentCode, r.BusinessDomainCode, r.DistributionTypeId });
+
+            foreach (var group in groups)
+            {
+                var groupList = group.ToList();
+                var alreadyAny = groupList.Any(g => !g.RoleId.HasValue);
+                var groupRoleIds = groupList.Where(g => g.RoleId.HasValue).Select(g => g.RoleId!.Value).ToHashSet();
+
+                if (!alreadyAny && groupRoleIds.Count > 0 && activeSet.SetEquals(groupRoleIds))
+                {
+                    var first = groupList[0];
+                    result.Add(new DistributionListReadDto
+                    {
+                        Id = first.Id,
+                        DocumentRequestId = first.DocumentRequestId,
+                        CompanyId = first.CompanyId,
+                        Company = first.Company,
+                        RoleId = null,
+                        Role = "Any",
+                        DistributionTypeId = first.DistributionTypeId,
+                        DistributionType = first.DistributionType,
+                        Division = first.Division,
+                        DivisionCode = first.DivisionCode,
+                        Department = first.Department,
+                        DepartmentCode = first.DepartmentCode,
+                        SubDepartment = first.SubDepartment,
+                        SubDepartmentCode = first.SubDepartmentCode,
+                        BusinessDomain = first.BusinessDomain,
+                        BusinessDomainCode = first.BusinessDomainCode,
+                    });
+                }
+                else
+                {
+                    result.AddRange(groupList);
+                }
+            }
+            return result;
         }
 
         public DataSet CheckRightsForDashboardButtonESSPORTAL(string Applicationcode, string Mode, int companyId, string userId)

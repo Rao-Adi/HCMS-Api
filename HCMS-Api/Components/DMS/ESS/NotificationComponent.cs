@@ -114,7 +114,22 @@ public class NotificationComponent
 
     private (string Title, string Message, string RelatedEntityType, string RedirectionUrl) GetNotificationDetails(NotificationScenario scenario, Dictionary<string, string> p)
     {
-        string Get(string key) => p != null && p.TryGetValue(key, out var val) ? val : $"[{key}]";
+        // Some placeholders (e.g. Observation, the reason typed into a Reject/Revert-for-rework
+        // action) come from a rich-text editor and arrive here as raw HTML, e.g.
+        // "<p>reverted test</p>" -- confirmed directly against a live notification's stored
+        // Message. These messages are rendered as plain text, so that HTML was never being
+        // interpreted as markup by whatever built the message string; the *symptom* users saw
+        // (a blank line then a lone ".") came from wherever the notification bell/toast DOES
+        // render it as HTML, where </p> reads as a real paragraph break, stranding the message
+        // template's own trailing "." on its own line below it. Stripping tags here (not at
+        // every call site that builds a placeholders dict) fixes every scenario/placeholder in
+        // one place, including any future one that happens to carry HTML through the same way.
+        string Get(string key)
+        {
+            if (p == null || !p.TryGetValue(key, out var val)) return $"[{key}]";
+            val = System.Text.RegularExpressions.Regex.Replace(val, "<[^>]*>", " ");
+            return System.Text.RegularExpressions.Regex.Replace(val, @"\s+", " ").Trim();
+        }
 
         return scenario switch
         {

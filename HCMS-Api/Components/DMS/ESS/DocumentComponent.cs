@@ -10,6 +10,7 @@ using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.Common.Models.Enums;
+using Microsoft.Extensions.DependencyInjection;
 using OfficeOpenXml;
 using System.Data;
 using System.Text.Json;
@@ -33,6 +34,7 @@ public class DocumentComponent
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
     private readonly WorkflowStepComponent _workflowStepComponent;
     private readonly AuditLogComponent _auditLogComponent;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     public DocumentComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -45,7 +47,8 @@ public class DocumentComponent
         NotificationComponent notificationComponent,
         PeoplePartnersComponent peoplePartnersComponent,
         WorkflowStepComponent workflowStepComponent,
-        AuditLogComponent auditLogComponent
+        AuditLogComponent auditLogComponent,
+        IServiceScopeFactory serviceScopeFactory
         )
     {
         _http = http;
@@ -60,6 +63,7 @@ public class DocumentComponent
         _peoplePartnersComponent = peoplePartnersComponent;
         _workflowStepComponent = workflowStepComponent;
         _auditLogComponent = auditLogComponent;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     // Full current-state snapshot of a document for the audit log -- see
@@ -632,6 +636,13 @@ public class DocumentComponent
             if (input.DocumentId <= 0)
             {
                 input.DocumentId = await CreateBareDocumentForSubmissionAsync(input, CompanyId, empCode, transaction);
+
+                // Document Users / Distribution List -- the direct-create equivalent of what
+                // CreateDocumentFromApprovedRequestAsync's own "Promote Role/User Distribution"
+                // steps do when a Request-driven document is approved. There's no Request here
+                // to promote from, so this inserts straight into DocumentRoleDistributions/
+                // DocumentUserDistributions instead of the DocumentRequest* tables.
+                await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
             }
 
             //-------------------------------------------------
@@ -984,6 +995,11 @@ public class DocumentComponent
             throw new CustomException("Document Type is required.", 400);
         if (string.IsNullOrWhiteSpace(input.DocumentName))
             throw new CustomException("Document Name is required.", 400);
+        // Matches the Document Request flow's own "Please enter Justification" requirement
+        // (document-request-form.ts) -- this path is the direct-create equivalent of that
+        // form, so it carries the same requirement.
+        if (string.IsNullOrWhiteSpace(input.Justification))
+            throw new CustomException("Justification is required.", 400);
 
         // Request-driven creation skips this check because the Request itself was already
         // vetted before approval; this path takes freshly-typed, unvetted input instead.
@@ -1021,12 +1037,12 @@ public class DocumentComponent
             INSERT INTO Documents
             (
                 CompanyId, DocumentNumber, DocumentTypeCode, Title, NextReviewDate, DivisionCode,
-                DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy, LastModifiedBy
+                DepartmentCode, SubDepartmentCode, BusinessDomainCode, Justification, CreatedBy, LastModifiedBy
             )
             VALUES
             (
                 @CompanyId, @DocumentNumber, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode,
-                @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @CreatedBy, @LastModifiedBy
+                @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Justification, @CreatedBy, @LastModifiedBy
             )
             RETURNING Id;",
             new
@@ -1040,6 +1056,7 @@ public class DocumentComponent
                 input.DepartmentCode,
                 input.SubDepartmentCode,
                 input.BusinessDomainCode,
+                input.Justification,
                 CreatedBy = empCode,
                 LastModifiedBy = empCode
             }, transaction);
@@ -1067,6 +1084,131 @@ public class DocumentComponent
             new { CompanyId = companyId, DocumentId = documentId, ChangedBy = empCode }, transaction);
 
         return documentId;
+    }
+
+    private async Task<List<int>> GetAllActiveRoleIdsAsync(int companyId, IDbTransaction transaction)
+    {
+        var roleIds = await _common.QueryAsync<int>(@"
+            SELECT DISTINCT a.roleid
+            FROM tblempjobprofile a
+            INNER JOIN tblsetupsdetail b ON a.roleid = b.sdlid
+            WHERE b.smsid = 189 AND a.roleid IS NOT NULL AND a.CompanyId = @CompanyId AND a.Active = TRUE;",
+            new { CompanyId = companyId }, transaction);
+        return roleIds.ToList();
+    }
+
+    // Document-scoped equivalent of DocumentRequestComponent.InsertDistributionsAsync -- targets
+    // DocumentRoleDistributions/DocumentUserDistributions (keyed by DocumentId) instead of the
+    // DocumentRequest* tables. These are the SAME tables CreateDocumentFromApprovedRequestAsync's
+    // own "Promote Role/User Distribution" steps populate when a Request-driven document is
+    // approved -- inserted directly here instead since a direct-create submission has no Request
+    // to promote from. Always expands "Any role" (null RoleId) into every active role, since
+    // there's no separate Draft stage here to defer that to -- mirrors every Request-side
+    // caller's expandAnyRole:true at actual submission time.
+    private async Task InsertDocumentDistributionsAsync(
+        int companyId,
+        int documentId,
+        IEnumerable<DistributionListCreateDto>? roles,
+        IEnumerable<UserDistributionInputDto>? users,
+        string empCode,
+        IDbTransaction transaction)
+    {
+        if (roles?.Any() == true)
+        {
+            // Cached across the loop so multiple "Any role" rows in one submission only hit the
+            // DB once.
+            List<int>? allRoleIds = null;
+
+            foreach (var d in roles)
+            {
+                var targetRoleIds = d.RoleId.HasValue
+                    ? new List<int?> { d.RoleId }
+                    : (allRoleIds ??= await GetAllActiveRoleIdsAsync(companyId, transaction))
+                        .Select(r => (int?)r).ToList();
+
+                foreach (var roleId in targetRoleIds)
+                {
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO DocumentRoleDistributions
+                        (CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
+                         BusinessDomainCode, RoleId, DistributionType, CreatedBy)
+                        VALUES
+                        (@CompanyId, @DocumentId, @DivisionCode, @DepartmentCode, @SubDepartmentCode,
+                         @BusinessDomainCode, @RoleId, @DistributionTypeId, @CreatedBy);",
+                    new
+                    {
+                        CompanyId = companyId,
+                        DocumentId = documentId,
+                        d.DivisionCode,
+                        d.DepartmentCode,
+                        d.SubDepartmentCode,
+                        d.BusinessDomainCode,
+                        RoleId = roleId,
+                        d.DistributionTypeId,
+                        CreatedBy = empCode
+                    }, transaction);
+                }
+            }
+        }
+
+        if (users?.Any() == true)
+        {
+            foreach (var u in users)
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentUserDistributions
+                    (CompanyId, DocumentId, EmployeeCode, CreatedBy)
+                    VALUES
+                    (@CompanyId, @DocumentId, @EmployeeCode, @CreatedBy);",
+                new
+                {
+                    CompanyId = companyId,
+                    DocumentId = documentId,
+                    u.EmployeeCode,
+                    CreatedBy = empCode
+                }, transaction);
+            }
+        }
+
+        //-------------------------------------------------
+        // Auto-expand roles into specific users -- mirrors InsertDistributionsAsync's own
+        // role-to-employee expansion, minus the cabinet-scope/RoleId columns
+        // DocumentUserDistributions doesn't have (unlike its DocumentRequestUserDistributions
+        // counterpart).
+        //-------------------------------------------------
+        if (roles?.Any() == true)
+        {
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentUserDistributions
+                (CompanyId, DocumentId, EmployeeCode, CreatedBy)
+                SELECT DISTINCT
+                    dr.CompanyId,
+                    dr.DocumentId,
+                    TRIM(e.empcode),
+                    @CreatedBy
+                FROM DocumentRoleDistributions dr
+                INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+                LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+                WHERE dr.DocumentId = @DocumentId
+                  AND dr.CompanyId = @CompanyId
+                  AND ejp.roleid = dr.RoleId
+                  AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
+                  AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
+                  AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
+                  AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM DocumentUserDistributions u
+                      WHERE u.DocumentId = dr.DocumentId
+                        AND u.EmployeeCode = TRIM(e.empcode)
+                  );",
+            new
+            {
+                CompanyId = companyId,
+                DocumentId = documentId,
+                CreatedBy = empCode
+            }, transaction);
+        }
     }
 
     // Resolves (creating if needed) a real, fully-populated WorkflowStepDefinitions row for an
@@ -1135,6 +1277,23 @@ public class DocumentComponent
                 new { CompanyId = companyId, PolicyId = policyId, CreatedBy = empCode }, transaction);
         }
 
+        // StepType here is what every consumer (Workflow Authorities preview, Approval History
+        // modal, the Word-merge signature block) displays as this row's "Role" -- showing the
+        // literal words "Ad-hoc Approver" there told the reader nothing about who this person
+        // actually is at the company. Using their real job Role instead (same
+        // tblEmployee/TblEmpJobProfile/tblsetupsdetail resolution already used for Document
+        // Users/Distribution List elsewhere in this file) matches what a policy-defined step's
+        // own Role column shows. Falls back to the literal text only if the employee genuinely
+        // has no resolvable Role (StepType is NOT NULL).
+        var employeeRoleName = await _common.ExecuteScalarAsync<string?>(@"
+            SELECT r.Name
+            FROM tblEmployee e
+            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
+            WHERE LPAD(@EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+            LIMIT 1;",
+            new { CompanyId = companyId, EmployeeCode = employeeCode }, transaction);
+
         var stepDefId = await _common.ExecuteScalarAsync<int>(@"
             INSERT INTO WorkflowStepDefinitions
             (
@@ -1143,11 +1302,18 @@ public class DocumentComponent
             )
             VALUES
             (
-                @CompanyId, @VersionId, 1, 1, 'Ad-hoc Approver', NULL, NULL, @EmployeeCode,
+                @CompanyId, @VersionId, 1, 1, @StepType, NULL, NULL, @EmployeeCode,
                 TRUE, FALSE, TRUE, NOW(), @CreatedBy, NOW(), @CreatedBy
             )
             RETURNING Id;",
-            new { CompanyId = companyId, VersionId = versionId, EmployeeCode = employeeCode, CreatedBy = empCode }, transaction);
+            new
+            {
+                CompanyId = companyId,
+                VersionId = versionId,
+                StepType = string.IsNullOrWhiteSpace(employeeRoleName) ? "Ad-hoc Approver" : employeeRoleName,
+                EmployeeCode = employeeCode,
+                CreatedBy = empCode
+            }, transaction);
 
         return stepDefId;
     }
@@ -1691,6 +1857,18 @@ public class DocumentComponent
                 foreach (var placeholder in placeholders)
                     ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
 
+                // Templates authored before {{PageNo}}/{{TotalPages}} existed write literal
+                // "Page No. x of y" instead -- confirmed twice now across two independently
+                // re-uploaded SOP templates, both using this exact wording, so it's evidently a
+                // copy-pasted convention rather than a one-off. Re-uploading a template (the
+                // normal way to change one) always drops back to whatever the uploaded file
+                // itself contains -- there's no way to "fix a template" that survives its next
+                // re-upload except handling this at merge time, so this recognizes that legacy
+                // wording and normalizes it to the real tokens before the field-insertion step
+                // below, rather than requiring every template file to be hand-edited once and
+                // then again on every future re-upload.
+                NormalizeLegacyPageNumberPlaceholder(container);
+
                 // {{PageNo}}/{{TotalPages}} aren't known values like the placeholders above --
                 // they need to become real, auto-updating Word PAGE/NUMPAGES fields (see
                 // InsertPageNumberFields) so each printed/exported page shows its own actual
@@ -1738,6 +1916,56 @@ public class DocumentComponent
             if (!fullText.Contains(placeholder)) continue;
 
             string replaced = fullText.Replace(placeholder, value);
+
+            var firstRun = runs[0];
+            var firstText = firstRun.Elements<Text>().FirstOrDefault();
+            if (firstText == null)
+            {
+                firstText = new Text();
+                firstRun.AppendChild(firstText);
+            }
+            firstText.Text = replaced;
+            firstText.Space = SpaceProcessingModeValues.Preserve;
+
+            foreach (var extraText in firstRun.Elements<Text>().Skip(1).ToList())
+                extraText.Remove();
+
+            for (int i = 1; i < runs.Count; i++)
+                runs[i].Remove();
+        }
+    }
+
+    // Matches a bare "x ... of ... y" -- the shared core of every legacy (pre-{{PageNo}}) page
+    // number placeholder seen so far, regardless of what label precedes it: "Page No. x of y" in
+    // one template, plain "Page x of y" (no "No" at all, and "Page x" as a single combined run
+    // rather than separate "Page"/"No."/"x" runs) in another. Different Document Types can have
+    // completely different templates/authors, so this deliberately does NOT anchor on "Page" or
+    // "No" at all -- only on x/of/y, which is what's actually common across them. \b around x/y
+    // keeps this from ever matching a real word merely containing those letters; "x of y" as a
+    // bare three-token phrase essentially never occurs in real prose otherwise.
+    private static readonly System.Text.RegularExpressions.Regex LegacyPageNumberPattern =
+        new(@"\bx\b(\s*of\s*)\by\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    // See the call site's comment for why this exists. Rewrites a paragraph's own text (the
+    // same run-collapsing approach ReplacePlaceholderText uses) so a legacy "x ... of ... y"
+    // placeholder becomes "{{PageNo}} ... of ... {{TotalPages}}", ready for InsertPageNumberFields
+    // to turn into a real field right after this runs. Replaces ONLY the x/y tokens themselves
+    // (via the captured "of" group) -- whatever label precedes "x" (or follows "y") is left
+    // exactly as the template wrote it, so this never introduces text the template didn't
+    // already have (e.g. never turns a template's own "Page x of y" into a doubled-up
+    // "Page No. x of y" that only matches how a DIFFERENT template happened to word it).
+    private static void NormalizeLegacyPageNumberPlaceholder(OpenXmlElement root)
+    {
+        foreach (var paragraph in root.Descendants<Paragraph>().ToList())
+        {
+            var runs = paragraph.Elements<Run>().ToList();
+            if (runs.Count == 0) continue;
+
+            string fullText = string.Concat(runs.SelectMany(r => r.Elements<Text>().Select(t => t.Text)));
+            var match = LegacyPageNumberPattern.Match(fullText);
+            if (!match.Success) continue;
+
+            string replaced = fullText[..match.Index] + "{{PageNo}}" + match.Groups[1].Value + "{{TotalPages}}" + fullText[(match.Index + match.Length)..];
 
             var firstRun = runs[0];
             var firstText = firstRun.Elements<Text>().FirstOrDefault();
@@ -2199,8 +2427,18 @@ public class DocumentComponent
             int CompanyId = int.Parse(_CompanyId);
             //-----------------------------------------
             // 1️⃣ Check Last State Was Rework Draft
-            //----------------------------------------- 
-            var wasReworked = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            //-----------------------------------------
+            // NOTE: this used to bind the COUNT(*) result to `dynamic` and call .Count() on it,
+            // which -- since Dapper's dynamic row is a DapperRow/IDictionary -- returned the
+            // number of COLUMNS in the row (always 1), never the actual count value. That made
+            // this guard permanently a no-op, so a stray, blank/empty-content DocumentVersions
+            // row (hardcoded Version "1.0", VersionType 1) was inserted on EVERY document
+            // submission, not just genuine rework-after-rejection cases. Later, when the document
+            // reached Post-Training Authorization, the promotion step (VersionType 1 -> 2) turned
+            // BOTH the real Draft row and this stray row into simultaneously-Effective rows,
+            // which is what made downstream "current version" lookups (e.g. the Word-merge
+            // template placeholder) non-deterministically pick the wrong one.
+            var wasReworkedCount = await _common.ExecuteScalarAsync<long>(@"
                 SELECT COUNT(*)
                         FROM DocumentStateHistory
                         WHERE CompanyId = @CompanyId
@@ -2209,8 +2447,7 @@ public class DocumentComponent
                           AND WorkflowExecutionId IS NOT NULL;",
             new { companyId, documentId }, transaction);
 
-
-            if (wasReworked.Count() == 0)
+            if (wasReworkedCount == 0)
                 return;
 
             //-----------------------------------------
@@ -3244,9 +3481,14 @@ public class DocumentComponent
             // 5️⃣ Map Distributions Into Each Request
             //-------------------------------------------------
 
+            // See DMSUtilities.CollapseAnyRoleGroups -- a document whose originating Request was
+            // already submitted (and possibly Reverted/reworked since) has its "Any role" picks
+            // already expanded into concrete rows; this restores that intent for display.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
+
             foreach (var request in requests)
             {
-                request.DistributionList = roleDistributions
+                var rawDistributionList = roleDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
                     .Select(x => new DistributionListReadDto
                     {
@@ -3267,6 +3509,7 @@ public class DocumentComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
+                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
@@ -3973,25 +4216,43 @@ public class DocumentComponent
             throw;
         }
 
-        // Dispatched only after a successful commit, without the (now-completed) transaction --
-        // a failure here (e.g. SMTP down) must not roll back the already-committed
-        // authorization/rejection. Caught and logged rather than left to propagate: the
-        // document action already succeeded at this point, and letting a notification failure
-        // turn that into a 500 would tell the caller the action failed when it didn't.
-        foreach (var n in pendingNotifications)
+        // Fire-and-forget, deliberately NOT awaited by this method. Dispatching still includes a
+        // real SMTP send -- moving it after the commit (above) stopped it blocking OTHER
+        // requests via a held row lock, but this request's OWN HTTP response was still stuck
+        // waiting for it to finish, which is what actually made "Approve" feel hung with no
+        // feedback (confirmed: the same SMTP call measured at ~204s in production once before).
+        // Runs in its own DI scope, not this request's: NotificationComponent/DMSCommon are
+        // request-scoped (Program.cs) and would already be disposed by the time a plain
+        // fire-and-forget continuation ran after the response is sent -- CreateScope() gets
+        // fresh instances that live for exactly as long as this background dispatch needs them.
+        _ = DispatchAuthorizationNotificationsInBackground(pendingNotifications, CompanyId);
+
+        return true;
+    }
+
+    private async Task DispatchAuthorizationNotificationsInBackground(
+        List<(NotificationScenario Scenario, int DocumentId, string Recipient, Dictionary<string, string> Placeholders)> notifications,
+        int companyId)
+    {
+        using var scope = _serviceScopeFactory.CreateScope();
+        var notificationComponent = scope.ServiceProvider.GetRequiredService<NotificationComponent>();
+
+        foreach (var n in notifications)
         {
             try
             {
-                await _notificationComponent.TriggerNotificationAsync(n.Scenario, CompanyId, n.DocumentId, n.Recipient, n.Placeholders);
+                await notificationComponent.TriggerNotificationAsync(n.Scenario, companyId, n.DocumentId, n.Recipient, n.Placeholders);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "AuthorizeDocumentPostTrainingAsync: notification dispatch failed for DocumentId={DocumentId}, Recipient={Recipient}, Scenario={Scenario} -- the document action itself already committed successfully.",
+                // The document action already committed successfully before this ever runs --
+                // a failure here (e.g. SMTP down) must never surface as if the approval/rejection
+                // itself failed, since by this point the caller already got back a success
+                // response.
+                _logger.LogError(ex, "AuthorizeDocumentPostTrainingAsync (background): notification dispatch failed for DocumentId={DocumentId}, Recipient={Recipient}, Scenario={Scenario}.",
                     n.DocumentId, n.Recipient, n.Scenario);
             }
         }
-
-        return true;
     }
 
     public async Task<PaginationResult<dynamic>> GetAuthorizedDocumentsAsync(GetAuthorizedDocumentsDto input)
@@ -5543,7 +5804,8 @@ public class DocumentComponent
                     row.DocumentType ?? "",
                     row.Id.ToString(),
                     row.Title ?? "",
-                    row.Justification ?? "",
+                    row.DocumentJustification ?? "",
+                    row.RequestJustification ?? "",
                     row.Company ?? "",
                     row.DocumentNumber ?? "",
                     row.ProposedVersionNumber ?? "1.0",
@@ -5769,9 +6031,13 @@ public class DocumentComponent
             // 5️⃣ Map Distributions Into Each Request
             //-------------------------------------------------
 
+            // See DMSUtilities.CollapseAnyRoleGroups -- restores "Any role" for display when the
+            // originating Request's picks were already expanded into concrete rows at submission.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
+
             foreach (var request in requests)
             {
-                request.DistributionList = roleDistributions
+                var rawDistributionList = roleDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
                     .Select(x => new DistributionListReadDto
                     {
@@ -5792,6 +6058,7 @@ public class DocumentComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
+                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
