@@ -1432,6 +1432,9 @@ public class DocumentComponent
     // Expected placeholders in the template:
     //   Metadata (anywhere in header/body/footer): {{DocumentTitle}}, {{DocumentNumber}},
     //     {{Version}}, {{EffectiveDate}}, {{ReviewDate}}, {{Supersede}}
+    //   Page numbers (anywhere in header/body/footer): {{PageNo}}, {{TotalPages}} -- unlike the
+    //     metadata tokens above, these become real Word PAGE/NUMPAGES fields, not static text
+    //     (see InsertPageNumberField), since the correct value is different on every page.
     //   Content: {{DocumentContent}} -- replaced with the uploaded content file's body. Only
     //     ever looked for in the document body -- a variable-length content section doesn't
     //     make sense in a header/footer, which is fixed content that repeats identically on
@@ -1687,6 +1690,16 @@ public class DocumentComponent
             {
                 foreach (var placeholder in placeholders)
                     ReplacePlaceholderText(container, "{{" + placeholder.Key + "}}", placeholder.Value);
+
+                // {{PageNo}}/{{TotalPages}} aren't known values like the placeholders above --
+                // they need to become real, auto-updating Word PAGE/NUMPAGES fields (see
+                // InsertPageNumberFields) so each printed/exported page shows its own actual
+                // number, not a static value baked in at merge time. Both are resolved together,
+                // in one pass per paragraph: a paragraph containing "Page No. {{PageNo}} of
+                // {{TotalPages}}" has both tokens sharing the same paragraph, and inserting a
+                // real field for one destroys its own non-text field-code elements the moment a
+                // second, separate pass collapses that paragraph's runs back down to plain text.
+                InsertPageNumberFields(container, PageFieldPlaceholders);
             }
 
             InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
@@ -1741,6 +1754,92 @@ public class DocumentComponent
 
             for (int i = 1; i < runs.Count; i++)
                 runs[i].Remove();
+        }
+    }
+
+    // {{PageNo}} / {{TotalPages}} -> the Word field instruction each becomes. Kept together so
+    // a paragraph containing both (e.g. "Page No. {{PageNo}} of {{TotalPages}}") is resolved in
+    // one InsertPageNumberFields pass -- see that method for why processing them as two
+    // separate passes over the same paragraph corrupts the first field inserted.
+    private static readonly Dictionary<string, string> PageFieldPlaceholders = new()
+    {
+        { "{{PageNo}}", "PAGE" },
+        { "{{TotalPages}}", "NUMPAGES" },
+    };
+
+    // Replaces every {{placeholder}} token in placeholderToField with a real, auto-updating Word
+    // field (PAGE/NUMPAGES) instead of static text -- unlike ReplacePlaceholderText's values,
+    // "what page is this" has no single answer at merge time: the same footer paragraph lands on
+    // every page of the final document, and each occurrence needs to show that page's own
+    // number. Builds the standard begin/instrText/separate/cached-value/end field-code run
+    // sequence Word itself writes for Insert > Page Number, so both Word and Google Docs
+    // recalculate it like any other page-number field.
+    //
+    // All tokens are resolved in a single left-to-right pass per paragraph, not one call per
+    // token: a field's begin/instrText/separate/end runs aren't Text elements, so a second call
+    // re-collapsing the same paragraph's runs (the same technique ReplacePlaceholderText uses)
+    // can't see them in that concatenation and wholesale rebuilds the paragraph as if they were
+    // never there, discarding the first field's XML down to its leftover cached-value text.
+    private static void InsertPageNumberFields(OpenXmlElement root, Dictionary<string, string> placeholderToField)
+    {
+        foreach (var paragraph in root.Descendants<Paragraph>().ToList())
+        {
+            var runs = paragraph.Elements<Run>().ToList();
+            if (runs.Count == 0) continue;
+
+            string fullText = string.Concat(runs.SelectMany(r => r.Elements<Text>().Select(t => t.Text)));
+            if (!placeholderToField.Keys.Any(fullText.Contains)) continue;
+
+            var rPr = runs[0].RunProperties?.CloneNode(true) as RunProperties;
+
+            Run MakeRun(OpenXmlElement content)
+            {
+                var r = new Run();
+                if (rPr != null) r.RunProperties = (RunProperties)rPr.CloneNode(true);
+                r.AppendChild(content);
+                return r;
+            }
+            Run MakeTextRun(string text) => MakeRun(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+
+            var newRuns = new List<Run>();
+            int pos = 0;
+            while (pos < fullText.Length)
+            {
+                int bestIdx = -1;
+                string bestPlaceholder = "";
+                string bestField = "";
+                foreach (var (ph, field) in placeholderToField)
+                {
+                    int idx = fullText.IndexOf(ph, pos, StringComparison.Ordinal);
+                    if (idx >= 0 && (bestIdx == -1 || idx < bestIdx))
+                    {
+                        bestIdx = idx;
+                        bestPlaceholder = ph;
+                        bestField = field;
+                    }
+                }
+                if (bestIdx < 0)
+                {
+                    newRuns.Add(MakeTextRun(fullText[pos..]));
+                    break;
+                }
+
+                if (bestIdx > pos)
+                    newRuns.Add(MakeTextRun(fullText[pos..bestIdx]));
+                newRuns.Add(MakeRun(new FieldChar { FieldCharType = FieldCharValues.Begin }));
+                newRuns.Add(MakeRun(new FieldCode($" {bestField} ") { Space = SpaceProcessingModeValues.Preserve }));
+                newRuns.Add(MakeRun(new FieldChar { FieldCharType = FieldCharValues.Separate }));
+                // Cached display value -- shown only until Word/Google Docs recalculates the
+                // field (which happens automatically on open/print, same as any Word field).
+                newRuns.Add(MakeTextRun("1"));
+                newRuns.Add(MakeRun(new FieldChar { FieldCharType = FieldCharValues.End }));
+                pos = bestIdx + bestPlaceholder.Length;
+            }
+
+            foreach (var r in newRuns)
+                runs[0].InsertBeforeSelf(r);
+            foreach (var r in runs)
+                r.Remove();
         }
     }
 
