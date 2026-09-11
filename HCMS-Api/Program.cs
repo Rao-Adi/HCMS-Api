@@ -119,6 +119,20 @@ builder.Services.Configure<FormOptions>(options =>
     options.ValueCountLimit = 20000;
 });
 
+// Same issue, one level deeper: raising FormOptions.ValueCountLimit above gets a large
+// "ALL role" submission (see comment above) past form PARSING, but MVC's own model BINDER has
+// its own separate guard on any single List<T> property -- MvcOptions.MaxModelBindingCollectionSize,
+// also defaulting to 1024 -- which then throws "Collection bound to 'UserIds' exceeded
+// MvcOptions.MaxModelBindingCollectionSize" instead. Confirmed by reproducing the exact
+// production exception in isolation (1100 real UserIds[i].* entries) and confirming this
+// resolves it without needing any DTO/frontend change -- every entry in that collection is
+// genuinely real, submitted data, not a binder-always-succeeds artifact the error message's own
+// generic wording suggests.
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
+{
+    options.MaxModelBindingCollectionSize = 20000;
+});
+
 // Audit logging for the DMS application is handled at the database level -- a trigger
 // (fn_dms_audit_log) attached to every DMS table, fed by the app.employee_code/app.ip_address
 // session variables DMSCommon sets on every connection it opens. That supersedes the
