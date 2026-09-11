@@ -1003,12 +1003,18 @@ public class DocumentComponent
 
         // Request-driven creation skips this check because the Request itself was already
         // vetted before approval; this path takes freshly-typed, unvetted input instead.
-        var duplicateCount = await _common.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(1) FROM Documents
-            WHERE CompanyId = @CompanyId AND Title = @Title AND IsDeleted = FALSE;",
-            new { CompanyId = companyId, Title = input.DocumentName }, transaction);
-        if (duplicateCount > 0)
-            throw new CustomException("A document with this name already exists.", 409);
+        // Skipped entirely when ParentDocumentId is set -- a Revision/Obsoletion's child document
+        // is *expected* to share its parent's Title (it's the same document, just a new version;
+        // the parent itself -- almost always standalone -- would otherwise always trip this).
+        if (input.ParentDocumentId == null)
+        {
+            var duplicateCount = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1) FROM Documents
+                WHERE CompanyId = @CompanyId AND Title = @Title AND IsDeleted = FALSE;",
+                new { CompanyId = companyId, Title = input.DocumentName }, transaction);
+            if (duplicateCount > 0)
+                throw new CustomException("A document with this name already exists.", 409);
+        }
 
         var reviewYears = await _common.QueryFirstOrDefaultAsync<int?>(@"
             SELECT ReviewPeriodYears
@@ -1029,19 +1035,19 @@ public class DocumentComponent
             input.DepartmentCode,
             input.SubDepartmentCode,
             input.DocumentTypeCode,
-            parentDocumentId: null,
+            parentDocumentId: input.ParentDocumentId,
             input.BusinessDomainCode,
             transaction);
 
         var documentId = await _common.ExecuteScalarAsync<int>(@"
             INSERT INTO Documents
             (
-                CompanyId, DocumentNumber, DocumentTypeCode, Title, NextReviewDate, DivisionCode,
+                CompanyId, DocumentNumber, ParentDocumentId, DocumentTypeCode, Title, NextReviewDate, DivisionCode,
                 DepartmentCode, SubDepartmentCode, BusinessDomainCode, Justification, CreatedBy, LastModifiedBy
             )
             VALUES
             (
-                @CompanyId, @DocumentNumber, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode,
+                @CompanyId, @DocumentNumber, @ParentDocumentId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode,
                 @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Justification, @CreatedBy, @LastModifiedBy
             )
             RETURNING Id;",
@@ -1049,6 +1055,7 @@ public class DocumentComponent
             {
                 CompanyId = companyId,
                 DocumentNumber = documentNumber,
+                input.ParentDocumentId,
                 input.DocumentTypeCode,
                 Title = input.DocumentName,
                 NextReviewDate = nextReviewDate,
@@ -1083,7 +1090,78 @@ public class DocumentComponent
             );",
             new { CompanyId = companyId, DocumentId = documentId, ChangedBy = empCode }, transaction);
 
+        // A direct Revision/Obsoletion (ParentDocumentId set) needs its parent's own lifecycle
+        // state to reflect the action just completed -- see TransitionParentDocumentStateAsync.
+        if (input.ParentDocumentId.HasValue)
+        {
+            await TransitionParentDocumentStateAsync(companyId, input.ParentDocumentId.Value, input.ActivityTypeCode, empCode, transaction);
+        }
+
         return documentId;
+    }
+
+    // Shared by CreateBareDocumentForSubmissionAsync (direct Revision/Obsoletion, this class) and
+    // DocumentRequestComponent.CreateDocumentFromApprovedRequestAsync (request-driven Revision/
+    // Obsoletion) -- both create a new child Document via ParentDocumentId and need the SAME
+    // "transition the parent's own state" side effect once that child exists. Previously this
+    // logic only existed inline in the request-driven path; factored out here so the direct path
+    // doesn't duplicate it.
+    public async Task TransitionParentDocumentStateAsync(int companyId, int parentDocumentId, string? activityTypeCode, string empCode, IDbTransaction transaction)
+    {
+        string? parentTargetStateCode = activityTypeCode switch
+        {
+            "DRT-0002" => "REVISED",  // Revision of existing document
+            "DRT-0003" => "OBSOLETE", // Obsoletion of existing document
+            _ => null
+        };
+
+        if (parentTargetStateCode == null)
+            return;
+
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentStateHistory
+            (
+                CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy
+            )
+            VALUES
+            (
+                @CompanyId, @ParentDocumentId,
+                (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @ParentDocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                (SELECT Id FROM DocumentStates WHERE Code = @TargetStateCode),
+                @EmpCode
+            )",
+        new
+        {
+            companyId,
+            ParentDocumentId = parentDocumentId,
+            TargetStateCode = parentTargetStateCode,
+            EmpCode = empCode
+        }, transaction);
+    }
+
+    // Prefills the Training Users table when starting a direct Revision/Obsoletion from an
+    // existing document -- the same "start from what's already there, let the user adjust"
+    // treatment already applied to Distribution List/Document Users/Document Attributes. Only
+    // ever read (never written) outside a transaction, so no IDbTransaction parameter needed.
+    public async Task<List<DocumentTrainingAssignmentDto>> GetDocumentTrainingAssignmentsByDocumentIdAsync(int documentId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        var rows = await _common.QueryAsync<DocumentTrainingAssignmentDto>(@"
+            SELECT dut.EmployeeCode,
+                   LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                   r.Name AS Role,
+                   dut.TrainingMode
+            FROM DocumentUserTraining dut
+            LEFT JOIN tblEmployee e ON LPAD(dut.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+            LEFT JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
+            WHERE dut.CompanyId = @CompanyId AND dut.DocumentId = @DocumentId AND dut.IsDeleted = FALSE
+            ORDER BY dut.Id;",
+            new { CompanyId = companyId, DocumentId = documentId });
+
+        return rows.ToList();
     }
 
     private async Task<List<int>> GetAllActiveRoleIdsAsync(int companyId, IDbTransaction transaction)
@@ -3433,23 +3511,36 @@ public class DocumentComponent
             // 3️⃣ Get Role Distributions
             //-------------------------------------------------
 
+            // requestIds here are actually Document ids (fn_get_my_inbox_documents' "id" column is
+            // Documents.Id -- confirmed via the function definition). This used to join against
+            // DocumentRequestRoleDistributions/DocumentRequestUserDistributions on
+            // DocumentRequestId, which are Request-scoped tables keyed by an unrelated id space --
+            // for any document not coincidentally sharing an id with its originating Request, that
+            // join silently matched nothing, leaving DistributionList/UserList empty. Fixed to
+            // join the Document-scoped tables (DocumentRoleDistributions/DocumentUserDistributions,
+            // keyed by DocumentId -- the same tables InsertDocumentDistributionsAsync and
+            // CreateDocumentFromApprovedRequestAsync's own promotion step write to) instead.
+            // Aliased back to DocumentRequestId/DistributionTypeId so the existing DTOs/mapping
+            // below (shared with the Request-scoped call sites of these same DTOs) don't change.
             var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
-                SELECT dl.*,
+                SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
+                       dl.DistributionType AS DistributionTypeId,
+                       dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
                        div.Name AS Division,
                        dep.Name AS Department,
                        subd.Name AS SubDepartment,
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-                   FROM DocumentRequestRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
+                   FROM DocumentRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
                         LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                        LEFT JOIN Roles r ON dl.RoleId = r.Id 
-		                LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
                 WHERE dl.CompanyId = @CompanyId
-                AND dl.DocumentRequestId = ANY(@RequestIds);",
+                AND dl.DocumentId = ANY(@RequestIds);",
                 new
                 {
                     CompanyId = CompanyId,
@@ -3460,17 +3551,23 @@ public class DocumentComponent
             // 4️⃣ Get User Distributions
             //-------------------------------------------------
 
+            // Same fix as above -- DocumentUserDistributions (Document-scoped, keyed by
+            // DocumentId) instead of DocumentRequestUserDistributions (Request-scoped). This
+            // table doesn't track RoleId/cabinet grouping the way the Request-scoped one does, so
+            // those columns are left at their DTO defaults (null/0) -- there's nothing to map
+            // them from.
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-                FROM DocumentRequestUserDistributions drd 
+                FROM DocumentUserDistributions drd
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
-                AND DocumentRequestId = ANY(@RequestIds);",
+                AND drd.DocumentId = ANY(@RequestIds);",
                 new
                 {
                     CompanyId = CompanyId,
@@ -5983,23 +6080,30 @@ public class DocumentComponent
             // 3️⃣ Get Role Distributions
             //-------------------------------------------------
 
+            // requestIds here are Document ids (Vw_Documents d's d.Id). Same fix as
+            // GetDocumentByStatusAsync -- join the Document-scoped distribution tables (keyed by
+            // DocumentId) instead of the Request-scoped ones (keyed by an unrelated
+            // DocumentRequestId), which silently matched nothing for these ids. Aliased back to
+            // DocumentRequestId/DistributionTypeId so the existing DTOs/mapping don't change.
             var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
-                SELECT dl.*,
+                SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
+                       dl.DistributionType AS DistributionTypeId,
+                       dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
                        div.Name AS Division,
                        dep.Name AS Department,
                        subd.Name AS SubDepartment,
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-                   FROM DocumentRequestRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
+                   FROM DocumentRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
                         LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
                         LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                        LEFT JOIN Roles r ON dl.RoleId = r.Id 
-		                LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
                 WHERE dl.CompanyId = @CompanyId
-                AND dl.DocumentRequestId = ANY(@RequestIds);",
+                AND dl.DocumentId = ANY(@RequestIds);",
                 new
                 {
                     CompanyId = CompanyId,
@@ -6011,16 +6115,17 @@ public class DocumentComponent
             //-------------------------------------------------
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.*, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-                FROM DocumentRequestUserDistributions drd 
+                FROM DocumentUserDistributions drd
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
-                AND DocumentRequestId = ANY(@RequestIds);",
+                AND drd.DocumentId = ANY(@RequestIds);",
                 new
                 {
                     CompanyId = CompanyId,

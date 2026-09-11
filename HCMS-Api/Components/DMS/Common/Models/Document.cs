@@ -175,6 +175,17 @@ public class SubmitDocument
     public string? SubDepartmentCode { get; set; }
     public string? BusinessDomainCode { get; set; }
     public string? Justification { get; set; }
+
+    // Set only for a direct Revision/Obsoletion (Create/Update Document screen, activity type
+    // DRT-0002/DRT-0003): identifies the existing document being revised/obsoleted. When set,
+    // CreateBareDocumentForSubmissionAsync creates a new child Document (ParentDocumentId = this)
+    // instead of a standalone one, and transitions the parent's own state once the child is
+    // created -- mirrors CreateDocumentFromApprovedRequestAsync's existing request-driven
+    // behavior for the same two activity types, just without the Request/approval-to-create step.
+    public int? ParentDocumentId { get; set; }
+    // "DRT-0002" (Revision) or "DRT-0003" (Obsoletion) -- which parent-state transition to apply.
+    // Only meaningful alongside ParentDocumentId.
+    public string? ActivityTypeCode { get; set; }
     [BindNever]
     public List<DistributionListCreateDto>? DistributionList { get; set; }
     [BindNever]
@@ -189,6 +200,17 @@ public class SubmitDocument
 public class AdHocApproverDto
 {
     public string EmployeeCode { get; set; } = null!;
+}
+
+// Read-only projection of an existing document's current DocumentUserTraining assignments --
+// used to prefill the Training Users table when starting a direct Revision/Obsoletion from that
+// document (see DocumentComponent.GetDocumentTrainingAssignmentsByDocumentIdAsync).
+public class DocumentTrainingAssignmentDto
+{
+    public string EmployeeCode { get; set; } = null!;
+    public string? EmployeeName { get; set; }
+    public string? Role { get; set; }
+    public int TrainingMode { get; set; }
 }
 public class TraningUsers
 {

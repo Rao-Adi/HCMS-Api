@@ -4193,39 +4193,15 @@ public class DocumentRequestComponent
             //     ParentDocumentId -- transition THAT document's own lifecycle state to reflect
             //     the action just completed. Previously the parent document was left exactly as
             //     it was (typically still "Effective") even after being revised or obsoleted,
-            //     with nothing ever recording that it had been superseded. Same
-            //     DocumentStateHistory insert shape as MakeDocumentEffectiveAsync's Approved ->
-            //     Effective transition, just resolving the target state from the request type.
+            //     with nothing ever recording that it had been superseded. Shared with
+            //     DocumentComponent.CreateBareDocumentForSubmissionAsync's direct (non-request)
+            //     Revision/Obsoletion path -- see TransitionParentDocumentStateAsync.
             //-----------------------------------------
             int? parentDocumentId = (int?)request.parentdocumentid;
-            string? parentTargetStateCode = ((string)request.documentrequesttypecode) switch
+            if (parentDocumentId.HasValue)
             {
-                "DRT-0002" => "REVISED",  // Revision of existing document
-                "DRT-0003" => "OBSOLETE", // Obsoletion of existing document
-                _ => null
-            };
-
-            if (parentDocumentId.HasValue && parentTargetStateCode != null)
-            {
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentStateHistory
-                    (
-                        CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy
-                    )
-                    VALUES
-                    (
-                        @CompanyId, @ParentDocumentId,
-                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @ParentDocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
-                        (SELECT Id FROM DocumentStates WHERE Code = @TargetStateCode),
-                        @EmpCode
-                    )",
-                new
-                {
-                    companyId,
-                    ParentDocumentId = parentDocumentId.Value,
-                    TargetStateCode = parentTargetStateCode,
-                    EmpCode = empCode
-                }, transaction);
+                await _documentComponent.TransitionParentDocumentStateAsync(
+                    companyId, parentDocumentId.Value, (string)request.documentrequesttypecode, empCode, transaction);
             }
 
             //-----------------------------------------

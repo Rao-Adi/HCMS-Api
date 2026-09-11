@@ -240,6 +240,36 @@ public class DMSDocumentController : Controller
     }
 
 
+    // Prefills the Training Users table when starting a direct Revision/Obsoletion from an
+    // existing document -- see DocumentComponent.GetDocumentTrainingAssignmentsByDocumentIdAsync.
+    [HttpGet("get-document-training-assignments/{documentId}")]
+    public async Task<IActionResult> GetDocumentTrainingAssignments(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<DocumentTrainingAssignmentDto>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentTrainingAssignmentsByDocumentIdAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
     [HttpPost("create-document")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] DocumentCreateDto input)
