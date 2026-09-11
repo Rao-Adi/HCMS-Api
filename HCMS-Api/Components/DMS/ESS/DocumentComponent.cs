@@ -1068,6 +1068,22 @@ public class DocumentComponent
                 LastModifiedBy = empCode
             }, transaction);
 
+        // A direct Revision/Obsoletion's version must bump off the PARENT document's current
+        // version (e.g. "1.0" -> "2.0"), not restart at "1.0" as if it were a brand-new document
+        // -- matches the request-driven flow's ResolveInitialProposedVersionAsync/
+        // IncrementMajorVersion exactly (DocumentRequestComponent.cs), which is the only reason
+        // that flow's Version column actually increments on revision while this one didn't.
+        string newVersion = "1.0";
+        if (input.ParentDocumentId.HasValue)
+        {
+            var parentVersion = await _common.ExecuteScalarAsync<string>(@"
+                SELECT Version FROM DocumentVersions
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
+                ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
+                new { DocumentId = input.ParentDocumentId.Value, CompanyId = companyId }, transaction);
+            newVersion = IncrementMajorVersion(parentVersion);
+        }
+
         await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
             (
@@ -1075,9 +1091,9 @@ public class DocumentComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, '1.0', 1, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, @Version, 1, @CreatedBy, @LastModifiedBy
             );",
-            new { CompanyId = companyId, DocumentId = documentId, CreatedBy = empCode, LastModifiedBy = empCode }, transaction);
+            new { CompanyId = companyId, DocumentId = documentId, Version = newVersion, CreatedBy = empCode, LastModifiedBy = empCode }, transaction);
 
         await _common.ExecuteAsync(@"
             INSERT INTO DocumentStateHistory
@@ -1137,6 +1153,22 @@ public class DocumentComponent
             TargetStateCode = parentTargetStateCode,
             EmpCode = empCode
         }, transaction);
+    }
+
+    // Bumps the major component of a Version string (e.g. "1.0" -> "2.0"), resetting the minor
+    // component to 0. Identical logic to DocumentRequestComponent.IncrementMajorVersion (kept as
+    // a separate copy there rather than refactored into one shared method, since it's a tiny,
+    // self-contained static helper and this is the only other call site) -- used to seed a
+    // direct Revision/Obsoletion's version from its parent document's current version.
+    private static string IncrementMajorVersion(string? current)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            var parts = current.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major))
+                return $"{major + 1}.0";
+        }
+        return "1.0";
     }
 
     // Prefills the Training Users table when starting a direct Revision/Obsoletion from an
