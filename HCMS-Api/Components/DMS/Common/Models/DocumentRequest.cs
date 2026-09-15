@@ -576,6 +576,18 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
     public List<DocumentRequestUserDistribution> UserList { get; set; } = new List<DocumentRequestUserDistribution>();
 }
 
+// A row in the "Document Draft" tab on Create/Update Document -- a Document still sitting in DRAFT
+// state, either never submitted at all or sent back for rework mid-approval (IsReworked). Every
+// column it needs beyond these three is already the same shape the Revision/Obsoletion grids read
+// (including the DistributionList/UserList hydration), so it extends that DTO rather than
+// redeclaring it.
+public class DraftDocumentDto : EffectiveDocumentDetailsDto
+{
+    public string? Justification { get; set; }
+    public string? CurrentStatus { get; set; }
+    public bool IsReworked { get; set; }
+}
+
 public class SubmitDocumentRequestDto
 {
     public int RequestId { get; set; }

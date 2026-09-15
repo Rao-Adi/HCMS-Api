@@ -239,10 +239,30 @@ public static class HtmlToOpenXmlConverter
         return (color, highlight);
     }
 
+    // Word's own default cell margin (0.08" = 108 twentieths of a point). Used for both the cell
+    // margin and the table indent so the two always cancel -- see ConvertTable.
+    private const short DefaultCellMarginTwips = 108;
+
     private static Table ConvertTable(HtmlNode tableNode)
     {
         var table = new Table();
+
+        // Word positions a table by its cell BORDER, then insets each cell's text by the cell
+        // margin -- so a table with no explicit indent has its text sitting CellMargin further
+        // right than the body text, which reads as the whole table hanging out to the left of the
+        // page's text column. Setting the table indent to the same value as the left cell margin
+        // cancels that out, so cell text lines up with the paragraph text above and below it.
+        // Browsers and Google Docs lay tables out from the text edge instead, which is why the
+        // same HTML looks correctly aligned there and only drifts in Word.
+        //
+        // Both values are stated explicitly rather than left to Word's defaults, since the whole
+        // point is that the indent must match the cell margin -- inheriting either one from a
+        // template's table style would let them disagree again.
+        // Child order follows the CT_TblPrBase schema sequence (tblW, tblInd, tblBorders,
+        // tblCellMar); Word tolerates other orders, but OpenXML validation does not.
         table.AppendChild(new TableProperties(
+            new TableWidth { Type = TableWidthUnitValues.Auto },
+            new TableIndentation { Width = DefaultCellMarginTwips, Type = TableWidthUnitValues.Dxa },
             new TableBorders(
                 new TopBorder { Val = BorderValues.Single, Size = 4 },
                 new BottomBorder { Val = BorderValues.Single, Size = 4 },
@@ -251,7 +271,12 @@ public static class HtmlToOpenXmlConverter
                 new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4 },
                 new InsideVerticalBorder { Val = BorderValues.Single, Size = 4 }
             ),
-            new TableWidth { Type = TableWidthUnitValues.Auto }
+            new TableCellMarginDefault(
+                new TopMargin { Width = "0", Type = TableWidthUnitValues.Dxa },
+                new TableCellLeftMargin { Width = DefaultCellMarginTwips, Type = TableWidthValues.Dxa },
+                new BottomMargin { Width = "0", Type = TableWidthUnitValues.Dxa },
+                new TableCellRightMargin { Width = DefaultCellMarginTwips, Type = TableWidthValues.Dxa }
+            )
         ));
 
         var rows = tableNode.Descendants("tr");

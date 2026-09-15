@@ -654,11 +654,11 @@ public class NotificationComponent
             string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
             var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId, CompanyId = companyId }, transaction);
 
-            if (!string.IsNullOrWhiteSpace(recipientEmail))
-            {
-                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
-                await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
-            }
+            //if (!string.IsNullOrWhiteSpace(recipientEmail))
+            //{
+            //    string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
+            //    await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+            //}
         }
         catch (Exception ex)
         {
@@ -680,90 +680,132 @@ public class NotificationComponent
             actionUrl = baseUrl;
         }
 
+        // Built for Outlook on Windows, which renders mail through Word -- not a browser engine.
+        // Word ignores max-width, border-radius, linear-gradient, and padding on inline elements,
+        // so anything the layout depends on is expressed the way Word understands it: table cells
+        // for every padded box, bgcolor attributes alongside the CSS, explicit pixel widths, and an
+        // mso-only fixed-width wrapper. Modern clients still get the rounded corners and gradient --
+        // they simply read the extra properties Word skips.
         return $@"
-            <!DOCTYPE html>
-            <html>
+            <!DOCTYPE html PUBLIC ""-//W3C//DTD XHTML 1.0 Transitional//EN"" ""http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"">
+            <html xmlns='http://www.w3.org/1999/xhtml'>
             <head>
                 <meta charset='utf-8'>
+                <meta http-equiv='X-UA-Compatible' content='IE=edge'>
                 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
                 <title>{title}</title>
             </head>
-            <body style='margin: 0; padding: 0; background-color: #f1f5f9; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif; -webkit-font-smoothing: antialiased;'>
-                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='background-color: #f1f5f9; padding: 30px 10px;'>
+            <body style='margin: 0; padding: 0; background-color: #f1f5f9; -webkit-font-smoothing: antialiased;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' bgcolor='#f1f5f9' style='border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: #f1f5f9;'>
                     <tr>
-                        <td align='center'>
-                            <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;'>
-                    
-                                <!-- Header Banner -->
+                        <td align='center' style='padding: 30px 10px;'>
+
+                            <!--[if mso]>
+                            <table role='presentation' width='600' cellspacing='0' cellpadding='0' border='0'><tr><td>
+                            <![endif]-->
+
+                            <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' bgcolor='#ffffff' style='border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; width: 100%; max-width: 600px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;'>
+
+                                <!-- Header banner. bgcolor carries the dark background for Word and the
+                                     gradient is layered on top for clients that support it. Without the
+                                     solid fallback this header rendered white in Outlook, which left the
+                                     white title and label invisible. -->
                                 <tr>
-                                    <td style='background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 28px 32px; text-align: left;'>
-                                        <table width='100%' cellspacing='0' cellpadding='0' border='0'>
+                                    <td bgcolor='#0f172a' style='background-color: #0f172a; background-image: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 28px 32px;'>
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
                                             <tr>
                                                 <td style='padding-bottom: 14px;'>
-                                                    <img src='cid:{DMSUtilities.DmsLogoContentId}' alt='Logo' width='200' height='auto' style='display: block; border: 0;' />
+                                                    <img src='cid:{DMSUtilities.DmsLogoContentId}' alt='DMS' width='200' style='display: block; border: 0; outline: none; text-decoration: none; width: 200px; max-width: 200px; height: auto;' />
                                                 </td>
                                             </tr>
                                             <tr>
                                                 <td>
-                                                    <div style='display: inline-block; background-color: rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 12px; color: #ffffff; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;'>
-                                                        Document Management System
-                                                    </div>
+                                                    <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
+                                                        <tr>
+                                                            <td bgcolor='#1e40af' style='background-color: #1e40af; border-radius: 6px; padding: 6px 12px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #ffffff; mso-line-height-rule: exactly; line-height: 14px;'>
+                                                                Document Management System
+                                                            </td>
+                                                        </tr>
+                                                    </table>
                                                 </td>
                                             </tr>
                                             <tr>
-                                                <td style='padding-top: 12px;'>
-                                                    <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; line-height: 1.3;'>{title}</h1>
+                                                <td style='padding-top: 12px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; mso-line-height-rule: exactly; line-height: 29px;'>
+                                                    {title}
                                                 </td>
                                             </tr>
                                         </table>
                                     </td>
                                 </tr>
 
-                                <!-- Body Content -->
+                                <!-- Body -->
                                 <tr>
-                                    <td style='padding: 32px; color: #334155;'>
-                            
-                                        <!-- Status Badge -->
-                                        <div style='margin-bottom: 20px;'>
-                                            <span style='background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block;'>
-                                                Action Required
-                                            </span>
-                                        </div>
+                                    <td style='padding: 32px;'>
 
-                                        <!-- Notification Message Box -->
-                                        <div style='background-color: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 18px 20px; margin-bottom: 24px;'>
-                                            <p style='margin: 0; font-size: 15px; color: #1e293b; line-height: 1.6; font-weight: 500;'>
-                                                {message}
-                                            </p>
-                                        </div>
+                                        <!-- Status badge -->
+                                        <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-bottom: 20px;'>
+                                            <tr>
+                                                <td bgcolor='#eff6ff' style='background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 20px; padding: 6px 14px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; font-weight: 600; color: #1d4ed8; mso-line-height-rule: exactly; line-height: 15px;'>
+                                                    Action Required
+                                                </td>
+                                            </tr>
+                                        </table>
 
-                                        <!-- Action Button Section -->
+                                        <!-- Message. The blue accent is a 4px table cell rather than a
+                                             border-left, which Word renders unreliably. -->
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-bottom: 24px;'>
+                                            <tr>
+                                                <td width='4' bgcolor='#2563eb' style='width: 4px; background-color: #2563eb; font-size: 0; line-height: 0;'>&nbsp;</td>
+                                                <td bgcolor='#f8fafc' style='background-color: #f8fafc; padding: 18px 20px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; font-weight: 500; color: #1e293b; mso-line-height-rule: exactly; line-height: 24px;'>
+                                                    {message}
+                                                </td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- Action button -->
                                         {(!string.IsNullOrEmpty(redirectionUrl) ? $@"
-                                        <div style='margin-top: 28px; text-align: center; background-color: #ffffff; border: 1px solid #f1f5f9; padding: 20px; border-radius: 10px;'>
-                                            <p style='font-size: 13px; color: #64748b; margin-top: 0; margin-bottom: 16px; font-weight: 500;'>
-                                                Click the button below to review and process this request:
-                                            </p>
-                                            <a href='{actionUrl}' target='_blank' style='display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; border: 1px solid #1d4ed8;'>
-                                                View Request Details &rarr;
-                                            </a> 
-                                        </div>" : "")}
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-top: 28px;'>
+                                            <tr>
+                                                <td align='center' style='border: 1px solid #f1f5f9; border-radius: 10px; padding: 20px;'>
+                                                    <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
+                                                        <tr>
+                                                            <td align='center' style='padding-bottom: 16px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 13px; font-weight: 500; color: #64748b; mso-line-height-rule: exactly; line-height: 18px;'>
+                                                                Click the button below to review and process this request:
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td align='center' bgcolor='#2563eb' style='background-color: #2563eb; border: 1px solid #1d4ed8; border-radius: 8px; mso-padding-alt: 12px 30px;'>
+                                                                <a href='{actionUrl}' target='_blank' style='display: inline-block; padding: 12px 30px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; mso-line-height-rule: exactly; line-height: 18px;'>
+                                                                    View Request Details &rarr;
+                                                                </a>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>" : "")}
 
                                     </td>
                                 </tr>
 
                                 <!-- Footer -->
                                 <tr>
-                                    <td style='background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;'>
-                                        <p style='font-size: 12px; color: #64748b; margin: 0 0 6px 0; font-weight: 500;'>
+                                    <td bgcolor='#f8fafc' align='center' style='background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;'>
+                                        <p style='font-size: 12px; color: #64748b; margin: 0 0 6px 0; font-weight: 500; mso-line-height-rule: exactly; line-height: 16px;'>
                                             This is an automated notification from the <strong>DMS.Partners</strong>.
                                         </p>
-                                        <p style='font-size: 11px; color: #94a3b8; margin: 0;'>
+                                        <p style='font-size: 11px; color: #94a3b8; margin: 0; mso-line-height-rule: exactly; line-height: 15px;'>
                                             Please do not reply directly to this email.
                                         </p>
                                     </td>
                                 </tr>
 
                             </table>
+
+                            <!--[if mso]>
+                            </td></tr></table>
+                            <![endif]-->
+
                         </td>
                     </tr>
                 </table>

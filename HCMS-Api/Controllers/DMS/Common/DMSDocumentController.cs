@@ -355,6 +355,113 @@ public class DMSDocumentController : Controller
     }
 
 
+    // Same payload as submit-document (identical multipart JSON-field handling), but saves the
+    // document without starting its approval workflow, so a half-filled-out document can be
+    // picked back up later from the "Document Draft" tab.
+    [HttpPost("save-document-as-draft")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> SaveDocumentAsDraft([FromForm] SubmitDocument input)
+    {
+        try
+        {
+            var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+            if (Request.Form.TryGetValue("attributes", out var attributesJson) && !string.IsNullOrWhiteSpace(attributesJson))
+                input.Attributes = JsonSerializer.Deserialize<List<CreateDocumentAttributeValueDto>>(attributesJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("trainingusers", out var trainingUsersJson) && !string.IsNullOrWhiteSpace(trainingUsersJson))
+                input.TrainingUsers = JsonSerializer.Deserialize<List<TraningUsers>>(trainingUsersJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("adhocapprovers", out var adHocApproversJson) && !string.IsNullOrWhiteSpace(adHocApproversJson))
+                input.AdHocApprovers = JsonSerializer.Deserialize<List<AdHocApproverDto>>(adHocApproversJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("distributionlist", out var distributionListJson) && !string.IsNullOrWhiteSpace(distributionListJson))
+                input.DistributionList = JsonSerializer.Deserialize<List<DistributionListCreateDto>>(distributionListJson!, jsonOptions) ?? new();
+
+            if (Request.Form.TryGetValue("userids", out var userIdsJson) && !string.IsNullOrWhiteSpace(userIdsJson))
+                input.UserIds = JsonSerializer.Deserialize<List<UserDistributionInputDto>>(userIdsJson!, jsonOptions) ?? new();
+
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentComponent.SaveDocumentAsDraftAsync(input),
+                Message = "Document Saved as Draft Successfully",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    // Documents the current user created that are still in Draft -- never submitted, or sent back
+    // for rework (IsReworked). The exact complement of get-my-documents.
+    [HttpPost("get-my-draft-documents")]
+    public async Task<IActionResult> GetMyDraftDocuments(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<DraftDocumentDto>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyDraftDocumentsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
+    [HttpGet("get-my-draft-documents-count")]
+    public async Task<IActionResult> GetMyDraftDocumentsCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetMyDraftDocumentsCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
     [HttpPost("approve-document")]
     public async Task<IActionResult> ApproveDocument(ActionOnDocument input)
     {

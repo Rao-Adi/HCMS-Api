@@ -13,6 +13,7 @@ using HCMS_Api.Components.DMS.Common.Models.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using OfficeOpenXml;
 using System.Data;
+using System.Globalization;
 using System.Text.Json;
 using A = DocumentFormat.OpenXml.Drawing;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
@@ -644,6 +645,49 @@ public class DocumentComponent
                 // DocumentUserDistributions instead of the DocumentRequest* tables.
                 await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
             }
+            else if (!string.IsNullOrWhiteSpace(input.DocumentName))
+            {
+                // Submitting a document that already exists AND carries the direct-create field
+                // set -- i.e. resuming one saved via SaveDocumentAsDraftAsync, or one sent back
+                // for rework, where the user may have edited any of it before hitting Submit.
+                // Without this, every edit made after the draft was saved was silently dropped:
+                // the branch above only ever runs for brand-new documents, and nothing else in
+                // this method writes these columns.
+                //
+                // DocumentName is the discriminator because the legacy "Use an Approved Request"
+                // path sends only documentid (its fields were captured on the Request and
+                // promoted onto the Document at approval time), so it never enters here.
+                await _common.ExecuteAsync(@"
+                    UPDATE Documents
+                    SET Title = COALESCE(@Title, Title),
+                        Justification = COALESCE(@Justification, Justification),
+                        DivisionCode = COALESCE(@DivisionCode, DivisionCode),
+                        DepartmentCode = COALESCE(@DepartmentCode, DepartmentCode),
+                        SubDepartmentCode = COALESCE(@SubDepartmentCode, SubDepartmentCode),
+                        BusinessDomainCode = COALESCE(@BusinessDomainCode, BusinessDomainCode),
+                        LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                    new
+                    {
+                        Title = input.DocumentName,
+                        input.Justification,
+                        input.DivisionCode,
+                        input.DepartmentCode,
+                        input.SubDepartmentCode,
+                        input.BusinessDomainCode,
+                        UserId = empCode,
+                        input.DocumentId,
+                        CompanyId
+                    }, transaction);
+
+                // Delete-then-reinsert because InsertDocumentDistributionsAsync is pure-insert
+                // (it would otherwise duplicate every row already saved with the draft).
+                await _common.ExecuteAsync(@"
+                    DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+                    DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+                await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
+            }
 
             //-------------------------------------------------
             // 1️⃣ Lock Document
@@ -961,6 +1005,114 @@ public class DocumentComponent
         }
     }
 
+    // "Save as Draft" for a directly-created Document (mirrors DocumentRequestComponent's
+    // CreateDraftDocumentRequestAsync/UpdateDraftDocumentRequestAsync pair, adapted to Documents).
+    // Unlike SubmitDocumentAsync, this never touches WorkflowPolicies/WorkflowExecutions/
+    // DocumentStateHistory -- the document is left exactly where it already is (freshly created
+    // and still Draft, or a Reverted document re-saved and still Reverted, since its DRAFT-
+    // transition row's WorkflowExecutionId is untouched either way). Content/Attributes/Training
+    // are saved via the SAME methods SubmitDocumentAsync uses, just with enforceRequired: false
+    // so an incomplete document can still be saved.
+    public async Task<int> SaveDocumentAsDraftAsync(SubmitDocument input)
+    {
+        await using var transaction = await _common.BeginTransactionAsync();
+
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            if (input.DocumentId <= 0)
+            {
+                // First-ever save -- CreateBareDocumentForSubmissionAsync already does exactly
+                // what a first Draft needs: Documents + DocumentVersions "1.0" + DocumentStateHistory
+                // (ToStateId=1, WorkflowExecutionId=NULL). Its own required-field checks
+                // (DocumentTypeCode/DocumentName/Justification) are the same minimum bar the
+                // frontend's own "Save as Draft" validation already enforces before this is called.
+                input.DocumentId = await CreateBareDocumentForSubmissionAsync(input, CompanyId, empCode, transaction);
+            }
+            else
+            {
+                // Resuming an existing Draft or Reverted document.
+                var existing = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT * FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId FOR UPDATE;",
+                    new { input.DocumentId, CompanyId }, transaction);
+                if (existing == null)
+                    throw new CustomException("Document not found.", 404);
+
+                var currentStateId = await _common.ExecuteScalarAsync<int?>(@"
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = @DocumentId
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1;",
+                    new { input.DocumentId }, transaction);
+                if (currentStateId != 1)
+                    throw new CustomException("Only a Draft or Reverted document can be saved as a draft.", 409);
+
+                await _common.ExecuteAsync(@"
+                    UPDATE Documents
+                    SET Title = COALESCE(@Title, Title),
+                        Justification = COALESCE(@Justification, Justification),
+                        DivisionCode = COALESCE(@DivisionCode, DivisionCode),
+                        DepartmentCode = COALESCE(@DepartmentCode, DepartmentCode),
+                        SubDepartmentCode = COALESCE(@SubDepartmentCode, SubDepartmentCode),
+                        BusinessDomainCode = COALESCE(@BusinessDomainCode, BusinessDomainCode),
+                        LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                    WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                    new
+                    {
+                        Title = input.DocumentName,
+                        input.Justification,
+                        input.DivisionCode,
+                        input.DepartmentCode,
+                        input.SubDepartmentCode,
+                        input.BusinessDomainCode,
+                        UserId = empCode,
+                        input.DocumentId,
+                        CompanyId
+                    }, transaction);
+            }
+
+            // Refresh Distribution List / Document Users -- delete then reinsert, same "start
+            // clean" approach the Request-side Draft update uses. Safe to run unconditionally
+            // (including for a fresh document, where these tables are already empty) since
+            // InsertDocumentDistributionsAsync is a pure-insert helper with no delete step of its
+            // own.
+            await _common.ExecuteAsync(@"
+                DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+                DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+                new { input.DocumentId, CompanyId }, transaction);
+            await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
+
+            // Re-fetch the current row (CreateBareDocumentForSubmissionAsync/the UPDATE above may
+            // have just changed it) for the three helpers below, which all read fields off this
+            // dynamic row.
+            var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT * FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { input.DocumentId, CompanyId }, transaction);
+
+            await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction, enforceRequired: false);
+            await ValidateAndSaveAttributesAsync(input, doc, transaction, enforceRequired: false);
+            await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction, enforceRequired: false);
+
+            var snapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
+            await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Draft Saved", "Document",
+                input.DocumentId, _clientContextService.GetRequestIpAddress(), newValues: snapshotJson, transaction: transaction);
+
+            await transaction.CommitAsync();
+            return input.DocumentId;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     // Uploaded file names sometimes arrive with the extension duplicated (e.g. a browser-downloaded
     // template gets re-saved by the OS/browser as "Template.docx.docx" before being re-uploaded here).
     // Collapses exactly one trailing repeat back to the original name.
@@ -1160,6 +1312,21 @@ public class DocumentComponent
     // a separate copy there rather than refactored into one shared method, since it's a tiny,
     // self-contained static helper and this is the only other call site) -- used to seed a
     // direct Revision/Obsoletion's version from its parent document's current version.
+    // Bumps the minor component of a version (e.g. "1.0" -> "1.1"). Used when a document that was
+    // reverted for rework is resubmitted, so the resubmission carries a distinct version number
+    // from the attempt the approver sent back. Same logic as
+    // DocumentRequestComponent.IncrementMinorVersion, which does this for Requests.
+    private static string IncrementMinorVersion(string? current)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            var parts = current.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major) && int.TryParse(parts[1], out int minor))
+                return $"{major}.{minor + 1}";
+        }
+        return "1.0";
+    }
+
     private static string IncrementMajorVersion(string? current)
     {
         if (!string.IsNullOrWhiteSpace(current))
@@ -1265,16 +1432,28 @@ public class DocumentComponent
         {
             foreach (var u in users)
             {
+                // RoleId/cabinet are carried through (UserDistributionInputDto already supplies
+                // them) so the "Document Users" grid can be rebuilt when a document is reopened --
+                // it groups rows by role, and a row with no RoleId is skipped entirely. The
+                // Request-scoped table has always stored these; the Document-scoped one dropped
+                // them, which is why reopened documents showed an empty Document Users grid.
                 await _common.ExecuteAsync(@"
                     INSERT INTO DocumentUserDistributions
-                    (CompanyId, DocumentId, EmployeeCode, CreatedBy)
+                    (CompanyId, DocumentId, EmployeeCode, RoleId, DivisionCode, DepartmentCode,
+                     SubDepartmentCode, BusinessDomainCode, CreatedBy)
                     VALUES
-                    (@CompanyId, @DocumentId, @EmployeeCode, @CreatedBy);",
+                    (@CompanyId, @DocumentId, @EmployeeCode, @RoleId, @DivisionCode, @DepartmentCode,
+                     @SubDepartmentCode, @BusinessDomainCode, @CreatedBy);",
                 new
                 {
                     CompanyId = companyId,
                     DocumentId = documentId,
                     u.EmployeeCode,
+                    u.RoleId,
+                    u.DivisionCode,
+                    u.DepartmentCode,
+                    u.SubDepartmentCode,
+                    u.BusinessDomainCode,
                     CreatedBy = empCode
                 }, transaction);
             }
@@ -1288,6 +1467,12 @@ public class DocumentComponent
         //-------------------------------------------------
         if (roles?.Any() == true)
         {
+            // RoleId/cabinet are deliberately left NULL here -- mirrors the Request-side
+            // expansion insert (DocumentRequestComponent). Those columns mean "which Document
+            // Users grid row did the user pick this employee under", and an employee auto-expanded
+            // from the Distribution List was never picked there. DRUsersComponent skips rows with
+            // a null RoleId, which is exactly what keeps the expanded employees out of the
+            // Document Users grid while the Distribution List card still shows the role rules.
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserDistributions
                 (CompanyId, DocumentId, EmployeeCode, CreatedBy)
@@ -1387,22 +1572,17 @@ public class DocumentComponent
                 new { CompanyId = companyId, PolicyId = policyId, CreatedBy = empCode }, transaction);
         }
 
-        // StepType here is what every consumer (Workflow Authorities preview, Approval History
-        // modal, the Word-merge signature block) displays as this row's "Role" -- showing the
-        // literal words "Ad-hoc Approver" there told the reader nothing about who this person
-        // actually is at the company. Using their real job Role instead (same
-        // tblEmployee/TblEmpJobProfile/tblsetupsdetail resolution already used for Document
-        // Users/Distribution List elsewhere in this file) matches what a policy-defined step's
-        // own Role column shows. Falls back to the literal text only if the employee genuinely
-        // has no resolvable Role (StepType is NOT NULL).
-        var employeeRoleName = await _common.ExecuteScalarAsync<string?>(@"
-            SELECT r.Name
-            FROM tblEmployee e
-            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
-            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
-            WHERE LPAD(@EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
-            LIMIT 1;",
-            new { CompanyId = companyId, EmployeeCode = employeeCode }, transaction);
+        // StepType is what every consumer (Workflow Authorities preview, Approval History modal,
+        // the Word-merge signature block) displays as this row's "Role" -- and in all three that
+        // column means the person's role IN THE APPROVAL WORKFLOW, the same vocabulary a
+        // policy-defined step uses ("Review", "Approve", ...), not their job title. An ad-hoc
+        // approver is added to review the document, so "Review" is what belongs there.
+        //
+        // This deliberately does NOT use the employee's job Role: their job title is already
+        // carried by the Designation column right next to it, so putting it in Role as well
+        // produced rows reading Role "Director of the Board" / Designation "Director" -- the same
+        // fact twice, and neither of them the workflow role the column is meant to show.
+        const string adHocStepType = "Review";
 
         var stepDefId = await _common.ExecuteScalarAsync<int>(@"
             INSERT INTO WorkflowStepDefinitions
@@ -1420,7 +1600,7 @@ public class DocumentComponent
             {
                 CompanyId = companyId,
                 VersionId = versionId,
-                StepType = string.IsNullOrWhiteSpace(employeeRoleName) ? "Ad-hoc Approver" : employeeRoleName,
+                StepType = adHocStepType,
                 EmployeeCode = employeeCode,
                 CreatedBy = empCode
             }, transaction);
@@ -1433,7 +1613,10 @@ public class DocumentComponent
     // at Document Creation/Submission time, instead. A file and typed/existing content are
     // treated as interchangeable ways to satisfy this -- see the comment further below for why
     // this no longer branches on the DocumentType's configured TemplateType.
-    private async Task AttachOrUpdateTemplateAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction)
+    // enforceRequired=false is used by SaveDocumentAsDraftAsync -- a Draft save must not reject
+    // a document that simply doesn't have content yet (that's the whole point of a Draft); a real
+    // Submit still requires it via the default true.
+    private async Task AttachOrUpdateTemplateAsync(SubmitDocument input, dynamic doc, int companyId, string empCode, IDbTransaction transaction, bool enforceRequired = true)
     {
         bool hasFile = !string.IsNullOrWhiteSpace((string)doc.documenturl);
         bool hasContent = await _common.ExecuteScalarAsync<bool>(@"
@@ -1490,7 +1673,7 @@ public class DocumentComponent
 
         // Nothing new provided now, and the document doesn't already have a file or content
         // from Request Creation time either -- genuinely nothing to submit.
-        if (!fileProvided && !contentProvided && !hasFile && !hasContent)
+        if (enforceRequired && !fileProvided && !contentProvided && !hasFile && !hasContent)
         {
             throw new CustomException("A document file or content is required before this document can be submitted.", 400);
         }
@@ -1780,6 +1963,36 @@ public class DocumentComponent
             ORDER BY dsh.ChangedAt DESC LIMIT 1;",
                 new { DocumentId = documentId }, transaction);
 
+            // Drives the status watermark stamped across every page (see ApplyStatusWatermark).
+            var currentStateCode = await _common.ExecuteScalarAsync<string>(@"
+            SELECT ds.Code
+            FROM DocumentStateHistory dsh
+            JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+            WHERE dsh.DocumentId = @DocumentId
+            ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1;",
+                new { DocumentId = documentId }, transaction);
+
+            // "Reverted" is not a state of its own: sending a document back for rework returns it
+            // to DRAFT and records the reverting execution on that transition row (see
+            // SendBackForReworkAsync). A non-null WorkflowExecutionId on a DRAFT transition is
+            // therefore what separates a reverted document from one that was never submitted --
+            // the same idiom GetMyDraftDocumentsAsync uses for its Draft/Reverted column.
+            //
+            // Only consulted while the document is actually sitting in DRAFT: a document that was
+            // reverted once and has since been resubmitted and approved still carries that history
+            // row, and must show APPROVED rather than REVERTED.
+            bool isReverted = false;
+            if (string.Equals(currentStateCode, "DRAFT", StringComparison.OrdinalIgnoreCase))
+            {
+                isReverted = await _common.ExecuteScalarAsync<bool>(@"
+                SELECT EXISTS(
+                    SELECT 1 FROM DocumentStateHistory
+                    WHERE DocumentId = @DocumentId
+                      AND ToStateId = 1
+                      AND WorkflowExecutionId IS NOT NULL);",
+                    new { DocumentId = documentId }, transaction);
+            }
+
             string reviewDate = doc.nextreviewdate != null
                 ? FormatMergeDate((object)doc.nextreviewdate)
                 : "";
@@ -1789,7 +2002,7 @@ public class DocumentComponent
             { "DocumentTitle", (string)doc.title ?? "" },
             { "DocumentNumber", (string)doc.documentnumber ?? "" },
             { "Version", version },
-            { "EffectiveDate", effectiveDate.HasValue ? effectiveDate.Value.ToString("dd-MMM-yyyy") : "N/A" },
+            { "EffectiveDate", effectiveDate.HasValue ? FormatMergeDate(effectiveDate.Value) : "N/A" },
             { "ReviewDate", reviewDate },
             { "Supersede", string.IsNullOrWhiteSpace(supersede) ? "N/A" : supersede }
         };
@@ -1832,7 +2045,8 @@ public class DocumentComponent
             return await MergeContentIntoTemplateAsync(
                 (string)doc.documenttypecode,
                 (string?)doc.divisioncode, (string?)doc.departmentcode, (string?)doc.subdepartmentcode, (string?)doc.businessdomaincode,
-                placeholders, versionHtmlContent, contentStream, approvers);
+                placeholders, versionHtmlContent, contentStream, approvers,
+                ResolveWatermarkText(currentStateCode, isReverted));
         }
         catch(Exception ex)
         {
@@ -1855,7 +2069,8 @@ public class DocumentComponent
         Dictionary<string, string> placeholders,
         string? htmlContent,
         Stream? contentStream,
-        List<dynamic> approvers)
+        List<dynamic> approvers,
+        string? watermarkText = null)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(_CompanyId);
@@ -1958,6 +2173,10 @@ public class DocumentComponent
             // embedded into a footer MUST be added via that footer's own part, not
             // mainPart. Using the wrong part silently produces a relationship id the
             // owning part's XML can't resolve -- Word shows nothing, no error.
+            // Stamped before the header/footer parts are enumerated below, so a header created
+            // here for a template that had none is picked up by that same enumeration.
+            ApplyStatusWatermark(mainPart, watermarkText);
+
             var textContainers = new List<(OpenXmlElement Element, OpenXmlPart Part)> { (body, mainPart) };
             textContainers.AddRange(mainPart.HeaderParts.Select(h => ((OpenXmlElement)h.Header, (OpenXmlPart)h)));
             textContainers.AddRange(mainPart.FooterParts.Select(f => ((OpenXmlElement)f.Footer, (OpenXmlPart)f)));
@@ -2269,16 +2488,111 @@ public class DocumentComponent
         templateRow.Remove();
     }
 
+    // A document carries its status as a watermark across every page once it has been actioned,
+    // so a printed or forwarded copy still says what state it was downloaded in. Only these
+    // states get one -- an untouched draft or in-flight document is deliberately left unmarked.
+    //
+    // EFFECTIVE maps to "AUTHORIZED" because authorisation is what produces it: authorising a
+    // document moves it straight to EFFECTIVE (see AuthorizeDocumentPostTrainingAsync ->
+    // MakeDocumentEffectiveAsync), so the AUTHORIZED state is never actually rested in. Mapping
+    // only the literal AUTHORIZED code would mean the watermark never appeared for an authorised
+    // document.
+    private static string? ResolveWatermarkText(string? stateCode, bool isReverted) => stateCode?.Trim().ToUpperInvariant() switch
+    {
+        "APPROVED" => "APPROVED",
+        "REJECTED" => "REJECTED",
+        "AUTHORIZED" or "EFFECTIVE" => "AUTHORIZED",
+        // A plain draft stays unmarked; only one sent back for rework is called out.
+        "DRAFT" when isReverted => "REVERTED",
+        _ => null
+    };
+
+    // Word renders a watermark as a VML WordArt shape anchored in the page header -- that is what
+    // puts it behind the body text on every page rather than inline at one position. It therefore
+    // goes into each header part the template defines (default/first/even are separate parts, and
+    // a shape in only one of them would leave the other pages unmarked).
+    private static void ApplyStatusWatermark(MainDocumentPart mainPart, string? watermarkText)
+    {
+        if (string.IsNullOrEmpty(watermarkText))
+            return;
+
+        var headers = mainPart.HeaderParts.ToList();
+
+        // A template with no header at all still needs somewhere to anchor the shape.
+        if (headers.Count == 0)
+        {
+            var headerPart = mainPart.AddNewPart<HeaderPart>();
+            headerPart.Header = new Header();
+            var headerId = mainPart.GetIdOfPart(headerPart);
+
+            foreach (var sectPr in mainPart.Document.Body!.Elements<SectionProperties>())
+                sectPr.PrependChild(new HeaderReference { Type = HeaderFooterValues.Default, Id = headerId });
+
+            headers.Add(headerPart);
+        }
+
+        foreach (var headerPart in headers)
+        {
+            var header = headerPart.Header ??= new Header();
+
+            // Re-downloading a document re-opens the pristine template file, so there is never an
+            // existing watermark to collide with -- but this keeps the method safe to call twice.
+            if (header.Descendants<Paragraph>().Any(par => par.InnerXml.Contains(WatermarkShapeId, StringComparison.Ordinal)))
+                continue;
+
+            var run = new Run();
+            run.InnerXml = BuildWatermarkPictXml(watermarkText);
+            header.AppendChild(new Paragraph(run));
+            headerPart.Header.Save();
+        }
+    }
+
+    private const string WatermarkShapeId = "DmsStatusWatermark";
+
+    // Attribute values are single-quoted throughout: XML accepts either, and it keeps this
+    // readable in a C# verbatim string without doubling every quote.
+    private static string BuildWatermarkPictXml(string text) =>
+        $@"<w:pict xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                  xmlns:v='urn:schemas-microsoft-com:vml'
+                  xmlns:o='urn:schemas-microsoft-com:office:office'>
+            <v:shapetype id='_x0000_t136' coordsize='21600,21600' o:spt='136' adj='10800' path='m@7,0l@8,0m@5,21600l@6,21600e'>
+                <v:formulas>
+                    <v:f eqn='sum #0 0 10800' /><v:f eqn='prod #0 2 1' /><v:f eqn='sum 21600 0 @1' />
+                    <v:f eqn='sum 0 0 @2' /><v:f eqn='sum 21600 0 @3' /><v:f eqn='if @0 @3 0' />
+                    <v:f eqn='if @0 21600 @1' /><v:f eqn='if @0 0 @2' /><v:f eqn='if @0 @4 21600' />
+                    <v:f eqn='mid @5 @6' /><v:f eqn='mid @8 @5' /><v:f eqn='mid @7 @8' />
+                    <v:f eqn='mid @6 @7' /><v:f eqn='sum @6 0 @5' />
+                </v:formulas>
+                <v:path textpathok='t' o:connecttype='custom' o:connectlocs='@9,0;@10,10800;@11,21600;@12,10800' o:connectangles='270,180,90,0' />
+                <v:textpath on='t' fitshape='t' />
+                <v:handles><v:h position='#0,bottomRight' xrange='6629,14971' /></v:handles>
+            </v:shapetype>
+            <v:shape id='{WatermarkShapeId}' o:spid='_x0000_s2049' type='#_x0000_t136'
+                     style='position:absolute;margin-left:0;margin-top:0;width:468pt;height:234pt;rotation:315;z-index:-251654144;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin'
+                     fillcolor='#d3d3d3' stroked='f'>
+                <v:textpath style='font-family:Calibri;font-size:1pt' string='{text}' />
+            </v:shape>
+        </w:pict>";
+
+    // Matches what the screens show (CustomDateFormatPipe): "Sep 15, 2026 09:55:33" for a value
+    // that carries a time, "Sep 15, 2026" for a plain date -- so a merged Word document reads the
+    // same as the grid the user came from.
+    //
     // Npgsql maps a Postgres `date` column to System.DateOnly (not DateTime) when read into a
     // dynamic row, and DateOnly doesn't implement IConvertible -- Convert.ToDateTime(object)
     // throws InvalidCastException on it. `timestamp`/`timestamptz` columns still come back as
-    // DateTime as usual. Handles both rather than assuming which one a given column actually is.
+    // DateTime as usual. Handles both rather than assuming which one a given column actually is;
+    // that distinction is also what decides whether a time is appended, since printing
+    // "00:00:00" for a date-only column would be inventing precision it never had.
+    private const string MergeDateFormat = "MMM dd, yyyy";
+    private const string MergeDateTimeFormat = "MMM dd, yyyy HH:mm:ss";
+
     private static string FormatMergeDate(object? value) => value switch
     {
         null => "",
-        DateOnly d => d.ToString("dd-MMM-yyyy"),
-        DateTime dt => dt.ToString("dd-MMM-yyyy"),
-        _ => Convert.ToDateTime(value).ToString("dd-MMM-yyyy")
+        DateOnly d => d.ToString(MergeDateFormat, CultureInfo.InvariantCulture),
+        DateTime dt => dt.ToString(MergeDateTimeFormat, CultureInfo.InvariantCulture),
+        _ => Convert.ToDateTime(value).ToString(MergeDateTimeFormat, CultureInfo.InvariantCulture)
     };
 
     // Signature images have no FileType column of their own -- the saved file's extension
@@ -2370,7 +2684,9 @@ public class DocumentComponent
         return true;
     }
 
-    private async Task ValidateAndSaveAttributesAsync(SubmitDocument input, dynamic documentInfo, IDbTransaction transaction)
+    // enforceRequired=false is used by SaveDocumentAsDraftAsync -- values are still saved as
+    // given, just without rejecting the whole save over a still-missing mandatory attribute.
+    private async Task ValidateAndSaveAttributesAsync(SubmitDocument input, dynamic documentInfo, IDbTransaction transaction, bool enforceRequired = true)
     {
         //-------------------------------------------------
         // 1️⃣ Load Active Attributes
@@ -2437,7 +2753,7 @@ public class DocumentComponent
             // 3️⃣ Mandatory Validation
             //-------------------------------------------------
 
-            if (isMandatory)
+            if (enforceRequired && isMandatory)
             {
                 if (submitted == null ||
                     (submitted.ValueText == null &&
@@ -2486,14 +2802,16 @@ public class DocumentComponent
         }
     }
 
-    private async Task ValidateAndSaveTrainingUsersAsync(List<TraningUsers> TrainingUsers, int documentId, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction)
+    // enforceRequired=false is used by SaveDocumentAsDraftAsync -- whatever trainees were already
+    // picked are still saved, just without rejecting the save over none being picked yet.
+    private async Task ValidateAndSaveTrainingUsersAsync(List<TraningUsers> TrainingUsers, int documentId, dynamic documentInfo, int companyId, string empCode, IDbTransaction transaction, bool enforceRequired = true)
     {
         // 1. Check if Training is required for this DocumentType
         var tp = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-            SELECT TrainingRequired 
-            FROM TrainingPolicies 
-            WHERE CompanyId = @CompanyId 
-              AND DocumentTypeCode = @DocTypeCode 
+            SELECT TrainingRequired
+            FROM TrainingPolicies
+            WHERE CompanyId = @CompanyId
+              AND DocumentTypeCode = @DocTypeCode
               AND IsActive = TRUE;",
             new { CompanyId = companyId, DocTypeCode = (string)documentInfo.documenttypecode }, transaction);
 
@@ -2503,8 +2821,11 @@ public class DocumentComponent
         {
             // UC Requirement: Users must be attached if Training = True
             // Note: Ensure your 'SubmitDocument' DTO contains: public List<string>? TrainingUserIds { get; set; }
-            if (TrainingUsers == null || TrainingUsers.Count == 0)
+            if (enforceRequired && (TrainingUsers == null || TrainingUsers.Count == 0))
                 throw new CustomException("Training is required for this document type. Please select users for training.", 400);
+
+            if (TrainingUsers == null || TrainingUsers.Count == 0)
+                return;
 
             // Clear any existing training users (useful in case of rework/resubmission)
             await _common.ExecuteAsync(@"
@@ -2561,46 +2882,46 @@ public class DocumentComponent
                 return;
 
             //-----------------------------------------
-            // 2️⃣ Get Latest Version
+            // 2️⃣ Get the current Draft version number
             //-----------------------------------------
-            var current = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT *
+            var currentVersion = await _common.ExecuteScalarAsync<string>(@"
+                SELECT Version
                 FROM DocumentVersions
                 WHERE CompanyId = @CompanyId
-                  AND DocumentId = @DocumentId 
+                  AND DocumentId = @DocumentId
+                  AND VersionType = 1
                   AND IsActive = TRUE
-                ORDER BY CreatedAt DESC
+                ORDER BY CreatedAt DESC, Id DESC
                 LIMIT 1",
             new { companyId, documentId }, transaction);
 
-            if (current == null)
+            if (string.IsNullOrWhiteSpace(currentVersion))
                 throw new Exception("No valid document content found to promote.");
 
             //-----------------------------------------
-            // 3️⃣ Promote 1.0 → 1.0
+            // 3️⃣ Bump the Draft version in place (e.g. "1.0" -> "1.1")
             //-----------------------------------------
-            var newVersion = "1.0";
+            // This used to INSERT a second VersionType = 1 row, and hardcoded its Version to
+            // '1.0' -- so a resubmitted document kept showing the version the approver had
+            // already reverted, and picked up a duplicate draft row each time. The duplicate is
+            // the worse half: MakeDocumentEffectiveAsync promotes EVERY VersionType = 1 row to
+            // Effective, so the document ended up with two simultaneously-current versions.
+            //
+            // Updating in place loses nothing: AttachOrUpdateTemplateAsync has already written
+            // the resubmitted Content onto this same row before this method runs, so the copy the
+            // INSERT made was of the new content anyway, never the reverted attempt's.
+            var newVersion = IncrementMinorVersion(currentVersion);
 
-            //-----------------------------------------
-            // 4️⃣ Insert New Version Row
-            //-----------------------------------------
             await _common.ExecuteAsync(@"
-            INSERT INTO DocumentVersions
-            (
-                CompanyId, DocumentId, Version, VersionType, Content, CreatedBy, LastModifiedBy
-            )
-            VALUES
-            (
-                @CompanyId, @DocumentId, '1.0', 1, @Content, @CreatedBy, @LastModifiedBy
-            )
-            ", new
-            {
-                companyId,
-                documentId,
-                Content = current.Content,
-                CreatedBy = empCode,
-                LastModifiedBy = empCode
-            }, transaction);
+                UPDATE DocumentVersions
+                SET Version = @Version,
+                    LastModifiedAt = NOW(),
+                    LastModifiedBy = @UserId
+                WHERE CompanyId = @CompanyId
+                  AND DocumentId = @DocumentId
+                  AND VersionType = 1
+                  AND IsActive = TRUE;",
+            new { companyId, documentId, Version = newVersion, UserId = empCode }, transaction);
 
         }
         catch (Exception)
@@ -3014,11 +3335,18 @@ public class DocumentComponent
 
             bool requiresTraining = docInfo != null && docInfo!.trainingrequired == true;
 
-            if (!requiresTraining)
-            {
-                await MakeDocumentEffectiveAsync(companyId, documentId, userId, tx);
-            }
-            else
+            // When training isn't required, the document simply stays at 'APPROVED' -- it does
+            // NOT skip straight to EFFECTIVE. Authorization is a separate, always-expected gate:
+            // AuthorizeDocumentPostTrainingAsync already explicitly allows authorizing directly
+            // from 'APPROVED' when there's no training (`!trainingRequired && currentStateCode
+            // == "APPROVED"`), and GetPendingAuthorizationsAsync already lists 'APPROVED' as
+            // authorization-eligible too -- both were already correctly built for this case. The
+            // previous `await MakeDocumentEffectiveAsync(...)` call here shortcut past that
+            // entirely for any document type with no training policy (e.g. Policies, or any type
+            // with no TrainingPolicies row at all), silently skipping Authorization -- exactly
+            // the reported bug: only SOP (which has training) ever reached the Authorization
+            // screen; everything else went straight to Effective unauthorized.
+            if (requiresTraining)
             {
 
                 // 2. If Training is required, Transition to TRAINING_PENDING
@@ -3584,12 +3912,10 @@ public class DocumentComponent
             //-------------------------------------------------
 
             // Same fix as above -- DocumentUserDistributions (Document-scoped, keyed by
-            // DocumentId) instead of DocumentRequestUserDistributions (Request-scoped). This
-            // table doesn't track RoleId/cabinet grouping the way the Request-scoped one does, so
-            // those columns are left at their DTO defaults (null/0) -- there's nothing to map
-            // them from.
+            // DocumentId) instead of DocumentRequestUserDistributions (Request-scoped).
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
                 SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+                drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
                 LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentUserDistributions drd
@@ -5665,6 +5991,258 @@ public class DocumentComponent
         }
     }
 
+    // The exact complement of GetMyDocumentsAsync: every Document the user created that is still
+    // in DRAFT (DocumentStates.Id = 1) -- what "My Documents" deliberately excludes. Two kinds of
+    // row land here and the tab shows both, distinguished only by IsReworked:
+    //   * never submitted -- its only DRAFT DocumentStateHistory row is the one
+    //     CreateBareDocumentForSubmissionAsync writes, with WorkflowExecutionId NULL;
+    //   * submitted then sent back for rework -- SendBackForReworkAsync writes a SECOND
+    //     DRAFT-transition row carrying the reverting WorkflowExecutionId, so that column being
+    //     non-null is what tells the two apart (same idiom PromoteVersionAfterReworkAsync's
+    //     wasReworkedCount already uses).
+    // Distribution hydration mirrors GetEffectiveDocumentsForRevisionAsync's step 3️⃣/4️⃣/5️⃣
+    // verbatim (Document-scoped tables, aliased back to DocumentRequestId so the shared DTOs
+    // don't change) because the detail panel prefills from these fields on row click.
+    public async Task<PaginationResult<DraftDocumentDto>> GetMyDraftDocumentsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var whereClause = @"WHERE doc.CompanyId = @CompanyId
+                AND doc.CreatedBy = @CreatedBy
+                AND doc.IsDeleted = FALSE
+                AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+                AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+                AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+                AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)
+                AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+                AND (
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = doc.Id
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) = 1";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(doc.Title) LIKE '%{search}%'
+                    OR UPPER(doc.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            // Sorting (whitelisted to avoid SQL Injection)
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "TITLE" => "doc.Title",
+                "DOCUMENTNAME" => "doc.Title",
+                "DOCUMENTNUMBER" => "doc.DocumentNumber",
+                "CREATEDAT" => "doc.CreatedAt",
+                "CREATEDBY" => "doc.CreatedBy",
+                "LASTMODIFIEDAT" => "doc.LastModifiedAt",
+                "LASTMODIFIEDBY" => "doc.LastModifiedBy",
+                _ => "doc.CreatedAt"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            var dataSql = $@"
+                SELECT doc.*,
+                    (SELECT ds.Name
+                     FROM DocumentStateHistory dsh
+                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                     WHERE dsh.DocumentId = doc.Id
+                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
+                    EXISTS(
+                        SELECT 1 FROM DocumentStateHistory rw
+                        WHERE rw.CompanyId = doc.CompanyId
+                          AND rw.DocumentId = doc.Id
+                          AND rw.ToStateId = 1
+                          AND rw.WorkflowExecutionId IS NOT NULL
+                    ) AS IsReworked
+                FROM Vw_Documents doc
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"SELECT COUNT(1) FROM Vw_Documents doc {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                CreatedBy = empCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode,
+                input.DocumentTypeCode
+            };
+
+            var dynamicRows = await _common.QueryAsync<dynamic>(dataSql, queryParams);
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            var documents = new List<DraftDocumentDto>();
+            foreach (var row in dynamicRows)
+            {
+                var dict = row as IDictionary<string, object>;
+                if (dict == null) continue;
+
+                documents.Add(new DraftDocumentDto
+                {
+                    Id = GetValue<int>(dict, "id"),
+                    CompanyId = GetValue<int>(dict, "companyid"),
+                    Company = GetValue<string>(dict, "company"),
+                    DocumentNumber = GetValue<string>(dict, "documentnumber"),
+                    RequestId = GetValue<int>(dict, "requestid"),
+                    ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
+                    DocumentId = GetValue<int>(dict, "id"),
+                    DocumentType = GetValue<string>(dict, "documenttype"),
+                    DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
+                    DocumentName = GetValue<string>(dict, "title"),
+                    Justification = GetValue<string>(dict, "justification"),
+                    Division = GetValue<string>(dict, "division"),
+                    DivisionCode = GetValue<string>(dict, "divisioncode"),
+                    Department = GetValue<string>(dict, "department"),
+                    DepartmentCode = GetValue<string>(dict, "departmentcode"),
+                    SubDepartment = GetValue<string>(dict, "subdepartment"),
+                    SubDepartmentCode = GetValue<string>(dict, "subdepartmentcode"),
+                    BusinessDomain = GetValue<string>(dict, "businessdomain"),
+                    BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
+                    NextReviewDate = GetValue<DateTime?>(dict, "nextreviewdate")?.ToString("yyyy-MM-dd") ?? string.Empty,
+                    DocumentURL = GetValue<string>(dict, "documenturl"),
+                    VersionContent = GetValue<string>(dict, "versioncontent"),
+                    Version = GetValue<string>(dict, "version"),
+                    VersionType = GetValue<string>(dict, "versiontype"),
+                    ChangeDescription = GetValue<string>(dict, "changedescription"),
+                    CurrentStatus = GetValue<string>(dict, "currentstatus"),
+                    IsReworked = GetValue<bool>(dict, "isreworked"),
+                    IsActive = GetValue<bool>(dict, "isactive"),
+                    IsDeleted = GetValue<bool>(dict, "isdeleted"),
+                    CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    CreatedBy = GetValue<string>(dict, "createdby"),
+                    LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
+                    LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
+                    CreatedByName = GetValue<string>(dict, "createdbyname"),
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                });
+            }
+
+            if (!documents.Any())
+                return new PaginationResult<DraftDocumentDto>
+                {
+                    Items = new List<DraftDocumentDto>(),
+                    TotalCount = 0
+                };
+
+            var documentIds = documents.Select(x => x.Id).ToArray();
+
+            var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
+                SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
+                       dl.DistributionType AS DistributionTypeId,
+                       dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                       div.Name AS Division,
+                       dep.Name AS Department,
+                       subd.Name AS SubDepartment,
+                       bd.Name AS BusinessDomain,
+	                   dt.Name AS DistributionType
+                   FROM DocumentRoleDistributions dl
+                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
+                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
+                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                        LEFT JOIN Companies c ON dl.CompanyId = c.Id
+                        LEFT JOIN Roles r ON dl.RoleId = r.Id
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
+                WHERE dl.CompanyId = @CompanyId
+                AND dl.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+                SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+                drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
+                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
+                FROM DocumentUserDistributions drd
+                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
+                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
+                WHERE drd.CompanyId = @CompanyId
+                AND drd.DocumentId = ANY(@DocumentIds);",
+                new { CompanyId, DocumentIds = documentIds })).ToList();
+
+            // See DMSUtilities.CollapseAnyRoleGroups -- a Reverted document was already submitted
+            // once, which expanded any "Any role" picks into concrete per-role rows; collapsing
+            // them back for display makes a resumed Reverted draft look like a never-submitted one.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
+
+            foreach (var document in documents)
+            {
+                var rawDistributionList = roleDistributions
+                    .Where(x => x.DocumentRequestId == document.Id)
+                    .ToList();
+                document.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+
+                document.UserList = userDistributions
+                    .Where(x => x.DocumentRequestId == document.Id)
+                    .ToList();
+            }
+
+            return new PaginationResult<DraftDocumentDto>
+            {
+                Items = documents,
+                TotalCount = totalCount
+            };
+        }
+        catch (Exception)
+        {
+            throw new CustomException("Failed to fetch your draft documents.", 500);
+        }
+    }
+
+    // Badge count for the "Document Draft" tab -- same scope as GetMyDraftDocumentsAsync minus the
+    // cabinet/document-type filters, matching GetMyDocumentsCountAsync's convention.
+    public async Task<int> GetMyDraftDocumentsCountAsync()
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            var clientIp = _clientContextService.GetClientIP();
+            int CompanyId = int.Parse(_CompanyId);
+            var empId = _utilities.GetEmpid(clientIp);
+            var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            var countSql = @"SELECT COUNT(1) FROM Vw_Documents doc
+                WHERE doc.CompanyId = @CompanyId
+                AND doc.CreatedBy = @CreatedBy
+                AND doc.IsDeleted = FALSE
+                AND (
+                    SELECT ds.Id
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = doc.Id
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) = 1;";
+
+            return await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId, CreatedBy = empCode });
+        }
+        catch (Exception)
+        {
+            throw new CustomException("Failed to fetch your draft documents count.", 500);
+        }
+    }
+
     // Excel export for the "My Documents" tab (create-update-document) -- mirrors
     // GetMyDocumentsAsync's scope (CreatedBy + IsDeleted = FALSE + non-Draft, same optional
     // cabinet/document-type filters) and the columns my-documents.ts's grid shows, following
@@ -5928,13 +6506,20 @@ public class DocumentComponent
             int rowIndex = 2;
             foreach (var row in requests)
             {
+                // Exactly 7 values here, matching the 7 fixed headers above 1-for-1 (Document
+                // Type, Document ID, Document Name, Justification, Company, Proposed Document
+                // Number, Proposed Version Number). This used to also include row.RequestJustification
+                // as an 8th value with no matching header -- every column from "Company" onward
+                // then silently shifted one column right of its own header (Company showing
+                // Justification text, Proposed Document Number showing the Company name,
+                // Proposed Version Number showing the Document Number, Division showing "1.0",
+                // etc.) -- confirmed directly against a real exported .xlsx.
                 var values = new List<string>
                 {
                     row.DocumentType ?? "",
                     row.Id.ToString(),
                     row.Title ?? "",
                     row.DocumentJustification ?? "",
-                    row.RequestJustification ?? "",
                     row.Company ?? "",
                     row.DocumentNumber ?? "",
                     row.ProposedVersionNumber ?? "1.0",
@@ -6148,6 +6733,7 @@ public class DocumentComponent
 
             var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
                 SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+                drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
                 LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
                 FROM DocumentUserDistributions drd
