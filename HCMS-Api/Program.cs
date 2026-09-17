@@ -371,12 +371,64 @@ var app = builder.Build();
 var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads"); // example outside wwwroot
 Directory.CreateDirectory(uploadsPath);
 
-app.UseStaticFiles();
 app.UseRouting();
 HCMS_Api.Common.ServiceLocator.Initialize(app.Services);
 
+// Say out loud, once, where uploaded files are being read from and written to.
+//
+// Every "the file is right there but the app says 404" report this system has produced came down
+// to these paths disagreeing, and nothing ever printed them -- so the only way to find it was to
+// go read the code. Two ways they disagree, both seen for real:
+//
+//   * The process's working directory is not the content root (normal under IIS and Windows
+//     Service, where it is often C:\Windows\System32). Everything now resolves paths through
+//     DmsPaths instead of the working directory, and the two lines below make it obvious if that
+//     ever stops being true.
+//   * A wwwroot gets restored or copied INSIDE the served wwwroot, leaving files one level too
+//     deep at wwwroot/wwwroot/uploads/... Static files still serve from the outer one, so every
+//     document 404s while sitting in plain sight in Explorer. That is what the nested-folder
+//     warning below catches.
+{
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.Paths");
+
+    var resolvedWebRoot = HCMS_Api.Common.DmsPaths.WebRoot;
+    startupLogger.LogInformation(
+        "File storage: WebRoot='{WebRoot}', ContentRoot='{ContentRoot}', CurrentDirectory='{CurrentDirectory}'.",
+        resolvedWebRoot, app.Environment.ContentRootPath, Directory.GetCurrentDirectory());
+
+    var nestedWebRoot = Path.Combine(resolvedWebRoot, "wwwroot");
+    if (Directory.Exists(nestedWebRoot))
+    {
+        startupLogger.LogWarning(
+            "A nested wwwroot exists at '{NestedWebRoot}'. Files under it are NOT served: requests for " +
+            "/uploads/... resolve to '{WebRoot}', one level above. If documents or templates are 404ing " +
+            "while visibly present on disk, move the contents up one level and delete the nested folder.",
+            nestedWebRoot, resolvedWebRoot);
+    }
+
+    if (!Directory.Exists(Path.Combine(resolvedWebRoot, "uploads")))
+    {
+        startupLogger.LogWarning(
+            "No uploads folder under '{WebRoot}'. It is created on first upload, so this is only expected " +
+            "on a brand-new deployment -- on an existing one it means this is not the wwwroot the files " +
+            "were written to, and downloads will 404.",
+            resolvedWebRoot);
+    }
+}
+
 // Use CORS middleware
 app.UseCors("AllowSpecificOrigin");
+
+// Static files are served AFTER UseCors, deliberately.
+//
+// Middleware runs in the order it is added, and this used to sit above UseCors -- so every file
+// under wwwroot was written to the response and the pipeline short-circuited before the CORS
+// middleware ever ran. The file came back without an Access-Control-Allow-Origin header, and a
+// browser fetch() from the Angular app on a different port was blocked with a CORS error even
+// though the origin was in AllowedOrigins all along. curl saw the same request succeed, because
+// curl does not enforce CORS -- which is what made this look like a file problem rather than a
+// header problem.
+app.UseStaticFiles();
 
 // Configure the HTTP request pipeline.
 //if (app.Environment.IsDevelopment())

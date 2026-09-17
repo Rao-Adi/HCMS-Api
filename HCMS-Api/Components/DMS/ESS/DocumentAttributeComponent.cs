@@ -179,7 +179,7 @@ public class DocumentAttributeComponent
                 SET IsDeleted = True,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = '{empCode.Replace("'", "''")}'
-                WHERE Id = {code} CompanyId ={CompanyId}";
+                WHERE Id = {code} AND CompanyId ={CompanyId}";
 
             return _common.ExecuteNonQuery(deleteQuery);
         }

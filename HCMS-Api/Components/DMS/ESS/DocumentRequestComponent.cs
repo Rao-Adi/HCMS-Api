@@ -123,7 +123,7 @@ public class DocumentRequestComponent
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "drafts");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -290,7 +290,7 @@ public class DocumentRequestComponent
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "drafts");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -421,7 +421,7 @@ public class DocumentRequestComponent
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "drafts");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -682,7 +682,7 @@ public class DocumentRequestComponent
             string? draftFileUrl = null;
             if (dto.DraftFile != null && dto.DraftFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "drafts");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -981,7 +981,7 @@ public class DocumentRequestComponent
             string? newDraftFileUrl = null;
             if (input.DraftFile != null && input.DraftFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "drafts");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "drafts");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -1888,6 +1888,15 @@ public class DocumentRequestComponent
     // next major release (e.g. "1.0" -> "2.0"), not restart at "1.0" as if it were a brand-new
     // document (the previous behavior for every request type, Creation included). A plain
     // Creation request (no ParentDocumentId) still starts at "1.0".
+    //
+    // The major bump alone stops being enough as soon as the same document is revised more than
+    // once. The Revision picker lists EFFECTIVE documents, so every revision of a document is
+    // raised against the same still-effective original -- each one reads the same parent version
+    // and proposes the same number. When an earlier attempt has already claimed it (a version
+    // already issued somewhere in the chain, or another request already proposing it), this
+    // attempt continues with a minor bump instead ("2.0" -> "2.1") -- the same renumbering a
+    // reverted request's own resubmission gets. Kept in step with
+    // DocumentComponent.ResolveNextRevisionVersion, which does this for the direct Revision path.
     private async Task<string> ResolveInitialProposedVersionAsync(int companyId, int? parentDocumentId, IDbTransaction transaction)
     {
         if (!parentDocumentId.HasValue)
@@ -1899,7 +1908,82 @@ public class DocumentRequestComponent
             ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
             new { DocumentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
 
-        return IncrementMajorVersion(parentVersion);
+        // Highest number already claimed anywhere in this document's chain -- walk up to the root,
+        // then back down through every descendant, and count both issued document versions and the
+        // versions other requests have already proposed against that chain. Ordered numerically by
+        // major then minor; a plain string sort would put "10.0" before "9.0".
+        var chainVersion = await _common.ExecuteScalarAsync<string>(@"
+            WITH RECURSIVE Ancestors AS (
+                SELECT Id, ParentDocumentId, 0 AS Depth
+                FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId
+                UNION ALL
+                SELECT d.Id, d.ParentDocumentId, a.Depth + 1
+                FROM Documents d
+                INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
+                WHERE d.CompanyId = @CompanyId
+            ),
+            RootDoc AS (SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1),
+            Chain AS (
+                SELECT r.RootId AS Id FROM RootDoc r
+                UNION ALL
+                SELECT d.Id FROM Documents d
+                INNER JOIN Chain c ON d.ParentDocumentId = c.Id
+                WHERE d.CompanyId = @CompanyId
+            ),
+            Claimed AS (
+                SELECT dv.Version AS Version
+                FROM DocumentVersions dv
+                INNER JOIN Chain c ON c.Id = dv.DocumentId
+                WHERE dv.CompanyId = @CompanyId AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                UNION ALL
+                SELECT dr.RowVersion AS Version
+                FROM DocumentRequests dr
+                INNER JOIN Chain c ON c.Id = dr.ParentDocumentId
+                WHERE dr.CompanyId = @CompanyId AND COALESCE(dr.IsDeleted, FALSE) = FALSE
+            )
+            SELECT Version FROM Claimed
+            WHERE Version ~ '^[0-9]+\.[0-9]+$'
+            ORDER BY split_part(Version, '.', 1)::int DESC,
+                     split_part(Version, '.', 2)::int DESC
+            LIMIT 1;",
+            new { DocumentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+        return ResolveNextRevisionVersion(parentVersion, chainVersion);
+    }
+
+    // parentVersion is the version being revised, chainVersion the highest already claimed anywhere
+    // in that document's chain. Normally a revision is the next major release of the parent
+    // ("1.1" -> "2.0"); if the chain already reached that number, an earlier attempt owns it, so
+    // this one continues from there with a minor bump rather than skipping a major release that was
+    // never issued. Mirrors DocumentComponent's copy of the same three helpers.
+    private static string ResolveNextRevisionVersion(string? parentVersion, string? chainVersion)
+    {
+        var candidate = IncrementMajorVersion(parentVersion);
+        return CompareVersions(chainVersion, candidate) >= 0
+            ? IncrementMinorVersion(chainVersion)
+            : candidate;
+    }
+
+    // Orders versions numerically by major then minor, so "9.0" sorts before "10.0". Anything
+    // unparseable sorts lowest, which makes it lose to a real version rather than win by accident.
+    private static int CompareVersions(string? left, string? right)
+    {
+        var (leftMajor, leftMinor) = ParseVersion(left);
+        var (rightMajor, rightMinor) = ParseVersion(right);
+        return leftMajor != rightMajor
+            ? leftMajor.CompareTo(rightMajor)
+            : leftMinor.CompareTo(rightMinor);
+    }
+
+    private static (int Major, int Minor) ParseVersion(string? version)
+    {
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            var parts = version.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major) && int.TryParse(parts[1], out int minor))
+                return (major, minor);
+        }
+        return (0, 0);
     }
 
     private async Task InsertHistoryAsync(
@@ -2429,6 +2513,28 @@ public class DocumentRequestComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
 
+            // Which of the 4 cabinet levels are actually enabled for this company. The grid
+            // hides a disabled level entirely, but this export listed all 4 unconditionally, so a
+            // company with Business Domain switched off still got a Business Domain column in the
+            // downloaded .xlsx. Mirrors ExportMyInboxRequestsAsync above, which already did this.
+            var activeCabinetLevels = (await _common.QueryAsync<string>(@"
+                SELECT Name FROM CabinetStructureTabsConfig
+                WHERE CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE;",
+                new { CompanyId })).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            bool showDivision = activeCabinetLevels.Contains("Division1111") || activeCabinetLevels.Any(n => n.StartsWith("Division", StringComparison.OrdinalIgnoreCase));
+            bool showDepartment = activeCabinetLevels.Any(n => n.StartsWith("Department", StringComparison.OrdinalIgnoreCase));
+            bool showSubDepartment = activeCabinetLevels.Any(n => n.StartsWith("SubDepartment", StringComparison.OrdinalIgnoreCase));
+            bool showBusinessDomain = activeCabinetLevels.Any(n => n.StartsWith("BusinessDomain", StringComparison.OrdinalIgnoreCase));
+
+            // Headers are derived from whichever columns this SELECT returns, so leaving a
+            // disabled level out here is enough to drop it from the workbook too.
+            var cabinetColumnsSql = string.Concat(
+                showDivision ? @",dr.Division AS ""Division""" : "",
+                showDepartment ? @",dr.Department AS ""Department""" : "",
+                showSubDepartment ? @",dr.SubDepartment AS ""Sub-Department""" : "",
+                showBusinessDomain ? @",dr.BusinessDomain AS ""Business Domain""" : "");
+
             // No DISTINCT here: Postgres rejects SELECT DISTINCT + ORDER BY once the ordered
             // column (CreatedAt/Status) is only exposed in transformed form (TO_CHAR/CASE) --
             // "for SELECT DISTINCT, ORDER BY expressions must appear in select list".
@@ -2436,11 +2542,7 @@ public class DocumentRequestComponent
                     dr.DocumentType AS ""Document Type"",
                     dr.RequestNumber AS ""Request Number"",
                     dr.DocumentName AS ""Document Name"",
-                    dr.Justification AS ""Justification"",
-                    dr.Division AS ""Division"",
-                    dr.Department AS ""Department"",
-                    dr.SubDepartment AS ""Sub-Department"",
-                    dr.BusinessDomain AS ""Business Domain"",
+                    dr.Justification AS ""Justification""{cabinetColumnsSql},
                     CASE dr.Status
                         WHEN 0 THEN CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN 'Reverted' ELSE 'Draft' END
                         WHEN 1 THEN 'Submitted'
@@ -3768,6 +3870,12 @@ public class DocumentRequestComponent
                     desig.name AS Designation,
                     wes.Decision,
                     wes.Observation,
+                    -- Returned under both names deliberately. StatusUpdatedOn is what the
+                    -- Approval History grid binds; ActionAt is what the Observation History cards
+                    -- bind. Only the aliased copy was selected, so DocumentRequestDetailsDto.ActionAt
+                    -- came back null and every observation card rendered a blank timestamp -- the
+                    -- last action performed showed no date at all.
+                    wes.ActionAt,
                     wes.ActionAt AS StatusUpdatedOn,
                     wes.IsActive,
                     we.Status AS ExecutionStatus,
@@ -3908,46 +4016,69 @@ public class DocumentRequestComponent
                     COALESCE(apEmp.Name, apprv.ChangedBy) AS ApprovedBy,
                     eff.ChangedAt AS EffectiveOn,
                     COALESCE(efEmp.Name, eff.ChangedBy) AS EffectiveBy,
-                    curState.Name AS CurrentStatus,
-                    -- A document chain is meant to be linear, but nothing DB-side stops two
-                    -- separate Revision requests from both being approved against the same
-                    -- ParentDocumentId (a data/workflow gap, not something this read-only query
-                    -- can prevent) -- when that happens there are two leaf documents (neither
-                    -- has a child yet) instead of one, and the old NOT EXISTS-child check
-                    -- marked both as current. Ranking leaves with EFFECTIVE first, then most
-                    -- recently created, guarantees exactly one row is ever current even when
-                    -- that branching exists, without needing to touch how revisions get created.
+                    -- An archived version is no longer in force whatever the document itself is
+                    -- doing now, so it reports why it was retired rather than the document's current
+                    -- state -- Reverted for an attempt sent back for rework, Revised for a
+                    -- version replaced by a newer effective one (see ArchiveReason, written at the
+                    -- point of archiving). Rows archived before that column existed fall back to
+                    -- Revised. Live rows (the working draft, or the effective version) report the
+                    -- document state, which is what they actually reflect.
+                    CASE WHEN dv.VersionType = 3
+                         THEN COALESCE(NULLIF(dv.ArchiveReason, ''), 'Revised')
+                         ELSE curState.Name END AS CurrentStatus,
+                    -- The current version is the newest LIVE version in the chain -- the highest
+                    -- version number that has not been retired -- whether or not it has reached
+                    -- Effective yet. While a revision is still in approval or training it is the
+                    -- version the chain is currently on, so it carries the flag; requiring
+                    -- curState.Code = 'EFFECTIVE' left the whole column blank for the entire life
+                    -- of a revision, because a document is marked REVISED the moment a revision is
+                    -- raised against it, so no document in the chain is EFFECTIVE in between.
+                    --
+                    -- Two exclusions keep it honest. Archived rows (VersionType 3) are retired by
+                    -- definition -- a reverted attempt or a superseded release can never be the
+                    -- current one. And a document that was REJECTED or made OBSOLETE is out of the
+                    -- picture entirely, so a rejected revision -- the newest row in the chain, but
+                    -- one that was thrown away -- does not take the flag from the release still in
+                    -- use. If nothing in the chain qualifies, no row is flagged.
+                    --
+                    -- Ranked by version number, not creation date: the chain is numbered in order
+                    -- (see DocumentComponent.ResolveNextRevisionVersion), so the highest number is
+                    -- the newest state of the document. Major and minor are compared as integers --
+                    -- a plain string sort would put 10.0 before 9.0 -- and anything that is not
+                    -- a plain major.minor sorts last rather than winning by accident. The
+                    -- ROW_NUMBER guarantees exactly one row is flagged even when two documents in
+                    -- the chain somehow share a number.
                     (
-                        ROW_NUMBER() OVER (
+                        dv.VersionType IN (1, 2)
+                        AND COALESCE(curState.Code, '') NOT IN ('REJECTED', 'OBSOLETE')
+                        AND ROW_NUMBER() OVER (
                             ORDER BY
-                                CASE
-                                    WHEN NOT EXISTS (
-                                        SELECT 1 FROM Documents child
-                                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
-                                    ) AND curState.Code = 'EFFECTIVE' THEN 0
-                                    WHEN NOT EXISTS (
-                                        SELECT 1 FROM Documents child
-                                        WHERE child.ParentDocumentId = d.Id AND child.CompanyId = @CompanyId
-                                    ) THEN 1
-                                    ELSE 2
-                                END ASC,
-                                d.CreatedAt DESC
-                        )
-                    ) = 1 AS IsCurrentVersion
+                                CASE WHEN dv.VersionType IN (1, 2)
+                                      AND COALESCE(curState.Code, '') NOT IN ('REJECTED', 'OBSOLETE')
+                                     THEN 0 ELSE 1 END ASC,
+                                CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
+                                     THEN split_part(dv.Version, '.', 1)::int ELSE -1 END DESC,
+                                CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
+                                     THEN split_part(dv.Version, '.', 2)::int ELSE -1 END DESC,
+                                dv.Id DESC
+                        ) = 1
+                    ) AS IsCurrentVersion
                 FROM Chain c
                 INNER JOIN Documents d ON d.Id = c.Id AND d.CompanyId = @CompanyId
                 LEFT JOIN DocumentRequests dr ON dr.Id = d.RequestId AND dr.CompanyId = @CompanyId
-                -- LATERAL + LIMIT 1 everywhere below: Vw_employeeNames can still hold more than one
-                -- row per cleanempcode within a company, and DocumentVersions isn't DB-constrained
-                -- to exactly one VersionType=2 row per document. A plain LEFT JOIN on either fans a
-                -- single document row out into duplicates; LIMIT 1 guarantees at most one row per
-                -- document no matter what.
-                LEFT JOIN LATERAL (
-                    SELECT dv2.Version
-                    FROM DocumentVersions dv2
-                    WHERE dv2.DocumentId = d.Id AND dv2.CompanyId = d.CompanyId AND dv2.VersionType  IN (1, 2)
-                    ORDER BY dv2.Id DESC LIMIT 1
-                ) dv ON TRUE
+                -- One row per VERSION, not per document: a document that was reverted and
+                -- resubmitted carries an archived row for the attempt that was sent back plus its
+                -- current one, and the panel is meant to show both. Superseded rows (VersionType 3)
+                -- are included for exactly that reason; deleted ones are not.
+                --
+                -- The employee-name joins below still use LATERAL + LIMIT 1, since Vw_employeeNames
+                -- can hold more than one row per cleanempcode within a company and a plain LEFT JOIN
+                -- there would fan each row out into duplicates.
+                INNER JOIN DocumentVersions dv
+                    ON dv.DocumentId = d.Id
+                   AND dv.CompanyId = d.CompanyId
+                   AND dv.VersionType IN (1, 2, 3)
+                   AND COALESCE(dv.IsDeleted, FALSE) = FALSE
                 LEFT JOIN LATERAL (
                     SELECT ven.employeename AS Name
                     FROM Vw_employeeNames ven
@@ -3990,10 +4121,26 @@ public class DocumentRequestComponent
                     WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId
                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                 ) curState ON TRUE
-                -- Current version pinned to the top (reuses the IsCurrentVersion column computed
-                -- above rather than repeating its ranking logic); everything else stays in its
-                -- existing chronological order below it.
-                ORDER BY IsCurrentVersion DESC, d.CreatedAt ASC;";
+                -- Newest version first. The panel reads as a history, so the latest state of the
+                -- document belongs at the top and the chain reads downwards into the past; it used
+                -- to pin the current version above rows that then ran oldest-first, which put the
+                -- oldest attempt directly under the newest one.
+                --
+                -- Sorted on the version number itself rather than CreatedAt, so the order always
+                -- matches the numbering the chain was issued in (see
+                -- DocumentComponent.ResolveNextRevisionVersion). Major and minor compare as
+                -- integers -- a string sort would put 10.0 above 9.0 -- and anything that is not a
+                -- plain major.minor sorts to the bottom instead of jumping to the top. The current
+                -- version needs no explicit pin now: it is by definition the newest live version,
+                -- so it already sorts first unless the newest row is one this deliberately
+                -- excludes (an archived attempt, or a rejected/obsolete document), which is then
+                -- shown in its rightful place in the history rather than promoted above it.
+                ORDER BY
+                    CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
+                         THEN split_part(dv.Version, '.', 1)::int ELSE -1 END DESC,
+                    CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
+                         THEN split_part(dv.Version, '.', 2)::int ELSE -1 END DESC,
+                    dv.Id DESC;";
 
             return await _common.QueryAsync<RevisionHistoryItemDto>(sql, new { DocumentId = documentId, CompanyId });
         }

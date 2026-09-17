@@ -89,7 +89,7 @@ public class TemplateComponent
 
             if (input.TemplateFile != null && input.TemplateFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "templates");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "templates");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 
@@ -597,7 +597,7 @@ public class TemplateComponent
 
             if (input.TemplateFile != null && input.TemplateFile.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "templates");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "templates");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 

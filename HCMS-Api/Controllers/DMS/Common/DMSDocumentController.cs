@@ -642,7 +642,7 @@ public class DMSDocumentController : Controller
             if (!string.IsNullOrEmpty(request.DocumentURL))
             {
                 var relativePath = request.DocumentURL.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+                var candidatePath = DmsPaths.WebRootCombine(relativePath);
                 if (System.IO.File.Exists(candidatePath))
                 {
                     filePath = candidatePath;
@@ -1089,7 +1089,7 @@ public class DMSDocumentController : Controller
         try
         {
             var relativePath = "template/DMS_BulkUpload_Template.xlsx";
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+            var filePath = DmsPaths.WebRootCombine(relativePath);
 
             if (!System.IO.File.Exists(filePath))
             {

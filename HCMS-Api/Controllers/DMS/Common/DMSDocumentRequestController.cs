@@ -1,4 +1,5 @@
 ﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -508,7 +509,7 @@ public class DMSDocumentRequestController : Controller
             if (!string.IsNullOrEmpty(request.DraftFileUrl))
             {
                 var relativePath = request.DraftFileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+                var candidatePath = DmsPaths.WebRootCombine(relativePath);
                 if (System.IO.File.Exists(candidatePath))
                 {
                     filePath = candidatePath;

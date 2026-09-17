@@ -234,12 +234,18 @@ public class DMSDocumentAttributeController : Controller
         }
     }
 
+    // The route token and the parameter name have to match for route-value binding to happen.
+    // This declared {id} but took a parameter called code, so nothing ever bound to it: code
+    // arrived as 0 on every call, the lookup below found no attribute with id 0, and the action
+    // answered 404 "Document Attribute not found" for every attribute -- which is why deleting a
+    // document attribute never worked. Named id here to match the token (and the sibling
+    // get-document-attributes-by-id/{id} action), so the URL the client calls is unchanged.
     [HttpDelete("delete-document-attributes/{id}")]
-    public async Task<IActionResult> DeleteAsync(int code)
+    public async Task<IActionResult> DeleteAsync(int id)
     {
         try
         {
-            var existingRecord = await _documentAttributeComponent.GetByCodeAsync(code);
+            var existingRecord = await _documentAttributeComponent.GetByCodeAsync(id);
             if (existingRecord is null)
             {
                 return StatusCode((int)HttpStatusCode.NotFound, new HttpApiResponse<object>()
@@ -254,7 +260,7 @@ public class DMSDocumentAttributeController : Controller
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _documentAttributeComponent.DeleteAsync(code),
+                Data = await _documentAttributeComponent.DeleteAsync(id),
                 Message = "Document Attribute deleted successfully.",
                 Code = 200
             });

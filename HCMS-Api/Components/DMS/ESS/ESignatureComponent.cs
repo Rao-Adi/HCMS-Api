@@ -82,7 +82,7 @@ public class ESignatureComponent
     // Same uploads-root convention as the rest of DMS (wwwroot/uploads/{documents,drafts,templates}).
     private static string SaveSignatureFile(byte[] bytes, string extension, string empCode)
     {
-        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "signatures");
+        var uploadsRoot = DmsPaths.WebRootCombine("uploads", "signatures");
         if (!Directory.Exists(uploadsRoot))
             Directory.CreateDirectory(uploadsRoot);
 
@@ -102,7 +102,7 @@ public class ESignatureComponent
         if (string.IsNullOrWhiteSpace(relativeUrl)) return;
         try
         {
-            var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot",
+            var path = DmsPaths.WebRootCombine(
                 relativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(path)) File.Delete(path);
         }

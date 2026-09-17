@@ -1,4 +1,5 @@
 ﻿﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
@@ -197,7 +198,7 @@ public class ResponsibilityTransferComponent
             string? documentUrl = null;
             if (input.Attachment != null && input.Attachment.Length > 0)
             {
-                var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "responsibility-transfers");
+                var uploadsRoot = DmsPaths.WebRootCombine("uploads", "responsibility-transfers");
                 if (!Directory.Exists(uploadsRoot))
                     Directory.CreateDirectory(uploadsRoot);
 

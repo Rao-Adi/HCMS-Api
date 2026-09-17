@@ -45,7 +45,7 @@ public class UncontrolledDocumentComponent
     }
 
     private static string UploadsRoot =>
-        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "uncontrolled-documents");
+        DmsPaths.WebRootCombine("uploads", "uncontrolled-documents");
 
     public async Task<UncontrolledDocumentReadDto> CreateAsync(UncontrolledDocumentCreateDto input)
     {

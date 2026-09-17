@@ -1,4 +1,5 @@
 ﻿using HCMS_Api.Common;
+using HCMS_Api.Common;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common.Models;
 using HCMS_Api.Components.DMS.ESS;
@@ -110,10 +111,19 @@ public class DMSTemplateController : Controller
             }
 
             var relativePath = template.TemplateFileUrl.TrimStart('/');
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+            var filePath = DmsPaths.WebRootCombine(relativePath);
 
             if (!System.IO.File.Exists(filePath))
             {
+                // The absolute path goes to the log, not to the caller -- server paths are not
+                // the user's business, but without it this message says only that something is
+                // missing somewhere, which is exactly as far as anyone could get the last time
+                // this fired. With the path, a wrong web root or a file one level too deep is
+                // obvious at a glance.
+                _logger.LogWarning(
+                    "Template '{Code}' points at '{StoredUrl}' but no file exists at '{ResolvedPath}' (web root '{WebRoot}').",
+                    code, template.TemplateFileUrl, filePath, DmsPaths.WebRoot);
+
                 return NotFound(new HttpApiResponse<object>()
                 {
                     Success = false,

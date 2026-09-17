@@ -198,13 +198,23 @@ public class NotificationComponent
                 "DMS – Training Proof Required",
                 $"Action needed: Upload Training Proof for document {Get("Doc Name")} (V:{Get("V#")}) for final authorization.",
                 "Authorization",
-                "/dms/authorization/post-training"
+                // Was /dms/authorization/post-training, which is not a route this app has -- the
+                // page lives at /documents/trainingauthorization (app.routes.ts), the same target
+                // DocumentAuthorizedEffective and PeriodicReviewDue below already point at. Every
+                // notification of these two scenarios therefore shipped a dead link: clicking it
+                // from the email landed on the router fallback instead of the training page.
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.TrainingProofSubmitted => (
                 "DMS – Proof Submitted - Final Authorization",
                 $"Training proof has been submitted for {Get("Doc Name")} (V:{Get("V#")}). Final authorization is now pending.",
                 "Authorization",
-                "/dms/authorization/post-training"
+                // Was /dms/authorization/post-training, which is not a route this app has -- the
+                // page lives at /documents/trainingauthorization (app.routes.ts), the same target
+                // DocumentAuthorizedEffective and PeriodicReviewDue below already point at. Every
+                // notification of these two scenarios therefore shipped a dead link: clicking it
+                // from the email landed on the router fallback instead of the training page.
+                "/documents/trainingauthorization"
             ),
             NotificationScenario.DocumentAuthorizedEffective => (
                 "DMS – Document Authorized & Effective",

@@ -125,7 +125,7 @@ public class DocumentComponent
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
         // 2️⃣ Prepare upload path
-        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+        var uploadsRoot = DmsPaths.WebRootCombine("uploads", "documents");
         if (!Directory.Exists(uploadsRoot))
             Directory.CreateDirectory(uploadsRoot);
 
@@ -1220,11 +1220,25 @@ public class DocumentComponent
                 LastModifiedBy = empCode
             }, transaction);
 
-        // A direct Revision/Obsoletion's version must bump off the PARENT document's current
-        // version (e.g. "1.0" -> "2.0"), not restart at "1.0" as if it were a brand-new document
-        // -- matches the request-driven flow's ResolveInitialProposedVersionAsync/
-        // IncrementMajorVersion exactly (DocumentRequestComponent.cs), which is the only reason
-        // that flow's Version column actually increments on revision while this one didn't.
+        // A direct Revision/Obsoletion's version is seeded from the version being revised, but it
+        // must also account for earlier ATTEMPTS at that same revision.
+        //
+        // Two numbers matter:
+        //   * the parent's own active version -- what is actually being revised. A revision is a
+        //     new major release of it ("1.1" -> "2.0").
+        //   * the highest version anywhere in this document's chain. A revision that was reverted
+        //     during approval, or is still in flight, has already claimed a number.
+        //
+        // When the major bump lands on a number the chain has already used, this is another
+        // attempt at the same revision, so it continues with a minor bump -- exactly how a
+        // reverted document's own resubmission is numbered (PromoteVersionAfterReworkAsync,
+        // "1.0" -> "1.1").
+        //
+        // Observed directly: SOP-009 went 1.0 -> reverted -> 1.1 -> effective, was revised into
+        // SOP-009-A (2.0), and THAT revision was reverted. The next revision must therefore be
+        // 2.1. Reading only the parent gave 2.0 again (the reverted attempt and the new one are
+        // both raised against the same still-effective parent, so both read 1.1); taking the
+        // chain's highest alone gave 3.0, skipping a major release that was never issued.
         string newVersion = "1.0";
         if (input.ParentDocumentId.HasValue)
         {
@@ -1233,7 +1247,48 @@ public class DocumentComponent
                 WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
                 ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
                 new { DocumentId = input.ParentDocumentId.Value, CompanyId = companyId }, transaction);
-            newVersion = IncrementMajorVersion(parentVersion);
+
+            // Highest number already claimed in the whole chain: walk up to the root, then back down
+            // through every descendant, counting both issued document versions and the versions other
+            // requests have already proposed against it. Ordered numerically by major then minor --
+            // a plain string sort would put "10.0" before "9.0".
+            var chainVersion = await _common.ExecuteScalarAsync<string>(@"
+                WITH RECURSIVE Ancestors AS (
+                    SELECT Id, ParentDocumentId, 0 AS Depth
+                    FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId
+                    UNION ALL
+                    SELECT d.Id, d.ParentDocumentId, a.Depth + 1
+                    FROM Documents d
+                    INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
+                    WHERE d.CompanyId = @CompanyId
+                ),
+                RootDoc AS (SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1),
+                Chain AS (
+                    SELECT r.RootId AS Id FROM RootDoc r
+                    UNION ALL
+                    SELECT d.Id FROM Documents d
+                    INNER JOIN Chain c ON d.ParentDocumentId = c.Id
+                    WHERE d.CompanyId = @CompanyId
+                ),
+                Claimed AS (
+                    SELECT dv.Version AS Version
+                    FROM DocumentVersions dv
+                    INNER JOIN Chain c ON c.Id = dv.DocumentId
+                    WHERE dv.CompanyId = @CompanyId AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                    UNION ALL
+                    SELECT dr.RowVersion AS Version
+                    FROM DocumentRequests dr
+                    INNER JOIN Chain c ON c.Id = dr.ParentDocumentId
+                    WHERE dr.CompanyId = @CompanyId AND COALESCE(dr.IsDeleted, FALSE) = FALSE
+                )
+                SELECT Version FROM Claimed
+                WHERE Version ~ '^[0-9]+\.[0-9]+$'
+                ORDER BY split_part(Version, '.', 1)::int DESC,
+                         split_part(Version, '.', 2)::int DESC
+                LIMIT 1;",
+                new { DocumentId = input.ParentDocumentId.Value, CompanyId = companyId }, transaction);
+
+            newVersion = ResolveNextRevisionVersion(parentVersion, chainVersion);
         }
 
         await _common.ExecuteAsync(@"
@@ -1336,6 +1391,44 @@ public class DocumentComponent
                 return $"{major + 1}.0";
         }
         return "1.0";
+    }
+
+    // Picks the version number for a new Revision/Obsoletion.
+    //
+    // parentVersion is the version being revised, chainVersion the highest already used anywhere
+    // in that document's chain. Normally the revision is the next major release of the parent
+    // ("1.1" -> "2.0"). But if the chain has already reached that number, an earlier attempt at
+    // this same revision already claimed it -- typically one that was reverted during approval, or
+    // is still in flight -- so this attempt continues from there with a minor bump ("2.0" -> "2.1")
+    // instead of jumping a major release nobody ever issued.
+    private static string ResolveNextRevisionVersion(string? parentVersion, string? chainVersion)
+    {
+        var candidate = IncrementMajorVersion(parentVersion);
+        return CompareVersions(chainVersion, candidate) >= 0
+            ? IncrementMinorVersion(chainVersion)
+            : candidate;
+    }
+
+    // Orders versions numerically by major then minor, so "9.0" sorts before "10.0". Anything
+    // unparseable sorts lowest, which makes it lose to a real version rather than win by accident.
+    private static int CompareVersions(string? left, string? right)
+    {
+        var (leftMajor, leftMinor) = ParseVersion(left);
+        var (rightMajor, rightMinor) = ParseVersion(right);
+        return leftMajor != rightMajor
+            ? leftMajor.CompareTo(rightMajor)
+            : leftMinor.CompareTo(rightMinor);
+    }
+
+    private static (int Major, int Minor) ParseVersion(string? version)
+    {
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            var parts = version.Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int major) && int.TryParse(parts[1], out int minor))
+                return (major, minor);
+        }
+        return (0, 0);
     }
 
     // Prefills the Training Users table when starting a direct Revision/Obsoletion from an
@@ -1640,7 +1733,7 @@ public class DocumentComponent
         if (fileProvided)
         {
             // A new file at Document Creation time overwrites whatever was set at Request time.
-            var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+            var uploadsRoot = DmsPaths.WebRootCombine("uploads", "documents");
             if (!Directory.Exists(uploadsRoot))
                 Directory.CreateDirectory(uploadsRoot);
 
@@ -2110,7 +2203,7 @@ public class DocumentComponent
         if (string.IsNullOrWhiteSpace(templatePath))
             throw new CustomException("No Word template configured for this Document Type.", 404);
 
-        var templateFullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", templatePath.TrimStart('/'));
+        var templateFullPath = DmsPaths.WebRootCombine(templatePath.TrimStart('/'));
         if (!File.Exists(templateFullPath))
             throw new CustomException("Template file is missing on disk.", 404);
 
@@ -2455,7 +2548,7 @@ public class DocumentComponent
             string? signaturePath = null;
             if (!string.IsNullOrWhiteSpace(signatureUrl))
             {
-                signaturePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot",
+                signaturePath = DmsPaths.WebRootCombine(
                     signatureUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(signaturePath))
                     signatureData = File.ReadAllBytes(signaturePath);
@@ -2899,28 +2992,99 @@ public class DocumentComponent
                 throw new Exception("No valid document content found to promote.");
 
             //-----------------------------------------
-            // 3️⃣ Bump the Draft version in place (e.g. "1.0" -> "1.1")
+            // 3️⃣ Archive the reverted attempt, open a new Draft version (e.g. "1.0" -> "1.1")
             //-----------------------------------------
-            // This used to INSERT a second VersionType = 1 row, and hardcoded its Version to
-            // '1.0' -- so a resubmitted document kept showing the version the approver had
-            // already reverted, and picked up a duplicate draft row each time. The duplicate is
-            // the worse half: MakeDocumentEffectiveAsync promotes EVERY VersionType = 1 row to
-            // Effective, so the document ended up with two simultaneously-current versions.
+            // The attempt the approver sent back stays in the table as its own archived row, so
+            // the document keeps a visible record of every version it went through rather than
+            // just its latest one -- that history is what the Revision History panel lists.
             //
-            // Updating in place loses nothing: AttachOrUpdateTemplateAsync has already written
-            // the resubmitted Content onto this same row before this method runs, so the copy the
-            // INSERT made was of the new content anyway, never the reverted attempt's.
-            var newVersion = IncrementMinorVersion(currentVersion);
+            // Archiving means VersionType = 3, not merely IsActive = FALSE: MakeDocumentEffectiveAsync
+            // promotes EVERY VersionType = 1 row to Effective, so a superseded attempt left at
+            // VersionType = 1 would be promoted alongside the real one and the document would end
+            // up with two simultaneously-current versions. That was the original defect here.
+            //
+            // The bump is taken from the highest number claimed anywhere in this document's chain,
+            // not just this document's own current version. A document that has already been
+            // revised shares its numbering with its revisions: if a revision is sitting at 2.1 and
+            // an earlier attempt at 2.0 is resubmitted, bumping 2.0 in isolation would mint a second
+            // 2.1. Falling back to this document's own version keeps the ordinary case (a plain
+            // document reverted once, "1.0" -> "1.1") exactly as it was.
+            var claimedVersion = await _common.ExecuteScalarAsync<string>(@"
+                WITH RECURSIVE Ancestors AS (
+                    SELECT Id, ParentDocumentId, 0 AS Depth
+                    FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId
+                    UNION ALL
+                    SELECT d.Id, d.ParentDocumentId, a.Depth + 1
+                    FROM Documents d
+                    INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
+                    WHERE d.CompanyId = @CompanyId
+                ),
+                RootDoc AS (SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1),
+                Chain AS (
+                    SELECT r.RootId AS Id FROM RootDoc r
+                    UNION ALL
+                    SELECT d.Id FROM Documents d
+                    INNER JOIN Chain c ON d.ParentDocumentId = c.Id
+                    WHERE d.CompanyId = @CompanyId
+                ),
+                Claimed AS (
+                    SELECT dv.Version AS Version
+                    FROM DocumentVersions dv
+                    INNER JOIN Chain c ON c.Id = dv.DocumentId
+                    WHERE dv.CompanyId = @CompanyId AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                    UNION ALL
+                    SELECT dr.RowVersion AS Version
+                    FROM DocumentRequests dr
+                    INNER JOIN Chain c ON c.Id = dr.ParentDocumentId
+                    WHERE dr.CompanyId = @CompanyId AND COALESCE(dr.IsDeleted, FALSE) = FALSE
+                )
+                SELECT Version FROM Claimed
+                WHERE Version ~ '^[0-9]+\.[0-9]+$'
+                ORDER BY split_part(Version, '.', 1)::int DESC,
+                         split_part(Version, '.', 2)::int DESC
+                LIMIT 1;",
+            new { companyId, documentId }, transaction);
 
+            var newVersion = IncrementMinorVersion(
+                CompareVersions(claimedVersion, currentVersion) > 0 ? claimedVersion : currentVersion);
+
+            // ArchiveReason is what the Revision History panel shows as this row's status. A
+            // VersionType 3 row is reached two different ways -- an attempt sent back for rework
+            // (here) and an effective version replaced by a newer one (MakeDocumentEffectiveAsync)
+            // -- and VersionType alone cannot tell them apart, so each writes its own reason.
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions
-                SET Version = @Version,
+                SET VersionType = 3,
+                    IsActive = FALSE,
+                    ArchiveReason = 'Reverted',
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @UserId
                 WHERE CompanyId = @CompanyId
                   AND DocumentId = @DocumentId
                   AND VersionType = 1
                   AND IsActive = TRUE;",
+            new { companyId, documentId, UserId = empCode }, transaction);
+
+            // Content is carried forward from the archived row. By this point
+            // AttachOrUpdateTemplateAsync has already written the resubmitted content onto it, so
+            // both rows hold the resubmitted text -- the reverted attempt's own wording is not
+            // recoverable here, and never was. What the archived row preserves is the fact of the
+            // attempt and its version number.
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentVersions
+                (
+                    CompanyId, DocumentId, Version, VersionType, Content, IsActive,
+                    CreatedBy, LastModifiedBy
+                )
+                SELECT
+                    CompanyId, DocumentId, @Version, 1, Content, TRUE,
+                    @UserId, @UserId
+                FROM DocumentVersions
+                WHERE CompanyId = @CompanyId
+                  AND DocumentId = @DocumentId
+                  AND VersionType = 3
+                ORDER BY Id DESC
+                LIMIT 1;",
             new { companyId, documentId, Version = newVersion, UserId = empCode }, transaction);
 
         }
@@ -3133,7 +3297,8 @@ public class DocumentComponent
             await _common.ExecuteAsync(@"
                 UPDATE DocumentVersions 
                 SET VersionType = 3, 
-                    IsActive = FALSE 
+                    IsActive = FALSE,
+                    ArchiveReason = 'Revised'
                 WHERE DocumentId = @DocumentId 
                   AND VersionType = 2 
                   AND CompanyId = @CompanyId;", new { companyId, documentId }, transaction);
@@ -3925,6 +4090,12 @@ public class DocumentComponent
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
+                -- Only users picked in the Document Users grid are returned. Employees
+                -- auto-expanded from the Distribution List carry a NULL RoleId, and DRUsersComponent
+                -- skips those on purpose (it groups its rows by Role + Cabinet) -- so shipping them
+                -- meant transferring thousands of rows per document that the screen then discarded.
+                -- Measured on this data: one document sent 3,183 users and the grid used 1.
+                AND drd.RoleId IS NOT NULL
                 AND drd.DocumentId = ANY(@RequestIds);",
                 new
                 {
@@ -4528,7 +4699,7 @@ public class DocumentComponent
 
                 // 1. Archive previous effective versions
                 await _common.ExecuteAsync(@"
-                    UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE 
+                    UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE, ArchiveReason = 'Revised'
                     WHERE DocumentId = @DocumentId AND VersionType = 2 AND CompanyId = @CompanyId;",
                     new { input.DocumentId, CompanyId }, transaction);
 
@@ -5639,7 +5810,7 @@ public class DocumentComponent
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "documents");
+        var uploadsRoot = DmsPaths.WebRootCombine("uploads", "documents");
         if (!Directory.Exists(uploadsRoot))
             Directory.CreateDirectory(uploadsRoot);
 
@@ -6179,6 +6350,12 @@ public class DocumentComponent
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
+                -- Only users picked in the Document Users grid are returned. Employees
+                -- auto-expanded from the Distribution List carry a NULL RoleId, and DRUsersComponent
+                -- skips those on purpose (it groups its rows by Role + Cabinet) -- so shipping them
+                -- meant transferring thousands of rows per document that the screen then discarded.
+                -- Measured on this data: one document sent 3,183 users and the grid used 1.
+                AND drd.RoleId IS NOT NULL
                 AND drd.DocumentId = ANY(@DocumentIds);",
                 new { CompanyId, DocumentIds = documentIds })).ToList();
 
@@ -6297,6 +6474,28 @@ public class DocumentComponent
 
             string sortDirection = input.SortBy?.ToUpper() == "ASC" ? "ASC" : "DESC";
 
+            // Which of the 4 cabinet levels are actually enabled for this company. The grid
+            // hides a disabled level entirely, but this export listed all 4 unconditionally, so a
+            // company with Business Domain switched off still got a Business Domain column in the
+            // downloaded .xlsx. Mirrors ExportMyDocumentsAsync below, which already did this.
+            var activeCabinetLevels = (await _common.QueryAsync<string>(@"
+                SELECT Name FROM CabinetStructureTabsConfig
+                WHERE CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE;",
+                new { CompanyId })).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            bool showDivision = activeCabinetLevels.Contains("Division1111") || activeCabinetLevels.Any(n => n.StartsWith("Division", StringComparison.OrdinalIgnoreCase));
+            bool showDepartment = activeCabinetLevels.Any(n => n.StartsWith("Department", StringComparison.OrdinalIgnoreCase));
+            bool showSubDepartment = activeCabinetLevels.Any(n => n.StartsWith("SubDepartment", StringComparison.OrdinalIgnoreCase));
+            bool showBusinessDomain = activeCabinetLevels.Any(n => n.StartsWith("BusinessDomain", StringComparison.OrdinalIgnoreCase));
+
+            // Headers are derived from whichever columns this SELECT returns, so leaving a
+            // disabled level out here is enough to drop it from the workbook too.
+            var cabinetColumnsSql = string.Concat(
+                showDivision ? @",doc.Division AS ""Division""" : "",
+                showDepartment ? @",doc.Department AS ""Department""" : "",
+                showSubDepartment ? @",doc.SubDepartment AS ""Sub-Department""" : "",
+                showBusinessDomain ? @",doc.BusinessDomain AS ""Business Domain""" : "");
+
             // No DISTINCT here: Postgres rejects SELECT DISTINCT + ORDER BY once the ordered
             // column (CreatedAt) is only exposed in transformed form (TO_CHAR) -- "for SELECT
             // DISTINCT, ORDER BY expressions must appear in select list".
@@ -6304,11 +6503,7 @@ public class DocumentComponent
                     doc.DocumentNumber AS ""Document Number"",
                     doc.DocumentType AS ""Document Type"",
                     doc.Title AS ""Document Title"",
-                    dv.Version AS ""Version"",
-                    doc.Division AS ""Division"",
-                    doc.Department AS ""Department"",
-                    doc.SubDepartment AS ""Sub-Department"",
-                    doc.BusinessDomain AS ""Business Domain"",
+                    dv.Version AS ""Version""{cabinetColumnsSql},
                     (SELECT ds.Name
                      FROM DocumentStateHistory dsh
                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
@@ -6743,6 +6938,12 @@ public class DocumentComponent
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid  AND des_fallback.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid  AND r.CompanyId = @CompanyId
                 WHERE drd.CompanyId = @CompanyId
+                -- Only users picked in the Document Users grid are returned. Employees
+                -- auto-expanded from the Distribution List carry a NULL RoleId, and DRUsersComponent
+                -- skips those on purpose (it groups its rows by Role + Cabinet) -- so shipping them
+                -- meant transferring thousands of rows per document that the screen then discarded.
+                -- Measured on this data: one document sent 3,183 users and the grid used 1.
+                AND drd.RoleId IS NOT NULL
                 AND drd.DocumentId = ANY(@RequestIds);",
                 new
                 {

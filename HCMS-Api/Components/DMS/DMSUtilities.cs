@@ -351,7 +351,7 @@ namespace HCMS_Api.Components.DMS.Common
 
                         //Commented Code by Areeb 29092024 Shoaib Code Commented.
                         //var imagesDirectory = Path.Combine(_configuration["CorsSettings:AttachmentsPath"], companyID, ModuleName, FormID, filpath);
-                        var imagesDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", filpath);
+                        var imagesDirectory = DmsPaths.WebRootCombine(filpath);
                         if (!Directory.Exists(imagesDirectory))
                             Directory.CreateDirectory(imagesDirectory);
                         returnPath = imagesDirectory;
@@ -361,7 +361,7 @@ namespace HCMS_Api.Components.DMS.Common
 
                         //Commented Code by Areeb 29092024 Shoaib Code Commented.
                         //var videosDirectory = Path.Combine(_configuration["CorsSettings:AttachmentsPath"], companyID, ModuleName, FormID, filpath);
-                        var videosDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", filpath);
+                        var videosDirectory = DmsPaths.WebRootCombine(filpath);
                         if (!Directory.Exists(videosDirectory))
                             Directory.CreateDirectory(videosDirectory);
                         returnPath = videosDirectory;
@@ -371,7 +371,7 @@ namespace HCMS_Api.Components.DMS.Common
 
                         //Commented Code by Areeb 29092024 Shoaib Code Commented.
                         //var documentsDirectory = Path.Combine(_configuration["CorsSettings:AttachmentsPath"], companyID, ModuleName, FormID, filpath);
-                        var documentsDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", filpath);
+                        var documentsDirectory = DmsPaths.WebRootCombine(filpath);
                         if (!Directory.Exists(documentsDirectory))
                             Directory.CreateDirectory(documentsDirectory);
                         returnPath = documentsDirectory;
@@ -1769,6 +1769,19 @@ namespace HCMS_Api.Components.DMS.Common
                     }
                     else
                     {
+                        // Nothing to embed -- so the <img src='cid:...'> has to come out of the
+                        // body too. Left in place it points at a linked resource that was never
+                        // attached, and mail clients render that as a broken-image placeholder:
+                        // an empty bordered box at the top of every notification, which is what
+                        // recipients report as 'logo not visible / empty box in the email'. The
+                        // header still carries its Document Management System badge underneath,
+                        // so dropping the image degrades cleanly instead of showing damage.
+                        body = System.Text.RegularExpressions.Regex.Replace(
+                            body,
+                            @"<img[^>]*cid:" + System.Text.RegularExpressions.Regex.Escape(DmsLogoContentId) + @"[^>]*>",
+                            string.Empty,
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
                         Console.WriteLine($"[SMTP WARNING] Logo not found at '{logoPath}' -- email will send without the embedded logo.");
                     }
                 }
