@@ -1,4 +1,5 @@
-﻿﻿﻿﻿﻿using HCMS_Api.Common;
+﻿﻿﻿﻿﻿using HCMS_Api.Components.DMS.AI;
+using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.BackgroundJobs;
@@ -275,6 +276,10 @@ builder.Services.AddScoped<DistributionListComponent>();
 builder.Services.AddScoped<DocumentApprovalComponent>();
 builder.Services.AddScoped<DocumentAttributeComponent>();
 builder.Services.AddScoped<DocumentComponent>();
+
+// DMS AI: the model gateway, its pinned HTTP client, and the concurrency gate. Everything
+// AI-related is registered inside this one call -- see AiServiceRegistration.
+builder.Services.AddDmsAi(builder.Configuration);
 builder.Services.AddScoped<DocumentRequestComponent>();
 builder.Services.AddScoped<DocumentTrainingComponent>();
 builder.Services.AddScoped<DocumentVersionComponent>();

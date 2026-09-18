@@ -51,6 +51,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The AI behaviour rules are read from disk at run time so they can be edited on a client
+         site without a rebuild. PreserveNewest, not Always: a rule edited on the server must not be
+         silently overwritten by the next plain rebuild. -->
+    <None Update="AiPolicies\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Components\DMS\Docs\" />
     <Folder Include="Components\HCMS\Common\Dapper\" />
     <Folder Include="Services\DMS\" />
