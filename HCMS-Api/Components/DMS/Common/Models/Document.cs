@@ -308,6 +308,15 @@ public class GetDocumentDto : TableFiltersDto
 
     public string? RequestStatus { get; set; }
     public int EmpId { get; set; }
+
+    /// <summary>
+    /// The "Filter" dropdown on the Revision/Obsoletion request screen, by review due date:
+    /// 1 = Over Due, 2 = due within the next 30 days. Null means no filter.
+    ///
+    /// The two are deliberately disjoint -- they are offered as alternatives, so a document that
+    /// is already overdue belongs under "Over Due" and nowhere else.
+    /// </summary>
+    public int? ReviewDateFilter { get; set; }
 }
 
 

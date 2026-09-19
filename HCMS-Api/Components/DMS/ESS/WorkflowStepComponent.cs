@@ -864,7 +864,16 @@ public class WorkflowStepComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @PolicyId, 1, TRUE, NOW(), @CreatedBy
+                        @CompanyId, @PolicyId,
+                        -- Not a literal 1. A policy can already hold a deactivated version
+                        -- (see UpdateApprovalSequenceAsync, which deactivates rather than
+                        -- deletes so approvals keep their provenance), and VersionNumber is
+                        -- unique per policy -- so reusing 1 would fail the unique constraint
+                        -- the first time steps were removed and then added back.
+                        (SELECT COALESCE(MAX(VersionNumber), 0) + 1
+                           FROM WorkflowPolicyVersions
+                          WHERE CompanyId = @CompanyId AND WorkflowPolicyId = @PolicyId),
+                        TRUE, NOW(), @CreatedBy
                     )
                     RETURNING Id;",
                 new { CompanyId, PolicyId = policyId, CreatedBy = empCode });
@@ -1537,6 +1546,13 @@ public class WorkflowStepComponent
 
     public async Task<List<WorkflowStepDefiniationReadDto>> UpdateApprovalSequenceAsync(UpdateApprovalSequenceDto input)
     {
+        // Rewriting an approval sequence is delete-then-insert, so it has a window in which the
+        // policy has no steps. Without a transaction that window can be made permanent by any
+        // failure in between -- which is exactly what happened here: the step delete committed,
+        // the follow-up failed, and the caller was handed an error for an operation that had
+        // already half-applied.
+        _dapperService.BeginTransaction();
+
         try
         {
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
@@ -1565,13 +1581,28 @@ public class WorkflowStepComponent
                     )
                     VALUES
                     (
-                        @CompanyId, @PolicyId, 1, TRUE, NOW(), @CreatedBy
+                        @CompanyId, @PolicyId,
+                        -- Not a literal 1. A policy can already hold a deactivated version
+                        -- (see UpdateApprovalSequenceAsync, which deactivates rather than
+                        -- deletes so approvals keep their provenance), and VersionNumber is
+                        -- unique per policy -- so reusing 1 would fail the unique constraint
+                        -- the first time steps were removed and then added back.
+                        (SELECT COALESCE(MAX(VersionNumber), 0) + 1
+                           FROM WorkflowPolicyVersions
+                          WHERE CompanyId = @CompanyId AND WorkflowPolicyId = @PolicyId),
+                        TRUE, NOW(), @CreatedBy
                     )
                     RETURNING Id;",
                 new { CompanyId, PolicyId = input.WorkflowPolicyId, CreatedBy = empCode });
             }
 
-            // 2. Permanently delete existing steps for this version
+            // 2. Permanently delete existing steps for this version.
+            //
+            // From here on the policy is mid-rewrite: its old steps are gone and the new ones are
+            // not in yet. The transaction opened above is what makes that safe -- without it, a
+            // failure in step 3 committed the delete anyway and left the policy with no steps at
+            // all while returning an error that told the user nothing had happened. That is how
+            // policy 12 ended up active with zero steps and forty executions already run.
             await _dapperService.ExecuteAsync(@"
                 DELETE FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId;",
@@ -1610,12 +1641,34 @@ public class WorkflowStepComponent
             }
             else
             {
-                // Clean up the Workflow Policy Version if all steps are removed
+                // Every step was removed, so this version is no longer usable -- but it is NOT
+                // deleted.
+                //
+                // WorkflowPolicyVersions is the record of which version of a policy each approval
+                // actually ran under: WorkflowExecutions points straight at it. Deleting the row
+                // would erase the provenance of approvals already given, which on a controlled
+                // document is not ours to erase -- and the database says so too, which is how this
+                // surfaced: the delete ran unconditionally and failed the foreign key the moment
+                // the policy had ever been used ("violates foreign key constraint
+                // workflowexecutions_companyid_workflowpolicyversionid_fkey"), with forty
+                // executions referencing the version being removed.
+                //
+                // Deactivating achieves what the delete was reaching for without destroying
+                // anything. Every lookup that matters filters on IsActive = TRUE, so:
+                //   * submitting a document under this policy now fails with "Workflow policy not
+                //     defined for Document" instead of starting an execution that has no steps and
+                //     therefore no approver -- a document that would sit in Pending Approval with
+                //     nobody able to act on it;
+                //   * adding steps back finds no active version and creates a fresh one.
                 await _dapperService.ExecuteAsync(@"
-                    DELETE FROM WorkflowPolicyVersions
+                    UPDATE WorkflowPolicyVersions
+                    SET IsActive = FALSE
                     WHERE Id = @VersionId AND CompanyId = @CompanyId;",
                     new { VersionId = versionId, CompanyId });
             }
+
+            // Everything that changes the policy is done; the rest of this method only reads.
+            _dapperService.Commit();
 
             //-----------------------------------------
             // 4. Return Updated Steps
@@ -1728,6 +1781,9 @@ public class WorkflowStepComponent
         }
         catch (Exception)
         {
+            // Rollback is safe after Commit -- the dapper service clears its transaction there, so
+            // a failure in the read-only tail below does not try to undo a write that succeeded.
+            _dapperService.Rollback();
             throw;
         }
     }

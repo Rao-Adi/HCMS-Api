@@ -6768,7 +6768,7 @@ public class DocumentComponent
 
 
 
-    public async Task<PaginationResult<EffectiveDocumentDetailsDto>> GetEffectiveDocumentsForRevisionAsync(TableFiltersDto input)
+    public async Task<PaginationResult<EffectiveDocumentDetailsDto>> GetEffectiveDocumentsForRevisionAsync(GetDocumentDto input)
     {
         try
         {
@@ -6793,6 +6793,23 @@ public class DocumentComponent
                     UPPER(d.Title) LIKE '%{search}%'
                     OR UPPER(d.DocumentNumber) LIKE '%{search}%'
                 )";
+            }
+
+            // The screen's "Filter" dropdown, by review due date. Documents with no review date
+            // set match neither option: "not scheduled for review" is not the same fact as "not
+            // due yet", and filing them under either heading would report them as something they
+            // are not. They remain visible when no filter is chosen.
+            if (input.ReviewDateFilter == 1)
+            {
+                // Over Due -- the review date has already passed.
+                whereClause += " AND d.NextReviewDate IS NOT NULL AND d.NextReviewDate < CURRENT_DATE";
+            }
+            else if (input.ReviewDateFilter == 2)
+            {
+                // Due within the next 30 days. Starts at today, so it never overlaps Over Due.
+                whereClause += @" AND d.NextReviewDate IS NOT NULL
+                                  AND d.NextReviewDate >= CURRENT_DATE
+                                  AND d.NextReviewDate <= CURRENT_DATE + 30";
             }
 
             string sortColumn = input.SortColumn?.ToUpper() switch
