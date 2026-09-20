@@ -232,13 +232,18 @@ public class NotificationComponent
                 "DMS – Document Obsoleted",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) has been officially obsoleted as of {Get("Date")}.",
                 "Obsoletion",
-                "/documents/my-approvals-documents"
+                // Carries its tab like every other my-approvals-* link. Obsoletion is a completed
+                // outcome, so the Approved tab is where the document is actually listed -- without
+                // the tab this landed on Pending, which never contains it.
+                "/documents/my-approvals-documents?tab=Approved"
             ),
             NotificationScenario.PhysicalCopyRetrievalTask => (
                 "DMS – Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
-                "/documents/my-approvals-documents"
+                // An outstanding task, so the Pending tab -- stated explicitly rather than relying
+                // on the page's default, which is what every other actionable scenario does.
+                "/documents/my-approvals-documents?tab=Pending"
             ),
             NotificationScenario.NewUserAccountCreated => (
                 "DMS – Welcome to DMS",
@@ -250,7 +255,12 @@ public class NotificationComponent
                 "DMS – Responsibility Transfer Effective",
                 $"Your responsibility transfer from {Get("Emp From")} to {Get("Emp To")} is now effective from {Get("Date From")} to {Get("Date To")}.",
                 "Setup",
-                "/documents/my-approvals-documents"
+                // Was /documents/my-approvals-documents -- the document approvals page, which has
+                // nothing to do with a responsibility transfer. The transfer screen is registered
+                // at setups-configurations/responsibility-transfer-form (app.routes.ts), the same
+                // target main-layout already badges for this feature. No ?tab= because that page
+                // does not read one from the URL (its tabs are set internally).
+                "/setups-configurations/responsibility-transfer-form"
             ),
             _ => ("Notification", "You have a new notification.", "General", "/")
         };

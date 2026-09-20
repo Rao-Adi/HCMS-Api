@@ -4255,14 +4255,14 @@ public class DocumentRequestComponent
                 INSERT INTO Documents
                 ( 
                     CompanyId, DocumentNumber, ParentDocumentId, RequestId, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
-                    SubDepartmentCode, BusinessDomainCode, DocumentURL, CreatedBy, LastModifiedBy
+                    SubDepartmentCode, BusinessDomainCode, DocumentURL, ActivityTypeCode, CreatedBy, LastModifiedBy
                 )
                 VALUES
                 (
                     @CompanyId,
                     @DocumentNumber,
                     @ParentDocumentId,
-                    @RequestId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @CreatedBy, @LastModifiedBy
+                    @RequestId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode, @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @DocumentUrl, @ActivityTypeCode, @CreatedBy, @LastModifiedBy
                 )
                 RETURNING Id
                 ", new
@@ -4279,6 +4279,9 @@ public class DocumentRequestComponent
                 request.subdepartmentcode,
                 request.businessdomaincode,
                 DocumentUrl = request.draftfileurl,
+                // Carried onto the document so post-approval can tell a Revision from an
+                // Obsoletion -- both set ParentDocumentId and were otherwise identical.
+                ActivityTypeCode = (string?)request.documentrequesttypecode,
                 CreatedBy = request.createdby,
                 LastModifiedBy = request.createdby
             }, transaction);

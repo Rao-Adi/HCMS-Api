@@ -634,7 +634,29 @@ public class DocumentComponent
             // this never runs and nothing below changes.
             //-------------------------------------------------
 
-            if (input.DocumentId <= 0)
+            // An Obsoletion does not create a document, and therefore does not get a document
+            // number. BL-001 assigns a number only "upon final approval of the Request for
+            // Creation/Revision"; BL-003 reserves the hyphenated suffix for Annexures
+            // (DIV-DPT-SCT-TYP-###-A). Minting SOP-010-A for a retirement invented a number the
+            // FSD never asks for AND collided with the annexure scheme, and it left two rows in
+            // My Documents where BL-012 describes exactly one document being retired.
+            //
+            // The approval workflow instead runs against the document being retired. Nothing here
+            // changes that document: it stays Effective, in force, until final approval retires it
+            // (BL-012). The approver inbox is driven by workflow steps, not document state
+            // (fn_get_my_inbox_documents), so it appears for approval without being disturbed.
+            bool isObsoletionSubmission =
+                string.Equals(input.ActivityTypeCode, "DRT-0003", StringComparison.OrdinalIgnoreCase);
+
+            if (isObsoletionSubmission)
+            {
+                if (input.ParentDocumentId is not > 0)
+                    throw new CustomException(
+                        "Select the document to be obsoleted before submitting.", 400);
+
+                input.DocumentId = input.ParentDocumentId.Value;
+            }
+            else if (input.DocumentId <= 0)
             {
                 input.DocumentId = await CreateBareDocumentForSubmissionAsync(input, CompanyId, empCode, transaction);
 
@@ -711,18 +733,25 @@ public class DocumentComponent
             // provided here, whatever was already attached at Request time is kept as-is.
             //-------------------------------------------------
 
-            await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction);
+            // Skipped entirely for an Obsoletion: these now write to the document being RETIRED,
+            // and retiring a document must never alter its content, attributes or training
+            // assignments. FSD 4.1.3 makes the same point from the UI side -- the content viewer is
+            // read-only and the Users section is disabled, "as no new users are assigned".
+            if (!isObsoletionSubmission)
+            {
+                await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction);
 
-            //-------------------------------------------------
-            // Validate & Save Attributes (NEW METHOD)
-            //-------------------------------------------------
+                //-------------------------------------------------
+                // Validate & Save Attributes (NEW METHOD)
+                //-------------------------------------------------
 
-            await ValidateAndSaveAttributesAsync(input, doc, transaction);
+                await ValidateAndSaveAttributesAsync(input, doc, transaction);
 
-            //-------------------------------------------------
-            // Validate & Save Training Users
-            //-------------------------------------------------
-            await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction);
+                //-------------------------------------------------
+                // Validate & Save Training Users
+                //-------------------------------------------------
+                await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction);
+            }
 
             //-------------------------------------------------
             // 2️⃣ Resolve Correct Workflow Policy
@@ -730,11 +759,46 @@ public class DocumentComponent
 
             string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
-            var policyId = await _common.ExecuteScalarAsync<int?>(@"
+            // A Revision or Obsoletion must run under the policy configured on the Approval
+            // Workflow Policy screen's "Document Revision/Obsoletion" tab, which that screen saves
+            // with EntityType = 'Revision' (see approval-workflow-policy-management.ts).
+            //
+            // This lookup used to be hardcoded to 'Document', so a revision quietly ran the
+            // Document Creation policy instead: the approver configured for revisions never
+            // received it, and the Workflow Authorities preview on the submit screen -- which does
+            // look up 'Revision' (loadWorkflowAuthorities) -- showed one name while a different
+            // one was actually assigned.
+            //
+            // Falls back to the Document policy when no Revision policy exists for the cabinet
+            // scope, which is exactly how every revision behaved until now. Several scopes in this
+            // data have a Document policy and no Revision one; failing those outright would be a
+            // new outage rather than a fix.
+            var isRevisionOrObsoletion = input.ActivityTypeCode is "DRT-0002" or "DRT-0003";
+
+            var policyId = await ResolveWorkflowPolicyIdAsync(
+                isRevisionOrObsoletion ? "Revision" : "Document");
+
+            if (policyId == null && isRevisionOrObsoletion)
+            {
+                policyId = await ResolveWorkflowPolicyIdAsync("Document");
+
+                if (policyId != null)
+                {
+                    // Pinned to a string first: doc is dynamic, and LogInformation is an extension
+                    // method, which cannot be dispatched when any argument is dynamic.
+                    string documentTypeForLog = Convert.ToString(doc.documenttypecode) ?? "";
+                    _logger.LogInformation(
+                        "No Revision workflow policy for document type {DocType} in that cabinet scope; "
+                        + "falling back to the Document policy.", documentTypeForLog);
+                }
+            }
+
+            async Task<int?> ResolveWorkflowPolicyIdAsync(string entityType) =>
+                await _common.ExecuteScalarAsync<int?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
-                AND EntityType = 'Document'
+                AND EntityType = @EntityType
                 AND DocumentTypeCode = @DocType
                 AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
                 AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
@@ -745,6 +809,7 @@ public class DocumentComponent
             new
             {
                 CompanyId,
+                EntityType = entityType,
                 DocType = doc.documenttypecode,
                 DivisionCode = Normalize(Convert.ToString(doc.divisioncode)),
                 DepartmentCode = Normalize(Convert.ToString(doc.departmentcode)),
@@ -788,11 +853,11 @@ public class DocumentComponent
             var executionId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO WorkflowExecutions
                 (
-                    CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy
+                    CompanyId, WorkflowPolicyVersionId, EntityType, EntityId, Status, StartedBy, ActivityTypeCode
                 )
                 VALUES
                 (
-                    @CompanyId, @VersionId, 'Document', @DocumentId, 'Running', @empCode
+                    @CompanyId, @VersionId, 'Document', @DocumentId, 'Running', @empCode, @ActivityTypeCode
                 )
                 RETURNING Id;",
             new
@@ -800,7 +865,11 @@ public class DocumentComponent
                 CompanyId,
                 VersionId = versionId,
                 input.DocumentId,
-                empCode
+                empCode,
+                // An Obsoletion now runs against the document being retired, whose own
+                // ActivityTypeCode says how THAT document was created. What this execution is
+                // doing therefore has to be recorded here.
+                input.ActivityTypeCode
             }, transaction);
 
             //-------------------------------------------------
@@ -947,7 +1016,14 @@ public class DocumentComponent
             // 8️⃣ Insert State Change
             //-------------------------------------------------
 
-            await _common.ExecuteAsync(@"
+            // Not written for an Obsoletion. The document being retired stays exactly as it is --
+            // Effective and in force -- until final approval retires it (BL-012: "Upon FINAL
+            // APPROVAL of the Obsoletion Request, the document status is changed to Inactive").
+            // Moving it to Pending Approval here would drop a live document out of every
+            // effective-document report for the duration of the obsoletion review.
+            if (!isObsoletionSubmission)
+            {
+                await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
                 (
                     CompanyId, DocumentId, FromStateId, ToStateId, WorkflowExecutionId, ChangedBy
@@ -963,6 +1039,7 @@ public class DocumentComponent
                 ExecutionId = executionId,
                 empCode
             }, transaction);
+            }
 
             // Prepare notification data
             var firstStepInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -1195,12 +1272,12 @@ public class DocumentComponent
             INSERT INTO Documents
             (
                 CompanyId, DocumentNumber, ParentDocumentId, DocumentTypeCode, Title, NextReviewDate, DivisionCode,
-                DepartmentCode, SubDepartmentCode, BusinessDomainCode, Justification, CreatedBy, LastModifiedBy
+                DepartmentCode, SubDepartmentCode, BusinessDomainCode, Justification, ActivityTypeCode, CreatedBy, LastModifiedBy
             )
             VALUES
             (
                 @CompanyId, @DocumentNumber, @ParentDocumentId, @DocumentTypeCode, @Title, @NextReviewDate, @DivisionCode,
-                @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Justification, @CreatedBy, @LastModifiedBy
+                @DepartmentCode, @SubDepartmentCode, @BusinessDomainCode, @Justification, @ActivityTypeCode, @CreatedBy, @LastModifiedBy
             )
             RETURNING Id;",
             new
@@ -1208,6 +1285,10 @@ public class DocumentComponent
                 CompanyId = companyId,
                 DocumentNumber = documentNumber,
                 input.ParentDocumentId,
+                // Creation / Revision / Obsoletion. Revision and Obsoletion both set
+                // ParentDocumentId, so without this the two are indistinguishable afterwards --
+                // which is what sent an Obsoletion into the training workflow.
+                input.ActivityTypeCode,
                 input.DocumentTypeCode,
                 Title = input.DocumentName,
                 NextReviewDate = nextReviewDate,
@@ -1331,10 +1412,19 @@ public class DocumentComponent
     // doesn't duplicate it.
     public async Task TransitionParentDocumentStateAsync(int companyId, int parentDocumentId, string? activityTypeCode, string empCode, IDbTransaction transaction)
     {
+        // Obsoletion is deliberately NOT here any more. BL-012 ("Upon final approval of the
+        // Obsoletion Request, the document status is changed to Inactive") and the Document
+        // Obsoletion Process Map ("Once RDO is marked 'QA Approved' ... System 'inactive' the
+        // Document") both put it at final approval -- this method runs while the child document
+        // is still being CREATED, i.e. at submission. Retiring the document here meant it went
+        // Obsolete before any approver saw the request, and a rejection left it Obsolete with no
+        // way back. See CompleteObsoletionAsync, called from HandlePostApprovalAsync.
+        //
+        // Revision keeps its existing timing on purpose: no rule in the FSD states when a revised
+        // document becomes REVISED, and the client signed this behaviour off (sheet item 41).
         string? parentTargetStateCode = activityTypeCode switch
         {
             "DRT-0002" => "REVISED",  // Revision of existing document
-            "DRT-0003" => "OBSOLETE", // Obsoletion of existing document
             _ => null
         };
 
@@ -2590,10 +2680,17 @@ public class DocumentComponent
     // MakeDocumentEffectiveAsync), so the AUTHORIZED state is never actually rested in. Mapping
     // only the literal AUTHORIZED code would mean the watermark never appeared for an authorised
     // document.
+    //
+    // OBSOLETE and REVISED are the two states a reader most needs warning about -- both mean the
+    // copy in their hands is no longer the one in force. They previously fell through to null,
+    // so a retired document downloaded with no watermark at all, or (when it had been authorized
+    // before being retired) still carrying "AUTHORIZED".
     private static string? ResolveWatermarkText(string? stateCode, bool isReverted) => stateCode?.Trim().ToUpperInvariant() switch
     {
         "APPROVED" => "APPROVED",
         "REJECTED" => "REJECTED",
+        "OBSOLETE" => "OBSOLETE",
+        "REVISED" => "REVISED",
         "AUTHORIZED" or "EFFECTIVE" => "AUTHORIZED",
         // A plain draft stays unmarked; only one sent back for rework is called out.
         "DRAFT" when isReverted => "REVERTED",
@@ -3114,6 +3211,20 @@ public class DocumentComponent
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
 
+            // Refuse before writing anything if this workflow has already finished. The active-step
+            // check below is the primary guard but is not sufficient on its own: a second action
+            // that still found an active step would re-run the whole post-action chain, which is how
+            // one obsoletion retired its parent twice (Obsolete -> Obsolete) and wrote a duplicate
+            // APPROVED transition. Re-actioning a completed workflow is never valid.
+            var executionStatus = await _common.ExecuteScalarAsync<string>(@"
+                SELECT Status FROM WorkflowExecutions
+                WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                new { input.ExecutionId, CompanyId }, transaction);
+
+            if (string.Equals(executionStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new CustomException(
+                    "This document has already been actioned and its approval workflow is complete. Please refresh the list.", 409);
+
             var currentStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -3123,7 +3234,7 @@ public class DocumentComponent
             new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
-                throw new Exception("No active approval step found.");
+                throw new CustomException(await DescribeMissingStepAsync(CompanyId, input.ExecutionId, transaction), 409);
 
             // Fetch document info for notifications
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -3285,6 +3396,26 @@ public class DocumentComponent
     {
         try
         {
+            // Backstop. This is the one shared method that promotes a version and writes EFFECTIVE,
+            // so it is the last place an Obsoletion could slip through and become a live document.
+            // It is retired here instead -- the same outcome CompleteObsoletionAsync produces, minus
+            // the notifications, which the caller that owns the obsoletion has already sent.
+            var activityTypeCode = await _common.ExecuteScalarAsync<string>(
+                "SELECT ActivityTypeCode FROM Documents WHERE Id = @documentId AND CompanyId = @companyId;",
+                new { companyId, documentId }, transaction);
+
+            if (string.Equals(activityTypeCode, "DRT-0003", StringComparison.OrdinalIgnoreCase))
+            {
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy)
+                    VALUES (@CompanyId, @DocumentId,
+                        (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                        (SELECT Id FROM DocumentStates WHERE Code = 'OBSOLETE'), @UserId)",
+                    new { CompanyId = companyId, DocumentId = documentId, UserId = empCode }, transaction);
+
+                return true;
+            }
+
             //var clientIp = _clientContextService.GetClientIP();
             //var prefix = _utilities.GetPrefix(clientIp);
             //var userId = _utilities.GetUserid(prefix);
@@ -3490,13 +3621,41 @@ public class DocumentComponent
 
             // 1. Fetch document type and training policy rules
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT doc.DocumentTypeCode, doc.CreatedBy, tp.TrainingRequired, tp.MinimumScore
+                SELECT doc.DocumentTypeCode, doc.CreatedBy, doc.ParentDocumentId, doc.ActivityTypeCode,
+                       tp.TrainingRequired, tp.MinimumScore
                 FROM Documents doc
                 LEFT JOIN TrainingPolicies tp 
                     ON tp.DocumentTypeCode = doc.DocumentTypeCode 
                    AND tp.CompanyId = doc.CompanyId 
                    AND tp.IsActive = TRUE
                 WHERE doc.Id = @DocumentId;", new { DocumentId = documentId }, tx);
+
+            // An Obsoletion finishes HERE. It has no content to train anyone on and no version to
+            // authorize -- FSD 4.1.3 disables the Users section for exactly that reason, and
+            // neither Process Map has a training or authorization step after "QA Approved".
+            // Falling through to the training branch below is what left the obsoletion of an SOP
+            // parked in TRAINING_PENDING asking for training proof on a document being withdrawn.
+            // Two shapes to recognise. New model: the execution ran against the document being
+            // retired, so the activity lives on the execution. Legacy model: an obsoletion record
+            // document was created (pre-fix), and carries the activity itself.
+            var executionActivity = await _common.ExecuteScalarAsync<string>(@"
+                SELECT ActivityTypeCode FROM WorkflowExecutions
+                WHERE CompanyId = @CompanyId AND EntityType = 'Document' AND EntityId = @DocumentId
+                ORDER BY Id DESC LIMIT 1;",
+                new { CompanyId = companyId, DocumentId = documentId }, tx);
+
+            if (string.Equals(executionActivity, "DRT-0003", StringComparison.OrdinalIgnoreCase)
+                || string.Equals((string?)docInfo?.activitytypecode, "DRT-0003", StringComparison.OrdinalIgnoreCase))
+            {
+                await CompleteObsoletionAsync(
+                    companyId,
+                    documentId,
+                    (int?)docInfo?.parentdocumentid,
+                    (string?)docInfo?.createdby,
+                    userId,
+                    tx);
+                return;
+            }
 
             bool requiresTraining = docInfo != null && docInfo!.trainingrequired == true;
 
@@ -3547,6 +3706,152 @@ public class DocumentComponent
         }
     }
 
+    /// <summary>
+    /// Turns "no active step" into something a user can act on. The step being gone almost always
+    /// means the document was already actioned -- usually from a grid row that had gone stale --
+    /// rather than anything being genuinely broken.
+    /// </summary>
+    private async Task<string> DescribeMissingStepAsync(int companyId, int executionId, IDbTransaction tx)
+    {
+        var status = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Status FROM WorkflowExecutions WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+            new { ExecutionId = executionId, CompanyId = companyId }, tx);
+
+        return status switch
+        {
+            null => "This approval workflow no longer exists. Please refresh the list.",
+            "Completed" => "This document has already been actioned and its approval workflow is complete. Please refresh the list.",
+            "Rejected" => "This document has already been rejected. Please refresh the list.",
+            "Reworked" => "This document has already been sent back for rework. Please refresh the list.",
+            _ => "There is no approval step currently awaiting action on this document. Please refresh the list."
+        };
+    }
+
+    /// <summary>
+    /// Finishes an Obsoletion at final approval -- the point both specifications name:
+    ///   BL-012: "Upon final approval of the Obsoletion Request, the document status is changed to
+    ///           Inactive, and the Effective To date is set to the date of obsoletion."
+    ///   Document Obsoletion Process Map: "Once RDO is marked 'QA Approved' for Obsoletion, System
+    ///           'inactive' the Document and Generates Document Obsoletion Details."
+    /// </summary>
+    private async Task CompleteObsoletionAsync(
+        int companyId, int documentId, int? parentDocumentId, string? initiator, string userId, IDbTransaction tx)
+    {
+        // The document actually being retired is the parent; this document is only the record that
+        // carried the obsoletion through its approval workflow.
+        int retiredDocumentId = parentDocumentId ?? documentId;
+
+        // Idempotent: if the document is already retired there is nothing to do, and repeating the
+        // transition would write a meaningless Obsolete -> Obsolete row into its history.
+        bool alreadyRetired = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT COALESCE((
+                SELECT ds.Code = 'OBSOLETE'
+                FROM DocumentStateHistory dsh
+                JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                WHERE dsh.DocumentId = @DocumentId AND dsh.CompanyId = @CompanyId
+                ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+            ), FALSE);",
+            new { DocumentId = retiredDocumentId, CompanyId = companyId }, tx);
+
+        if (alreadyRetired)
+            return;
+
+        // 1. Retire the document (BL-012). Written as a transition from whatever state it is in now,
+        //    so the history reads Effective -> Obsolete instead of losing the previous state.
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
+            VALUES (@CompanyId, @DocumentId,
+                (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                (SELECT Id FROM DocumentStates WHERE Code = 'OBSOLETE'), @UserId, NOW());",
+            new { CompanyId = companyId, DocumentId = retiredDocumentId, UserId = userId }, tx);
+
+        // 2. The obsoletion record itself is finished. OBSOLETE is terminal, so it stops being
+        //    listed as live work -- without this it stayed at APPROVED indefinitely.
+        if (parentDocumentId.HasValue)
+        {
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, ChangedAt)
+                VALUES (@CompanyId, @DocumentId,
+                    (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
+                    (SELECT Id FROM DocumentStates WHERE Code = 'OBSOLETE'), @UserId, NOW());",
+                new { CompanyId = companyId, DocumentId = documentId, UserId = userId }, tx);
+        }
+
+        var retired = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT d.Title,
+                   (SELECT dv.Version FROM DocumentVersions dv
+                     WHERE dv.DocumentId = d.Id AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                     ORDER BY dv.Id DESC LIMIT 1) AS Version
+            FROM Documents d WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId;",
+            new { DocumentId = retiredDocumentId, CompanyId = companyId }, tx);
+
+        var placeholders = new Dictionary<string, string>
+        {
+            { "Doc Name", (string?)retired?.title ?? "Document" },
+            { "V#", (string?)retired?.version ?? "Latest" },
+            { "Date", DateTime.Now.ToString("dd-MMM-yyyy") }
+        };
+
+        // 3. Notification 14 (Document Obsoleted). The FSD lists Initiator and Division Head; the
+        //    Process Map also intimates "Relevant Users & Informed Parties", which is the retired
+        //    document's own distribution list.
+        //
+        //    Division Head is NOT resolved here: the role master (tblsetupsdetail, smsid 189) has no
+        //    "Division Head" entry in this dataset, so there is nothing to look it up by. Raised with
+        //    the client rather than guessed at.
+        var recipients = (await _common.QueryAsync<string>(@"
+            SELECT DISTINCT TRIM(dud.EmployeeCode)
+            FROM DocumentUserDistributions dud
+            WHERE dud.CompanyId = @CompanyId AND dud.DocumentId = @DocumentId
+              AND COALESCE(TRIM(dud.EmployeeCode), '') <> ''",
+            new { CompanyId = companyId, DocumentId = retiredDocumentId }, tx)).ToList();
+
+        if (!string.IsNullOrWhiteSpace(initiator))
+            recipients.Add(initiator.Trim());
+
+        foreach (var recipient in recipients.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            await _notificationComponent.TriggerNotificationAsync(
+                NotificationScenario.DocumentObsoleted, companyId, retiredDocumentId, recipient, placeholders, tx);
+        }
+
+        // 4. BL-013 -- the DCA task, and ONLY when the distribution log actually says physical copies
+        //    went out. DistributionType 1 = Physical, 2 = Digital (see DistributionTypes).
+        //    The pre-existing DCA notification ignored that condition entirely, and because it
+        //    filtered on smsid = 189 -- which is the whole designation master, not a DMS role list --
+        //    it effectively notified the document's user distribution rather than the Document
+        //    Control Associate.
+        bool hasPhysicalCopies = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM DocumentRoleDistributions
+                WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND DistributionType = 1
+            );",
+            new { CompanyId = companyId, DocumentId = retiredDocumentId }, tx);
+
+        if (hasPhysicalCopies)
+        {
+            var dcaUsers = await _common.QueryAsync<string>(@"
+                SELECT DISTINCT TRIM(e.EmpCode)
+                FROM tblsetupsdetail sd
+                JOIN public.tblempjobprofile ejp ON ejp.roleid = sd.sdlid AND COALESCE(ejp.Active, TRUE) = TRUE
+                JOIN public.tblEmployee e ON e.empid = ejp.empid
+                WHERE sd.smsid = 189
+                  AND sd.name ILIKE 'Document Control Associate%'
+                  AND e.CompanyId = @CompanyId
+                  AND COALESCE(e.Active, 1) = 1;",
+                new { CompanyId = companyId }, tx);
+
+            foreach (var dcaUser in dcaUsers.Where(u => !string.IsNullOrWhiteSpace(u)))
+            {
+                await _notificationComponent.TriggerNotificationAsync(
+                    NotificationScenario.PhysicalCopyRetrievalTask, companyId, retiredDocumentId, dcaUser, placeholders, tx);
+            }
+        }
+
+        await _auditLogComponent.LogActionAsync(companyId, userId, "Document Obsoleted", "Document",
+            retiredDocumentId, _clientContextService.GetRequestIpAddress(), transaction: tx);
+    }
+
     public async Task<bool> RejectDocumentAsync(ActionOnDocument input)
     {
         await using var transaction = await _common.BeginTransactionAsync();
@@ -3565,6 +3870,20 @@ public class DocumentComponent
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
 
+            // Refuse before writing anything if this workflow has already finished. The active-step
+            // check below is the primary guard but is not sufficient on its own: a second action
+            // that still found an active step would re-run the whole post-action chain, which is how
+            // one obsoletion retired its parent twice (Obsolete -> Obsolete) and wrote a duplicate
+            // APPROVED transition. Re-actioning a completed workflow is never valid.
+            var executionStatus = await _common.ExecuteScalarAsync<string>(@"
+                SELECT Status FROM WorkflowExecutions
+                WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                new { input.ExecutionId, CompanyId }, transaction);
+
+            if (string.Equals(executionStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new CustomException(
+                    "This document has already been actioned and its approval workflow is complete. Please refresh the list.", 409);
+
             var currentStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -3574,7 +3893,7 @@ public class DocumentComponent
             new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
-                throw new Exception("No active approval step found.");
+                throw new CustomException(await DescribeMissingStepAsync(CompanyId, input.ExecutionId, transaction), 409);
 
             // Fetch document info for notifications
             string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
@@ -3687,6 +4006,20 @@ public class DocumentComponent
             // 1️⃣ Get Current Active Step
             //-------------------------------------------------
 
+            // Refuse before writing anything if this workflow has already finished. The active-step
+            // check below is the primary guard but is not sufficient on its own: a second action
+            // that still found an active step would re-run the whole post-action chain, which is how
+            // one obsoletion retired its parent twice (Obsolete -> Obsolete) and wrote a duplicate
+            // APPROVED transition. Re-actioning a completed workflow is never valid.
+            var executionStatus = await _common.ExecuteScalarAsync<string>(@"
+                SELECT Status FROM WorkflowExecutions
+                WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                new { input.ExecutionId, CompanyId }, transaction);
+
+            if (string.Equals(executionStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new CustomException(
+                    "This document has already been actioned and its approval workflow is complete. Please refresh the list.", 409);
+
             var currentStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT *
                 FROM WorkflowExecutionSteps
@@ -3696,7 +4029,7 @@ public class DocumentComponent
             new { CompanyId, input.ExecutionId }, transaction);
 
             if (currentStep == null)
-                throw new Exception("No active approval step found.");
+                throw new CustomException(await DescribeMissingStepAsync(CompanyId, input.ExecutionId, transaction), 409);
 
             // Fetch document info for notifications
             string approverName = empDetail?.firstname + " " + empDetail?.midname + " " + empDetail?.lastname;
@@ -4187,7 +4520,12 @@ public class DocumentComponent
                   ) {stateFilter}
                   AND (
                       tr.Id IS NULL OR tr.ReadyForAuthorization = TRUE
-                  )";
+                  )
+                  -- An Obsoletion retires a document; it has no content to train anyone on and
+                  -- nothing to authorize (FSD 4.1.3 assigns it no users, and neither Process Map
+                  -- has a training or authorization step after QA approval). It must never be
+                  -- listed here.
+                  AND COALESCE((SELECT d2.ActivityTypeCode FROM Documents d2 WHERE d2.Id = doc.Id), '') <> 'DRT-0003'";
 
             if (!string.IsNullOrWhiteSpace(input.DivisionCode))
                 whereClause += " AND doc.DivisionCode = @DivisionCode";
@@ -4681,8 +5019,47 @@ public class DocumentComponent
             int fromStateId = (int)currentState.tostateid;
             string currentStateCode = (string)currentState.code;
 
+            // An Obsoletion can never be authorized. It finishes at final approval
+            // (BL-012 / CompleteObsoletionAsync) and has no content to make effective --
+            // authorizing one produced a brand new EFFECTIVE document that was a copy of the
+            // document being retired, which is how a retirement ended up putting the retired
+            // content back into force under a new number.
+            var obsoletionInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT ActivityTypeCode, ParentDocumentId, CreatedBy FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { input.DocumentId, CompanyId }, transaction);
+
+            // An Obsoletion must never come out of this endpoint Authorized/Effective. Rather than
+            // refusing the action -- which would strand any obsoletion already sitting in the
+            // training/authorization queue from before this was fixed, with no way to close it --
+            // the approval is honoured and lands the document where it belongs: Obsoleted.
+            bool isObsoletion = string.Equals(
+                (string?)obsoletionInfo?.activitytypecode, "DRT-0003", StringComparison.OrdinalIgnoreCase);
+
             if (input.Action.Equals("APPROVED", StringComparison.OrdinalIgnoreCase))
             {
+                if (isObsoletion)
+                {
+                    // No version to promote and nothing to make effective -- an Obsoletion retires a
+                    // document, it does not publish one. Promoting its version here is exactly what
+                    // put the retired content back into force as a live document under a new number.
+                    // Deliberately before the authorization-readiness check: an obsoletion is not
+                    // subject to it, and one stuck in TRAINING_PENDING must still be able to close.
+                    await CompleteObsoletionAsync(
+                        CompanyId,
+                        input.DocumentId,
+                        (int?)obsoletionInfo?.parentdocumentid,
+                        (string?)obsoletionInfo?.createdby,
+                        empCode,
+                        transaction);
+
+                    await transaction.CommitAsync();
+                    // Same fire-and-forget dispatch the normal path uses after commit.
+                    // CompleteObsoletionAsync has already raised its own notifications, so this
+                    // list is normally empty here; dispatching it anyway keeps the two exits identical.
+                    _ = DispatchAuthorizationNotificationsInBackground(pendingNotifications, CompanyId);
+                    return true;
+                }
+
                 // Final authorization is only valid once the document is actually Authorization
                 // Pending, or Approved with no training requirement (so it never went through
                 // Authorization Pending to begin with). This is the same "ready" definition
@@ -5012,7 +5389,12 @@ public class DocumentComponent
                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                       WHERE dsh.DocumentId = doc.Id
                       ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                  ) = 'TRAINING_PENDING'";
+                  ) = 'TRAINING_PENDING'
+                  -- An Obsoletion retires a document; it has no content to train anyone on and
+                  -- nothing to authorize (FSD 4.1.3 assigns it no users, and neither Process Map
+                  -- has a training or authorization step after QA approval). It must never be
+                  -- listed here.
+                  AND COALESCE((SELECT d2.ActivityTypeCode FROM Documents d2 WHERE d2.Id = doc.Id), '') <> 'DRT-0003'";
 
             //if (!string.IsNullOrWhiteSpace(input.DocumentCategoryFilter))
             //{
@@ -6088,13 +6470,44 @@ public class DocumentComponent
                      WHERE dsh.DocumentId = doc.Id
                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
                     COALESCE(cn.EmployeeName, doc.CreatedBy) AS CreatedByName,
-                    COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS LastModifiedByName
+                    COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS LastModifiedByName,
+                    pend.CurrentAssignedUser,
+                    pend.CurrentAssignedUserId,
+                    pend.CurrentStepOrder
                 FROM Vw_Documents doc
                 LEFT JOIN LATERAL (
                     SELECT Version FROM DocumentVersions
                     WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
                     ORDER BY CreatedAt DESC LIMIT 1
                 ) dv ON TRUE
+                -- Who the document is waiting on right now, so this tab can say it the way the
+                -- Request side's ""My Requests Pending Approval"" does. The step is the active one
+                -- with no decision recorded yet -- 'Pending Approval' as a status only says the
+                -- document is somewhere in a workflow, not with whom.
+                --
+                -- LATERAL ... LIMIT 1 rather than a join: a document can have several steps and a
+                -- plain join would multiply the row. Falls back to the raw employee code when the
+                -- approver has no record in Vw_EmployeeNames (true of one approver in this data) --
+                -- a code the user can look up beats an empty cell.
+                LEFT JOIN LATERAL (
+                    SELECT
+                        COALESCE(en.EmployeeName, wes.AssignedUserId) AS CurrentAssignedUser,
+                        wes.AssignedUserId                            AS CurrentAssignedUserId,
+                        wes.StepOrder                                 AS CurrentStepOrder
+                    FROM WorkflowExecutionSteps wes
+                    JOIN WorkflowExecutions we
+                         ON we.CompanyId = wes.CompanyId
+                        AND we.Id = wes.WorkflowExecutionId
+                    LEFT JOIN Vw_EmployeeNames en
+                         ON en.CleanEmpCode = LTRIM(wes.AssignedUserId::text, '0')
+                    WHERE we.CompanyId = doc.CompanyId
+                      AND we.EntityType = 'Document'
+                      AND we.EntityId = doc.Id
+                      AND wes.IsActive = TRUE
+                      AND COALESCE(NULLIF(TRIM(wes.Decision), ''), NULL) IS NULL
+                    ORDER BY wes.StepOrder
+                    LIMIT 1
+                ) pend ON TRUE
                 LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(doc.CreatedBy::text, '0')
                 LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(doc.LastModifiedBy::text, '0')
                 {whereClause}
@@ -6483,10 +6896,22 @@ public class DocumentComponent
                 WHERE CompanyId = @CompanyId AND IsActive = TRUE AND IsDeleted = FALSE;",
                 new { CompanyId })).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            bool showDivision = activeCabinetLevels.Contains("Division1111") || activeCabinetLevels.Any(n => n.StartsWith("Division", StringComparison.OrdinalIgnoreCase));
-            bool showDepartment = activeCabinetLevels.Any(n => n.StartsWith("Department", StringComparison.OrdinalIgnoreCase));
-            bool showSubDepartment = activeCabinetLevels.Any(n => n.StartsWith("SubDepartment", StringComparison.OrdinalIgnoreCase));
-            bool showBusinessDomain = activeCabinetLevels.Any(n => n.StartsWith("BusinessDomain", StringComparison.OrdinalIgnoreCase));
+            // Punctuation and spacing are stripped from both sides before comparing. The configured
+            // names are free text -- this company's row is literally "Sub-Department" -- and a
+            // plain StartsWith("SubDepartment") never matched it, so an enabled Sub-Department was
+            // silently missing from the workbook while the grid showed it. Matching on letters and
+            // digits alone means "Sub-Department", "Sub Department" and "SubDepartment" all count
+            // as the same level.
+            static string LevelKey(string? name) =>
+                new string((name ?? "").Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+            bool HasLevel(string level) =>
+                activeCabinetLevels.Any(n => LevelKey(n).StartsWith(LevelKey(level), StringComparison.Ordinal));
+
+            bool showDivision = HasLevel("Division");
+            bool showDepartment = HasLevel("Department");
+            bool showSubDepartment = HasLevel("SubDepartment");
+            bool showBusinessDomain = HasLevel("BusinessDomain");
 
             // Headers are derived from whichever columns this SELECT returns, so leaving a
             // disabled level out here is enough to drop it from the workbook too.
@@ -6509,6 +6934,7 @@ public class DocumentComponent
                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                      WHERE dsh.DocumentId = doc.Id
                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS ""Status"",
+                    COALESCE(pend.CurrentAssignedUser, '') AS ""Pending with"",
                     COALESCE(cn.EmployeeName, doc.CreatedBy) AS ""Created By"",
                     TO_CHAR(doc.CreatedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Created On"",
                     COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS ""Last Modified By"",
@@ -6519,6 +6945,25 @@ public class DocumentComponent
                     WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
                     ORDER BY CreatedAt DESC LIMIT 1
                 ) dv ON TRUE
+                -- Same ""Pending with"" the grid shows (see GetMyDocumentsAsync): the active step
+                -- with no decision recorded yet. LATERAL ... LIMIT 1 so a document with several
+                -- steps still exports as one row.
+                LEFT JOIN LATERAL (
+                    SELECT COALESCE(en.EmployeeName, wes.AssignedUserId) AS CurrentAssignedUser
+                    FROM WorkflowExecutionSteps wes
+                    JOIN WorkflowExecutions we
+                         ON we.CompanyId = wes.CompanyId
+                        AND we.Id = wes.WorkflowExecutionId
+                    LEFT JOIN Vw_EmployeeNames en
+                         ON en.CleanEmpCode = LTRIM(wes.AssignedUserId::text, '0')
+                    WHERE we.CompanyId = doc.CompanyId
+                      AND we.EntityType = 'Document'
+                      AND we.EntityId = doc.Id
+                      AND wes.IsActive = TRUE
+                      AND COALESCE(NULLIF(TRIM(wes.Decision), ''), NULL) IS NULL
+                    ORDER BY wes.StepOrder
+                    LIMIT 1
+                ) pend ON TRUE
                 LEFT JOIN Vw_EmployeeNames cn ON cn.CleanEmpCode = LTRIM(doc.CreatedBy::text, '0')
                 LEFT JOIN Vw_EmployeeNames mn ON mn.CleanEmpCode = LTRIM(doc.LastModifiedBy::text, '0')
                 {whereClause}
