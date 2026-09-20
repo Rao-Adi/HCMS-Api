@@ -2687,9 +2687,14 @@ public class DocumentComponent
     // before being retired) still carrying "AUTHORIZED".
     private static string? ResolveWatermarkText(string? stateCode, bool isReverted) => stateCode?.Trim().ToUpperInvariant() switch
     {
-        "APPROVED" => "APPROVED",
+        // TRAINING_PENDING and AUTHORIZATION_PENDING are both PAST the approval chain: a document
+        // only reaches them once every configured approver has acted (HandlePostApprovalAsync runs
+        // when no next step remains). They were previously unmarked, which is how an in-flight
+        // draft looks -- so a fully approved document awaiting training or authorization printed
+        // as though nobody had signed it off.
+        "APPROVED" or "TRAINING_PENDING" or "AUTHORIZATION_PENDING" => "APPROVED",
         "REJECTED" => "REJECTED",
-        "OBSOLETE" => "OBSOLETE",
+        "OBSOLETE" => "OBSOLETED",
         "REVISED" => "REVISED",
         "AUTHORIZED" or "EFFECTIVE" => "AUTHORIZED",
         // A plain draft stays unmarked; only one sent back for rework is called out.
@@ -6611,7 +6616,32 @@ public class DocumentComponent
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = doc.Id
                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                ) = 1";
+                ) = 1
+                AND (
+                    -- A document the user created directly: there was no Request, so reaching
+                    -- DRAFT can only mean they drafted it themselves.
+                    doc.RequestId IS NULL
+
+                    -- Sent back for rework. Belongs here whatever its origin -- that is the
+                    -- Reverted half of this tab. A DRAFT transition carrying a
+                    -- WorkflowExecutionId is what separates a revert from a never-submitted
+                    -- draft (the same idiom IsReworked uses).
+                    OR EXISTS (
+                        SELECT 1 FROM DocumentStateHistory rw
+                        WHERE rw.CompanyId = doc.CompanyId
+                          AND rw.DocumentId = doc.Id
+                          AND rw.ToStateId = 1
+                          AND rw.WorkflowExecutionId IS NOT NULL
+                    )
+
+                    -- Created from an approved Request and since saved as a draft by the user.
+                    -- SaveDocumentAsDraftAsync sets LastModifiedAt = NOW(), so this only
+                    -- becomes true once they have actually worked on it. Without this the
+                    -- document appeared the moment its Request was approved --
+                    -- CreateDocumentFromApprovedRequestAsync creates it in DRAFT -- so a
+                    -- request the user had not yet started drafting showed up as their draft.
+                    OR doc.LastModifiedAt > doc.CreatedAt
+                )";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -6823,7 +6853,32 @@ public class DocumentComponent
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = doc.Id
                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                ) = 1;";
+                ) = 1
+                AND (
+                    -- A document the user created directly: there was no Request, so reaching
+                    -- DRAFT can only mean they drafted it themselves.
+                    doc.RequestId IS NULL
+
+                    -- Sent back for rework. Belongs here whatever its origin -- that is the
+                    -- Reverted half of this tab. A DRAFT transition carrying a
+                    -- WorkflowExecutionId is what separates a revert from a never-submitted
+                    -- draft (the same idiom IsReworked uses).
+                    OR EXISTS (
+                        SELECT 1 FROM DocumentStateHistory rw
+                        WHERE rw.CompanyId = doc.CompanyId
+                          AND rw.DocumentId = doc.Id
+                          AND rw.ToStateId = 1
+                          AND rw.WorkflowExecutionId IS NOT NULL
+                    )
+
+                    -- Created from an approved Request and since saved as a draft by the user.
+                    -- SaveDocumentAsDraftAsync sets LastModifiedAt = NOW(), so this only
+                    -- becomes true once they have actually worked on it. Without this the
+                    -- document appeared the moment its Request was approved --
+                    -- CreateDocumentFromApprovedRequestAsync creates it in DRAFT -- so a
+                    -- request the user had not yet started drafting showed up as their draft.
+                    OR doc.LastModifiedAt > doc.CreatedAt
+                );";
 
             return await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId, CreatedBy = empCode });
         }
@@ -7325,6 +7380,12 @@ public class DocumentComponent
                     BusinessDomainCode = GetValue<string>(dict, "businessdomaincode"),
                     DocumentName = GetValue<string>(dict, "title"),
                     DocumentURL = GetValue<string>(dict, "documenturl"),
+                    // The document being revised carries its own saved content, and this row is
+                    // where the Revision/Obsoletion screen reads it from to fill the rich text
+                    // editor. The column is in the SELECT (Vw_Documents.versioncontent) and the
+                    // property is on the DTO -- only this line was missing, so every revision
+                    // opened with an empty editor even for a document with 7KB of saved content.
+                    VersionContent = GetValue<string>(dict, "versioncontent"),
                     IsActive = GetValue<bool>(dict, "isactive"),
                     IsDeleted = GetValue<bool>(dict, "isdeleted"),
                     CreatedAt = GetValue<DateTime?>(dict, "createdat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
