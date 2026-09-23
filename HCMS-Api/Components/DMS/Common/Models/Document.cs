@@ -191,6 +191,17 @@ public class SubmitDocument
     [BindNever]
     public List<UserDistributionInputDto>? UserIds { get; set; }
 
+    // Set by a screen that is actually showing the Document Users and Distribution List
+    // grids, to say that the two fields above are the complete picture and should replace
+    // whatever the Document currently holds -- including replacing it with nothing, when the
+    // person cleared a grid on purpose.
+    //
+    // It exists because an empty list cannot mean that: callers that do not show these grids
+    // routinely send empty lists meaning "nothing to say", and treating that as "clear them"
+    // deleted Document Users that approving a Request had promoted. Left false, this path
+    // behaves exactly as it always has.
+    public bool ReplaceDistributions { get; set; }
+
     // This-document-only approver(s), appended after the policy-resolved workflow steps.
     // Never persisted to WorkflowPolicies/WorkflowStepDefinitions -- see
     // DocumentComponent.EnsureAdHocApproverStepDefinitionAsync.

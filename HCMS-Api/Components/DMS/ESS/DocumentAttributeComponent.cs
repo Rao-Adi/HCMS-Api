@@ -347,21 +347,26 @@ public class DocumentAttributeComponent
                     // Critical: ControlTypeId likely has a NULL in the DB
                     ControlTypeId = row.Field<int?>("ControlTypeId") ?? 0,
 
+                    // An attribute holds a value of ONE type, so the other three columns are
+                    // genuinely null. Substituting 0 / "" / false for them made "no value"
+                    // indistinguishable from "zero", "empty" and "false" -- and the empty
+                    // string then failed to bind to DateTime? when the Draft screen submitted
+                    // these values back, which is what produced a 500 on submit.
                     ValueText = row.Table.Columns.Contains("ValueText")
                         ? row.Field<string>("ValueText")
-                        : string.Empty,
+                        : null,
 
-                    // ValueNumber is likely stored as decimal or int; use nullable to be safe
                     ValueNumber = row.Table.Columns.Contains("ValueNumber")
-                        ? (row.Field<decimal?>("ValueNumber") ?? 0)
-                        : 0,
+                        ? row.Field<decimal?>("ValueNumber")
+                        : null,
 
-                    // If ValueDate is a DateTime column, use row.Field<DateTime?>
                     ValueDate = row.Table.Columns.Contains("ValueDate")
-                        ? row.Field<DateOnly?>("ValueDate")?.ToDateTime(TimeOnly.MinValue).ToString("yyyy-MM-dd") ?? string.Empty
-                        : string.Empty,
+                        ? row.Field<DateOnly?>("ValueDate")?.ToDateTime(TimeOnly.MinValue).ToString("yyyy-MM-dd")
+                        : null,
 
-                    ValueBoolean = row.Table.Columns.Contains("ValueBoolean") && (row.Field<bool?>("ValueBoolean") ?? false)
+                    ValueBoolean = row.Table.Columns.Contains("ValueBoolean")
+                        ? row.Field<bool?>("ValueBoolean")
+                        : null
 
                 })
                 .ToList();

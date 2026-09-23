@@ -253,7 +253,20 @@ public class WorkflowStepComponent
                     LEFT JOIN Companies c ON c.Id = wsd.CompanyId
                     LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
                     LEFT JOIN tblEmployee e ON e.empcode::bigint = wsd.UserId::bigint   AND  e.CompanyId = @CompanyId
-                    LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND ejp.active IS NOT FALSE
+                    -- One posting per approver, not one row per posting. A step definition names a
+                    -- single person; joining straight to tblempjobprofile listed them once for every
+                    -- active job profile they hold, which is how the same approver appeared twice at
+                    -- the same Approval Sequence. DISTINCT could not collapse those rows because the
+                    -- Role and Designation columns below are read from this join and differ per posting.
+                    LEFT JOIN LATERAL (
+                        SELECT j.roleid, j.dsgid
+                        FROM tblempjobprofile j
+                        WHERE j.empid = e.empid
+                          AND j.active IS NOT FALSE
+                          AND j.CompanyId = @CompanyId
+                        ORDER BY j.jobprofileid DESC
+                        LIMIT 1
+                    ) ejp ON TRUE
                     LEFT JOIN SetupsLookup r_step ON r_step.sdlid = wsd.RoleId
                     LEFT JOIN SetupsLookup r_emp ON r_emp.sdlid = ejp.roleid
                     LEFT JOIN SetupsLookup des_step ON des_step.sdlid = wsd.DesignationId
@@ -1594,6 +1607,32 @@ public class WorkflowStepComponent
                     )
                     RETURNING Id;",
                 new { CompanyId, PolicyId = input.WorkflowPolicyId, CreatedBy = empCode });
+            }
+
+            // A person appears at most once in a sequence. Asking the same approver to sign the
+            // same document twice is not a second review, and it is how the Workflow Authorities
+            // table came to list one name on two rows.
+            //
+            // Checked before the delete below, so a rejected save leaves the existing sequence
+            // untouched rather than wiping it and then refusing. Steps that name a Role or a
+            // Designation instead of a person are not affected -- those legitimately repeat.
+            var duplicateUser = (input.Steps ?? new List<WorkflowStepSequenceDto>())
+                .Where(x => !string.IsNullOrWhiteSpace(x.UserId))
+                .GroupBy(x => x.UserId!.Trim())
+                .FirstOrDefault(g => g.Count() > 1);
+
+            if (duplicateUser != null)
+            {
+                var name = await _dapperService.ExecuteScalarAsync<string>(@"
+                    SELECT LTRIM(RTRIM(COALESCE(firstname, '') || ' ' || COALESCE(midname, '') || ' ' || COALESCE(lastname, '')))
+                    FROM tblEmployee
+                    WHERE TRIM(empcode) = @UserId AND CompanyId = @CompanyId
+                    LIMIT 1;",
+                    new { UserId = duplicateUser.Key, CompanyId });
+
+                var who = string.IsNullOrWhiteSpace(name) ? duplicateUser.Key : name;
+                throw new CustomException(
+                    $"{who} is already in this approval sequence. Each approver can only be added once.", 400);
             }
 
             // 2. Permanently delete existing steps for this version.

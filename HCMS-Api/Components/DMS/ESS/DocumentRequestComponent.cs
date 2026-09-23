@@ -479,11 +479,21 @@ public class DocumentRequestComponent
             var policyId = await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId AND EntityType = 'Request' AND DocumentTypeCode = @DocType
-                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
-                AND IsActive = TRUE AND IsDeleted = FALSE;",
+                -- A level either matches the document exactly, or is left unscoped on the
+                -- policy, which reads as 'applies to everything under this'. That is what lets
+                -- one policy written for a Division cover its Departments, instead of needing a
+                -- policy per leaf of the cabinet.
+                AND COALESCE(DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                AND COALESCE(DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                AND COALESCE(SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                AND COALESCE(BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
+                AND IsActive = TRUE AND IsDeleted = FALSE
+                ORDER BY (CASE WHEN COALESCE(BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                        Id DESC
+                LIMIT 1;",
             new
             {
                 CompanyId,
@@ -763,11 +773,21 @@ public class DocumentRequestComponent
             async Task<long?> ResolvePolicyIdAsync(string entityType) => await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId AND EntityType = @EntityType AND DocumentTypeCode = @DocType
-                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
-                AND IsActive = TRUE AND IsDeleted = FALSE;",
+                -- A level either matches the document exactly, or is left unscoped on the
+                -- policy, which reads as 'applies to everything under this'. That is what lets
+                -- one policy written for a Division cover its Departments, instead of needing a
+                -- policy per leaf of the cabinet.
+                AND COALESCE(DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                AND COALESCE(DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                AND COALESCE(SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                AND COALESCE(BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
+                AND IsActive = TRUE AND IsDeleted = FALSE
+                ORDER BY (CASE WHEN COALESCE(BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                        Id DESC
+                LIMIT 1;",
             new
             {
                 CompanyId,
@@ -1030,12 +1050,20 @@ public class DocumentRequestComponent
 
             //-------------------------------------------------
             // If this draft was previously reverted (Reworked) by an approver, resubmitting it
-            // creates a NEW linked DocumentRequests row instead of reusing the same one --
-            // mirroring how a Revision Request links back to the Document it revises via
-            // ParentDocumentId. This keeps each attempt's approval history on its own EntityId
-            // (no interleaving in the audit trail) and lets the resubmission carry its own
-            // incremented Proposed Version Number. The original (reverted) row is left as-is;
-            // it's no longer surfaced as an actionable draft once a child request exists for it.
+            // continues THE SAME request: its Proposed Version Number is incremented and it goes
+            // back out for approval under the number it already has.
+            //
+            // This used to create a new linked row, so one request became DR-347 (reverted) and
+            // DR-348 (resubmitted). The FSD describes the opposite -- its rework notification
+            // names the same Request ID and sends the initiator to the Edit View of that request
+            // -- and it is the rule already applied to Documents, where a revision is a new
+            // version of the same document rather than a second document. Minting a number per
+            // attempt also spent one from the sequence each time and split a single request
+            // across several rows.
+            //
+            // The audit trail does not depend on the extra row: DocumentRequestHistory is keyed
+            // on RequestId, so the request carries its full chronological history, and each
+            // attempt still gets its own WorkflowExecutions row with its own steps and decisions.
             //-------------------------------------------------
 
             bool wasReworked = await _common.ExecuteScalarAsync<bool>(@"
@@ -1050,24 +1078,24 @@ public class DocumentRequestComponent
             {
                 string nextRowVersion = IncrementMinorVersion((string?)request.rowversion);
 
-                // ProposedContent/DraftFileUrl are passed explicitly as the effective (possibly
-                // just-edited) values rather than SELECTed from the old row, and the old row
-                // itself is never written to below -- it keeps exactly the content/file it had
-                // when it was reverted, intact as the audit record of that attempt.
-                submittedRequestId = await _common.ExecuteScalarAsync<long>(@"
-                    INSERT INTO DocumentRequests
-                    (
-                        CompanyId, RequestNumber, DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, ProposedContent,
-                        DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
-                        Status, CreatedBy, LastModifiedBy, IsContentFinalized, SubmittedAt, SubmittedBy, ParentDocumentId, ParentRequestId, RowVersion
-                    )
-                    SELECT
-                        CompanyId, 'DR-' || nextval('document_request_seq'), DocumentRequestTypeCode, DocumentTypeCode, DocumentName, Justification, @ProposedContent,
-                        @DraftFileUrl, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
-                        @Status, @UserId, @UserId, TRUE, NOW(), @UserId, ParentDocumentId, Id, @RowVersion
-                    FROM DocumentRequests
-                    WHERE Id = @RequestId AND CompanyId = @CompanyId
-                    RETURNING Id;",
+                submittedRequestId = input.RequestId;
+
+                // The request goes back out under its own number, carrying the edited content and
+                // the incremented Proposed Version Number. What the reverted attempt contained is
+                // recorded in DocumentRequestHistory and in the Reworked execution that sent it
+                // back, so nothing is lost by writing the new content onto the same row.
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentRequests
+                    SET ProposedContent = @ProposedContent,
+                        DraftFileUrl = @DraftFileUrl,
+                        Status = @Status,
+                        RowVersion = @RowVersion,
+                        IsContentFinalized = TRUE,
+                        SubmittedAt = NOW(),
+                        SubmittedBy = @UserId,
+                        LastModifiedAt = NOW(),
+                        LastModifiedBy = @UserId
+                    WHERE Id = @RequestId AND CompanyId = @CompanyId;",
                 new
                 {
                     ProposedContent = effectiveProposedContent,
@@ -1078,6 +1106,10 @@ public class DocumentRequestComponent
                     CompanyId,
                     RowVersion = nextRowVersion
                 }, tx);
+
+                await InsertHistoryAsync(
+                    CompanyId, input.RequestId, DocumentRequestStatus.Submitted, empCode,
+                    "Resubmitted after rework as version " + nextRowVersion, tx);
             }
             else
             {
@@ -1136,12 +1168,22 @@ public class DocumentRequestComponent
                 WHERE CompanyId = @CompanyId
                 AND EntityType = 'Request'
                 AND DocumentTypeCode = @DocType
-                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                -- A level either matches the document exactly, or is left unscoped on the
+                -- policy, which reads as 'applies to everything under this'. That is what lets
+                -- one policy written for a Division cover its Departments, instead of needing a
+                -- policy per leaf of the cabinet.
+                AND COALESCE(DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                AND COALESCE(DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                AND COALESCE(SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                AND COALESCE(BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
                 AND IsActive = TRUE
-                AND IsDeleted = FALSE;",
+                AND IsDeleted = FALSE
+                ORDER BY (CASE WHEN COALESCE(BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                        Id DESC
+                LIMIT 1;",
             new
             {
                 CompanyId,
@@ -1494,12 +1536,22 @@ public class DocumentRequestComponent
                 WHERE CompanyId = @CompanyId
                 AND EntityType = @EntityType
                 AND DocumentTypeCode = @DocType
-                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                -- A level either matches the document exactly, or is left unscoped on the
+                -- policy, which reads as 'applies to everything under this'. That is what lets
+                -- one policy written for a Division cover its Departments, instead of needing a
+                -- policy per leaf of the cabinet.
+                AND COALESCE(DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                AND COALESCE(DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                AND COALESCE(SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                AND COALESCE(BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
                 AND IsActive = TRUE
-                AND IsDeleted = FALSE;",
+                AND IsDeleted = FALSE
+                ORDER BY (CASE WHEN COALESCE(BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                        Id DESC
+                LIMIT 1;",
             new
             {
                 CompanyId,
@@ -3052,6 +3104,15 @@ public class DocumentRequestComponent
                 );",
                     new { ExecutionId = executionId, CompanyId, DraftStatus = DocumentRequestStatus.Draft, EmpCode = empCode }, tx);
 
+                // The approver's reason is already on the step; recording it here too is what
+                // makes the request's own history read as the sequence of events it was.
+                await InsertHistoryAsync(
+                    CompanyId, (long)requestInfo!.id, DocumentRequestStatus.Draft, empCode,
+                    string.IsNullOrWhiteSpace(input.Observation)
+                        ? "Reverted for rework"
+                        : "Reverted for rework: " + input.Observation,
+                    tx);
+
                 if (initiatorId != string.Empty)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
@@ -4198,6 +4259,10 @@ public class DocumentRequestComponent
          PROMOTE Audience ✅
              ↓
          Document Draft 1.0 Ready */
+    /// <summary>A cabinet code the user left unset, as NULL rather than an empty string.</summary>
+    private static string? BlankToNull(string? code) =>
+        string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+
     public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string empCode, NpgsqlTransaction transaction)
     {
         //await using var transaction = await _common.BeginTransactionAsync();
@@ -4237,6 +4302,36 @@ public class DocumentRequestComponent
                 nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
             }
 
+            // A Revision request revises the document it names -- it does not produce a second
+            // document. Same rule as the direct Revision path (SubmitDocumentAsync): BL-004/005/006
+            // make a revision a VERSION change, BL-001 issues the number once, and BL-003 keeps the
+            // "-A" suffix for Annexures. Creating a child here is what produced SOP-016-A for a
+            // revision of SOP-016.
+            bool isRevisionRequest =
+                string.Equals((string?)request.documentrequesttypecode, "DRT-0002", StringComparison.OrdinalIgnoreCase)
+                && (int?)request.parentdocumentid is > 0;
+
+            int documentId;
+
+            if (isRevisionRequest)
+            {
+                documentId = (int)request.parentdocumentid;
+
+                // Opens the next version on the document being revised. Idempotent, so a request
+                // re-processed after a failure does not open a second draft row.
+                await _documentComponent.OpenRevisionDraftVersionAsync(companyId, documentId, empCode, transaction);
+
+                // The document already carries the distribution it was issued with. The promotion
+                // steps below are pure inserts, so clear first -- otherwise every revision doubles
+                // the distribution list. A revision is allowed to change who receives the document,
+                // and this is what lets the request's own list replace the previous one.
+                await _common.ExecuteAsync(@"
+                    DELETE FROM DocumentRoleDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;
+                    DELETE FROM DocumentUserDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;",
+                    new { CompanyId = companyId, DocumentId = documentId }, transaction);
+            }
+            else
+            {
             // Generate the system-designed document number
             string documentNumber = await _documentComponent.GenerateDocumentNumberAsync(
                 companyId,
@@ -4251,7 +4346,7 @@ public class DocumentRequestComponent
             //-----------------------------------------
             // 2️⃣ Create Document
             //-----------------------------------------
-            var documentId = await _common.ExecuteScalarAsync<int>(@"
+            documentId = await _common.ExecuteScalarAsync<int>(@"
                 INSERT INTO Documents
                 ( 
                     CompanyId, DocumentNumber, ParentDocumentId, RequestId, DocumentTypeCode, Title, NextReviewDate, DivisionCode, DepartmentCode,
@@ -4274,10 +4369,13 @@ public class DocumentRequestComponent
                 DocumentTypeCode = request.documenttypecode,
                 Title = request.documentname,
                 NextReviewDate = nextReviewDate,
-                request.divisioncode,
-                request.departmentcode,
-                request.subdepartmentcode,
-                request.businessdomaincode,
+                // Unset cabinet levels go in as NULL -- see DocumentComponent.NullIfBlank. An
+                // empty string here fails fk_documents_subdepartment for any department that has
+                // no sub-departments.
+                DivisionCode = BlankToNull(Convert.ToString(request.divisioncode)),
+                DepartmentCode = BlankToNull(Convert.ToString(request.departmentcode)),
+                SubDepartmentCode = BlankToNull(Convert.ToString(request.subdepartmentcode)),
+                BusinessDomainCode = BlankToNull(Convert.ToString(request.businessdomaincode)),
                 DocumentUrl = request.draftfileurl,
                 // Carried onto the document so post-approval can tell a Revision from an
                 // Obsoletion -- both set ParentDocumentId and were otherwise identical.
@@ -4328,6 +4426,7 @@ public class DocumentRequestComponent
                 @CompanyId, @DocumentId, 1, @empCode
             )
             ", new { companyId, documentId, empCode }, transaction);
+            }
 
             //-----------------------------------------
             // 5️⃣ Link Back To Request
@@ -4378,13 +4477,26 @@ public class DocumentRequestComponent
             //-----------------------------------------
             // 7️⃣ Promote User Distribution
             //-----------------------------------------
+            // Role and cabinet come across with the employee. Without them the Document Users
+            // grid cannot tell a person who was deliberately chosen from one auto-expanded out
+            // of the Distribution List -- it keys on RoleId -- so every promoted user silently
+            // disappeared from the screen.
+            //
+            // NULLIF keeps an unset cabinet level as NULL rather than an empty string, which is
+            // what the composite foreign keys onto the cabinet tables require.
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserDistributions
                 (
-                    CompanyId, DocumentId, EmployeeCode, CreatedBy
+                    CompanyId, DocumentId, EmployeeCode, RoleId,
+                    DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy
                 )
                 SELECT
-                    CompanyId, @DocumentId, EmployeeCode, @CreatedBy
+                    CompanyId, @DocumentId, EmployeeCode, RoleId,
+                    NULLIF(TRIM(COALESCE(DivisionCode, '')), ''),
+                    NULLIF(TRIM(COALESCE(DepartmentCode, '')), ''),
+                    NULLIF(TRIM(COALESCE(SubDepartmentCode, '')), ''),
+                    NULLIF(TRIM(COALESCE(BusinessDomainCode, '')), ''),
+                    @CreatedBy
                 FROM DocumentRequestUserDistributions
                 WHERE DocumentRequestId = @RequestId;",
             new

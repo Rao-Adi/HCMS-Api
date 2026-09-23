@@ -648,6 +648,22 @@ public class DocumentComponent
             bool isObsoletionSubmission =
                 string.Equals(input.ActivityTypeCode, "DRT-0003", StringComparison.OrdinalIgnoreCase);
 
+            // A Revision is a new VERSION of an existing document, not a new document.
+            //
+            // BL-004/005/006 describe a revision purely as a version change (1.0 -> 1.1 for a
+            // minor revision, 1.0 -> 2.0 for a major one). BL-001 issues a document number once,
+            // and BL-003 reserves the "-A" suffix for Annexures. Creating a child document per
+            // revision produced SOP-016-A for a revision of SOP-016 -- a number the FSD never
+            // asks for, that collides with the annexure scheme, and that an audit reads as a
+            // different document. It also split one document across two rows in every list.
+            //
+            // So the approval workflow runs against the document being revised. Its effective
+            // version stays in force throughout -- a document under revision is still the
+            // controlled copy -- and MakeDocumentEffectiveAsync archives it and promotes the new
+            // draft version at final approval.
+            bool isRevisionSubmission =
+                string.Equals(input.ActivityTypeCode, "DRT-0002", StringComparison.OrdinalIgnoreCase);
+
             if (isObsoletionSubmission)
             {
                 if (input.ParentDocumentId is not > 0)
@@ -655,6 +671,18 @@ public class DocumentComponent
                         "Select the document to be obsoleted before submitting.", 400);
 
                 input.DocumentId = input.ParentDocumentId.Value;
+            }
+            else if (isRevisionSubmission)
+            {
+                if (input.ParentDocumentId is not > 0)
+                    throw new CustomException(
+                        "Select the document to be revised before submitting.", 400);
+
+                input.DocumentId = input.ParentDocumentId.Value;
+
+                // Idempotent: a revision sent back for rework already has its draft row and
+                // continues on it, so resubmitting does not open a second version.
+                await OpenRevisionDraftVersionAsync(CompanyId, input.DocumentId, empCode, transaction);
             }
             else if (input.DocumentId <= 0)
             {
@@ -693,10 +721,10 @@ public class DocumentComponent
                     {
                         Title = input.DocumentName,
                         input.Justification,
-                        input.DivisionCode,
-                        input.DepartmentCode,
-                        input.SubDepartmentCode,
-                        input.BusinessDomainCode,
+                        DivisionCode = NullIfBlank(input.DivisionCode),
+                        DepartmentCode = NullIfBlank(input.DepartmentCode),
+                        SubDepartmentCode = NullIfBlank(input.SubDepartmentCode),
+                        BusinessDomainCode = NullIfBlank(input.BusinessDomainCode),
                         UserId = empCode,
                         input.DocumentId,
                         CompanyId
@@ -704,6 +732,24 @@ public class DocumentComponent
 
                 // Delete-then-reinsert because InsertDocumentDistributionsAsync is pure-insert
                 // (it would otherwise duplicate every row already saved with the draft).
+                await _common.ExecuteAsync(@"
+                    DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+                    DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+                    new { input.DocumentId, CompanyId }, transaction);
+                await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
+            }
+            else if (input.ReplaceDistributions)
+            {
+                // "Use an Approved Request". The Document already exists and its title, cabinet
+                // and justification came from the Request, so none of the branches above apply --
+                // but Document Users and the Distribution List are editable on that screen (they
+                // are prefilled there from what approving the Request promoted), and an edit the
+                // person makes there has to land.
+                //
+                // Only a screen showing those grids sets ReplaceDistributions, so only it can
+                // clear them. The presence of the fields is not enough on its own: callers that
+                // do not show the grids send empty lists meaning "nothing to say", and acting on
+                // that deleted what the Request had promoted.
                 await _common.ExecuteAsync(@"
                     DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
                     DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
@@ -800,12 +846,22 @@ public class DocumentComponent
                 WHERE CompanyId = @CompanyId
                 AND EntityType = @EntityType
                 AND DocumentTypeCode = @DocType
-                AND (((DivisionCode IS NULL OR DivisionCode = '') AND (@DivisionCode IS NULL OR @DivisionCode = '')) OR DivisionCode = @DivisionCode)
-                AND (((DepartmentCode IS NULL OR DepartmentCode = '') AND (@DepartmentCode IS NULL OR @DepartmentCode = '')) OR DepartmentCode = @DepartmentCode)
-                AND (((SubDepartmentCode IS NULL OR SubDepartmentCode = '') AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '')) OR SubDepartmentCode = @SubDepartmentCode)
-                AND (((BusinessDomainCode IS NULL OR BusinessDomainCode = '') AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '')) OR BusinessDomainCode = @BusinessDomainCode)
+                -- A level either matches the document exactly, or is left unscoped on the
+                -- policy, which reads as 'applies to everything under this'. That is what lets
+                -- one policy written for a Division cover its Departments, instead of needing a
+                -- policy per leaf of the cabinet.
+                AND COALESCE(DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                AND COALESCE(DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                AND COALESCE(SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                AND COALESCE(BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
                 AND IsActive = TRUE
-                AND IsDeleted = FALSE;",
+                AND IsDeleted = FALSE
+                ORDER BY (CASE WHEN COALESCE(BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                        + CASE WHEN COALESCE(DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                        Id DESC
+                LIMIT 1;",
             new
             {
                 CompanyId,
@@ -818,7 +874,8 @@ public class DocumentComponent
             }, transaction);
 
             if (policyId == null)
-                throw new CustomException("No workflow policy defined for selected Cabinet Scope.", 404);
+                throw new CustomException(
+                    await DescribeWorkflowGapAsync(CompanyId, doc, null, transaction), 404);
 
             //-------------------------------------------------
             // 3️⃣ Resolve Active Policy Version
@@ -838,7 +895,22 @@ public class DocumentComponent
             }, transaction);
 
             if (versionId == null)
-                throw new CustomException("Workflow policy not defined for Document.", 404);
+                throw new CustomException(
+                    await DescribeWorkflowGapAsync(CompanyId, doc, null, transaction), 404);
+
+            // A policy with no approvers is not a workflow. Without this the step loop below
+            // simply had nothing to iterate: the document moved to Pending Approval with zero
+            // approval steps and waited on nobody, which reads as success and never completes.
+            var approverCount = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1) FROM WorkflowStepDefinitions
+                WHERE CompanyId = @CompanyId
+                  AND WorkflowPolicyVersionId = @VersionId
+                  AND IsActive = TRUE AND IsDeleted = FALSE;",
+                new { CompanyId, VersionId = versionId }, transaction);
+
+            if (approverCount == 0)
+                throw new CustomException(
+                    await DescribeWorkflowGapAsync(CompanyId, doc, policyId, transaction), 400);
 
             //-------------------------------------------------
             // 4️⃣ Promote Version (Rework Case)
@@ -1021,7 +1093,14 @@ public class DocumentComponent
             // APPROVAL of the Obsoletion Request, the document status is changed to Inactive").
             // Moving it to Pending Approval here would drop a live document out of every
             // effective-document report for the duration of the obsoletion review.
-            if (!isObsoletionSubmission)
+            //
+            // Not written for a Revision either, and for the same reason: the revision now runs
+            // against the document itself, and that document is still the controlled, effective
+            // copy while its next version is being reviewed. Marking it Pending Approval would
+            // withdraw a live SOP from every effective-document report until the revision
+            // finished -- and if the revision were then rejected, the document would have been
+            // out of force for no reason at all.
+            if (!isObsoletionSubmission && !isRevisionSubmission)
             {
                 await _common.ExecuteAsync(@"
                 INSERT INTO DocumentStateHistory
@@ -1144,10 +1223,10 @@ public class DocumentComponent
                     {
                         Title = input.DocumentName,
                         input.Justification,
-                        input.DivisionCode,
-                        input.DepartmentCode,
-                        input.SubDepartmentCode,
-                        input.BusinessDomainCode,
+                        DivisionCode = NullIfBlank(input.DivisionCode),
+                        DepartmentCode = NullIfBlank(input.DepartmentCode),
+                        SubDepartmentCode = NullIfBlank(input.SubDepartmentCode),
+                        BusinessDomainCode = NullIfBlank(input.BusinessDomainCode),
                         UserId = empCode,
                         input.DocumentId,
                         CompanyId
@@ -1258,15 +1337,17 @@ public class DocumentComponent
         if (reviewYears.HasValue && reviewYears.Value > 0)
             nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
 
-        string documentNumber = await GenerateDocumentNumberAsync(
-            companyId,
-            input.DivisionCode,
-            input.DepartmentCode,
-            input.SubDepartmentCode,
-            input.DocumentTypeCode,
-            parentDocumentId: input.ParentDocumentId,
-            input.BusinessDomainCode,
-            transaction);
+        // No number yet.
+        //
+        // BL-001 issues the number on final approval. This method now only ever runs for a
+        // direct creation (Revision and Obsoletion no longer create a document at all), and a
+        // document being drafted has not been approved of anything yet. Issuing here meant an
+        // abandoned draft and a rejected document both held a number, each of them consuming a
+        // value from the per-cabinet sequence BL-002 defines -- gaps in the register that an
+        // auditor cannot account for.
+        //
+        // AssignDocumentNumberOnApprovalAsync fills it in when the approval completes.
+        string documentNumber = null;
 
         var documentId = await _common.ExecuteScalarAsync<int>(@"
             INSERT INTO Documents
@@ -1292,10 +1373,10 @@ public class DocumentComponent
                 input.DocumentTypeCode,
                 Title = input.DocumentName,
                 NextReviewDate = nextReviewDate,
-                input.DivisionCode,
-                input.DepartmentCode,
-                input.SubDepartmentCode,
-                input.BusinessDomainCode,
+                DivisionCode = NullIfBlank(input.DivisionCode),
+                DepartmentCode = NullIfBlank(input.DepartmentCode),
+                SubDepartmentCode = NullIfBlank(input.SubDepartmentCode),
+                BusinessDomainCode = NullIfBlank(input.BusinessDomainCode),
                 input.Justification,
                 CreatedBy = empCode,
                 LastModifiedBy = empCode
@@ -1323,53 +1404,7 @@ public class DocumentComponent
         string newVersion = "1.0";
         if (input.ParentDocumentId.HasValue)
         {
-            var parentVersion = await _common.ExecuteScalarAsync<string>(@"
-                SELECT Version FROM DocumentVersions
-                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
-                ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
-                new { DocumentId = input.ParentDocumentId.Value, CompanyId = companyId }, transaction);
-
-            // Highest number already claimed in the whole chain: walk up to the root, then back down
-            // through every descendant, counting both issued document versions and the versions other
-            // requests have already proposed against it. Ordered numerically by major then minor --
-            // a plain string sort would put "10.0" before "9.0".
-            var chainVersion = await _common.ExecuteScalarAsync<string>(@"
-                WITH RECURSIVE Ancestors AS (
-                    SELECT Id, ParentDocumentId, 0 AS Depth
-                    FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId
-                    UNION ALL
-                    SELECT d.Id, d.ParentDocumentId, a.Depth + 1
-                    FROM Documents d
-                    INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
-                    WHERE d.CompanyId = @CompanyId
-                ),
-                RootDoc AS (SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1),
-                Chain AS (
-                    SELECT r.RootId AS Id FROM RootDoc r
-                    UNION ALL
-                    SELECT d.Id FROM Documents d
-                    INNER JOIN Chain c ON d.ParentDocumentId = c.Id
-                    WHERE d.CompanyId = @CompanyId
-                ),
-                Claimed AS (
-                    SELECT dv.Version AS Version
-                    FROM DocumentVersions dv
-                    INNER JOIN Chain c ON c.Id = dv.DocumentId
-                    WHERE dv.CompanyId = @CompanyId AND COALESCE(dv.IsDeleted, FALSE) = FALSE
-                    UNION ALL
-                    SELECT dr.RowVersion AS Version
-                    FROM DocumentRequests dr
-                    INNER JOIN Chain c ON c.Id = dr.ParentDocumentId
-                    WHERE dr.CompanyId = @CompanyId AND COALESCE(dr.IsDeleted, FALSE) = FALSE
-                )
-                SELECT Version FROM Claimed
-                WHERE Version ~ '^[0-9]+\.[0-9]+$'
-                ORDER BY split_part(Version, '.', 1)::int DESC,
-                         split_part(Version, '.', 2)::int DESC
-                LIMIT 1;",
-                new { DocumentId = input.ParentDocumentId.Value, CompanyId = companyId }, transaction);
-
-            newVersion = ResolveNextRevisionVersion(parentVersion, chainVersion);
+            newVersion = await ResolveNextVersionForDocumentAsync(companyId, input.ParentDocumentId.Value, transaction);
         }
 
         await _common.ExecuteAsync(@"
@@ -1491,6 +1526,182 @@ public class DocumentComponent
     // this same revision already claimed it -- typically one that was reverted during approval, or
     // is still in flight -- so this attempt continues from there with a minor bump ("2.0" -> "2.1")
     // instead of jumping a major release nobody ever issued.
+
+    /// <summary>
+    /// The version number a new revision of <paramref name="documentId"/> should carry.
+    ///
+    /// Extracted from CreateBareDocumentForSubmissionAsync so the revision path -- which no
+    /// longer creates a document of its own -- numbers versions by exactly the same rules
+    /// instead of a second copy of them that could drift.
+    /// </summary>
+    private async Task<string> ResolveNextVersionForDocumentAsync(int companyId, int documentId, IDbTransaction transaction)
+    {
+        string newVersion = "1.0";
+        var parentVersion = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Version FROM DocumentVersions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
+            ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+
+        // Highest number already claimed in the whole chain: walk up to the root, then back down
+        // through every descendant, counting both issued document versions and the versions other
+        // requests have already proposed against it. Ordered numerically by major then minor --
+        // a plain string sort would put "10.0" before "9.0".
+        var chainVersion = await _common.ExecuteScalarAsync<string>(@"
+            WITH RECURSIVE Ancestors AS (
+                SELECT Id, ParentDocumentId, 0 AS Depth
+                FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId
+                UNION ALL
+                SELECT d.Id, d.ParentDocumentId, a.Depth + 1
+                FROM Documents d
+                INNER JOIN Ancestors a ON d.Id = a.ParentDocumentId
+                WHERE d.CompanyId = @CompanyId
+            ),
+            RootDoc AS (SELECT Id AS RootId FROM Ancestors ORDER BY Depth DESC LIMIT 1),
+            Chain AS (
+                SELECT r.RootId AS Id FROM RootDoc r
+                UNION ALL
+                SELECT d.Id FROM Documents d
+                INNER JOIN Chain c ON d.ParentDocumentId = c.Id
+                WHERE d.CompanyId = @CompanyId
+            ),
+            Claimed AS (
+                SELECT dv.Version AS Version
+                FROM DocumentVersions dv
+                INNER JOIN Chain c ON c.Id = dv.DocumentId
+                WHERE dv.CompanyId = @CompanyId AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                UNION ALL
+                SELECT dr.RowVersion AS Version
+                FROM DocumentRequests dr
+                INNER JOIN Chain c ON c.Id = dr.ParentDocumentId
+                WHERE dr.CompanyId = @CompanyId AND COALESCE(dr.IsDeleted, FALSE) = FALSE
+            )
+            SELECT Version FROM Claimed
+            WHERE Version ~ '^[0-9]+\.[0-9]+$'
+            ORDER BY split_part(Version, '.', 1)::int DESC,
+                     split_part(Version, '.', 2)::int DESC
+            LIMIT 1;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+
+        newVersion = ResolveNextRevisionVersion(parentVersion, chainVersion);
+        return newVersion;
+    }
+
+    /// <summary>
+    /// Opens a new draft version on a document that is being revised.
+    ///
+    /// A revision is a new VERSION of the same document (BL-004/005/006), not a new document,
+    /// so there is no Documents row to create and no number to mint -- the document keeps the
+    /// number it was issued (BL-001), and BL-003 keeps the "-A" suffix free for Annexures.
+    ///
+    /// The effective version is left alone: the document stays in force while its revision is
+    /// under review, and MakeDocumentEffectiveAsync archives the old row and promotes this one
+    /// at final approval.
+    ///
+    /// Idempotent. A document sent back for rework already has its draft row, and resubmitting
+    /// must continue on that row rather than open a second one.
+    /// </summary>
+    public async Task<string> OpenRevisionDraftVersionAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
+    {
+        var existing = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Version FROM DocumentVersions
+            WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND VersionType = 1
+            ORDER BY Id DESC LIMIT 1;",
+            new { CompanyId = companyId, DocumentId = documentId }, transaction);
+
+        if (!string.IsNullOrWhiteSpace(existing))
+            return existing;
+
+        var newVersion = await ResolveNextVersionForDocumentAsync(companyId, documentId, transaction);
+
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, Content, IsActive, CreatedBy, LastModifiedBy
+            )
+            SELECT
+                @CompanyId, @DocumentId, @Version, 1, Content, TRUE, @UserId, @UserId
+            FROM DocumentVersions
+            WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND VersionType = 2
+            ORDER BY Id DESC LIMIT 1;",
+            new { CompanyId = companyId, DocumentId = documentId, Version = newVersion, UserId = empCode }, transaction);
+
+        // No effective row to copy from (a document still in its first approval round). Start
+        // the draft empty rather than silently writing nothing at all.
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentVersions
+            (
+                CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, LastModifiedBy
+            )
+            SELECT @CompanyId, @DocumentId, @Version, 1, TRUE, @UserId, @UserId
+            WHERE NOT EXISTS (
+                SELECT 1 FROM DocumentVersions
+                WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND VersionType = 1
+            );",
+            new { CompanyId = companyId, DocumentId = documentId, Version = newVersion, UserId = empCode }, transaction);
+
+        return newVersion;
+    }
+    /// <summary>
+    /// A cabinet code the user left unset, as NULL rather than an empty string.
+    ///
+    /// Documents has composite foreign keys onto the cabinet tables. Postgres skips such a key
+    /// when any of its columns is NULL, which is what allows a document to be filed against a
+    /// department that has no sub-departments. An empty string is not NULL, so the key is
+    /// enforced and the insert fails with 23503 -- which is exactly what happened the moment the
+    /// cabinet contained a department with nothing underneath it.
+    /// </summary>
+
+    /// <summary>
+    /// Says which piece of Approval Workflow Authorities configuration is missing, in terms the
+    /// person reading it can act on: the document type by NAME, the cabinet they chose, and
+    /// whether the gap is a missing policy or a policy with nobody in it.
+    ///
+    /// Pass <paramref name="policyId"/> when a policy was found but carries no approvers.
+    /// </summary>
+    private async Task<string> DescribeWorkflowGapAsync(
+        int companyId, dynamic doc, int? policyId, IDbTransaction transaction)
+    {
+        var typeCode = Convert.ToString(doc?.documenttypecode) ?? "";
+
+        var typeName = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Name FROM DocumentTypes
+            WHERE CompanyId = @CompanyId AND Code = @Code LIMIT 1;",
+            new { CompanyId = companyId, Code = typeCode }, transaction);
+
+        var labelled = string.IsNullOrWhiteSpace(typeName) ? typeCode : typeName;
+
+        // The cabinet as the user picked it, by name, skipping levels they left unset.
+        // Joined here rather than in SQL: the names are plain data and this keeps quoting out
+        // of a verbatim SQL string.
+        var names = new List<string>();
+        foreach (var (table, code) in new[]
+        {
+            ("Divisions", Convert.ToString(doc?.divisioncode) ?? ""),
+            ("Departments", Convert.ToString(doc?.departmentcode) ?? ""),
+            ("SubDepartments", Convert.ToString(doc?.subdepartmentcode) ?? ""),
+        })
+        {
+            if (string.IsNullOrWhiteSpace(code)) continue;
+            var n = await _common.ExecuteScalarAsync<string>(
+                $"SELECT Name FROM {table} WHERE CompanyId = @CompanyId AND Code = @Code LIMIT 1;",
+                new { CompanyId = companyId, Code = code }, transaction);
+            if (!string.IsNullOrWhiteSpace(n)) names.Add(n);
+        }
+
+        var cabinet = string.Join(" / ", names);
+        var where = string.IsNullOrWhiteSpace(cabinet) ? "" : $" in {cabinet}";
+
+        if (policyId.HasValue)
+            return $"The approval workflow for {labelled}{where} has no approvers configured. "
+                 + "Please add them under Approval Workflow Authorities.";
+
+        return $"No approval workflow is configured for {labelled}{where}. "
+             + "Please set one up under Approval Workflow Authorities before submitting.";
+    }
+    private static string? NullIfBlank(string? code) =>
+        string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+
     private static string ResolveNextRevisionVersion(string? parentVersion, string? chainVersion)
     {
         var candidate = IncrementMajorVersion(parentVersion);
@@ -3662,6 +3873,11 @@ public class DocumentComponent
                 return;
             }
 
+            // BL-001: the number is issued now, on final approval -- not when the draft was
+            // started. A document that never got here (abandoned or rejected) never consumes a
+            // value from the sequence.
+            await AssignDocumentNumberOnApprovalAsync(companyId, documentId, tx);
+
             bool requiresTraining = docInfo != null && docInfo!.trainingrequired == true;
 
             // When training isn't required, the document simply stays at 'APPROVED' -- it does
@@ -3739,6 +3955,41 @@ public class DocumentComponent
     ///   Document Obsoletion Process Map: "Once RDO is marked 'QA Approved' for Obsoletion, System
     ///           'inactive' the Document and Generates Document Obsoletion Details."
     /// </summary>
+
+    /// <summary>
+    /// Issues the document number for a document that has just completed its approval (BL-001).
+    ///
+    /// Only the direct-create path leaves it unset: a Request-driven document is numbered when
+    /// its Request is approved, which is the moment BL-001 actually names, and a Revision keeps
+    /// the number the document already has. So this is a no-op for everything else, which is why
+    /// it is written as "fill it in if it is missing" rather than "generate one".
+    /// </summary>
+    private async Task AssignDocumentNumberOnApprovalAsync(int companyId, int documentId, IDbTransaction tx)
+    {
+        var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                   SubDepartmentCode, BusinessDomainCode, ParentDocumentId
+            FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            new { DocumentId = documentId, CompanyId = companyId }, tx);
+
+        if (doc == null || !string.IsNullOrWhiteSpace((string?)doc.documentnumber))
+            return;
+
+        var number = await GenerateDocumentNumberAsync(
+            companyId,
+            (string?)doc.divisioncode,
+            (string?)doc.departmentcode,
+            (string?)doc.subdepartmentcode,
+            (string?)doc.documenttypecode,
+            parentDocumentId: null,
+            (string?)doc.businessdomaincode,
+            tx);
+
+        await _common.ExecuteAsync(@"
+            UPDATE Documents SET DocumentNumber = @DocumentNumber, LastModifiedAt = NOW()
+            WHERE Id = @DocumentId AND CompanyId = @CompanyId AND DocumentNumber IS NULL;",
+            new { DocumentNumber = number, DocumentId = documentId, CompanyId = companyId }, tx);
+    }
     private async Task CompleteObsoletionAsync(
         int companyId, int documentId, int? parentDocumentId, string? initiator, string userId, IDbTransaction tx)
     {
@@ -3768,6 +4019,27 @@ public class DocumentComponent
             VALUES (@CompanyId, @DocumentId,
                 (SELECT ToStateId FROM DocumentStateHistory WHERE DocumentId = @DocumentId ORDER BY ChangedAt DESC, Id DESC LIMIT 1),
                 (SELECT Id FROM DocumentStates WHERE Code = 'OBSOLETE'), @UserId, NOW());",
+            new { CompanyId = companyId, DocumentId = retiredDocumentId, UserId = userId }, tx);
+
+        // 1b. Retire the issued version and mark the document inactive.
+        //
+        //     BL-012 retires the document, not merely its status line. Without these two the
+        //     document kept IsActive = TRUE and kept a VersionType = 2 (effective) row, so
+        //     anything reading those rather than the state history still treated it as a live
+        //     issued document -- it was still being offered for revision, and FSD 6.1/6.2 ask
+        //     for Inactive documents to be excluded from reports.
+        await _common.ExecuteAsync(@"
+            UPDATE DocumentVersions
+               SET VersionType = 3,
+                   IsActive = FALSE,
+                   ArchiveReason = 'Obsoleted',
+                   LastModifiedAt = NOW(),
+                   LastModifiedBy = @UserId
+             WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND VersionType = 2;
+
+            UPDATE Documents
+               SET IsActive = FALSE, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+             WHERE CompanyId = @CompanyId AND Id = @DocumentId;",
             new { CompanyId = companyId, DocumentId = retiredDocumentId, UserId = userId }, tx);
 
         // 2. The obsoletion record itself is finished. OBSOLETE is terminal, so it stops being
@@ -4218,6 +4490,61 @@ public class DocumentComponent
         }
     }
 
+    // The Distribution List and Document Users behind a set of documents, in the shapes the two
+    // grids on screen read (DRDistributionList and DRUsersComponent). Shared by the
+    // Draft/Reverted list and by get-draft-by-request so the same document cannot come back
+    // looking different depending on which screen asked for it.
+    private async Task<(List<DistributionListReadDto> Roles, List<DocumentRequestUserDistribution> Users)>
+        LoadDocumentDistributionsAsync(int companyId, int[] documentIds)
+    {
+        if (documentIds.Length == 0)
+            return (new List<DistributionListReadDto>(), new List<DocumentRequestUserDistribution>());
+
+        var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
+            SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
+                   dl.DistributionType AS DistributionTypeId,
+                   dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                   div.Name AS Division,
+                   dep.Name AS Department,
+                   subd.Name AS SubDepartment,
+                   bd.Name AS BusinessDomain,
+	                   dt.Name AS DistributionType
+               FROM DocumentRoleDistributions dl
+                    LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
+                    LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
+                    LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                    LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                    LEFT JOIN Companies c ON dl.CompanyId = c.Id
+                    LEFT JOIN Roles r ON dl.RoleId = r.Id
+		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
+            WHERE dl.CompanyId = @CompanyId
+            AND dl.DocumentId = ANY(@DocumentIds);",
+            new { CompanyId = companyId, DocumentIds = documentIds })).ToList();
+
+        var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+            SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
+            drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
+            LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
+            COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
+            FROM DocumentUserDistributions drd
+            LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
+            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
+            LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
+            WHERE drd.CompanyId = @CompanyId
+            -- Only users picked in the Document Users grid are returned. Employees
+            -- auto-expanded from the Distribution List carry a NULL RoleId, and DRUsersComponent
+            -- skips those on purpose (it groups its rows by Role + Cabinet) -- so shipping them
+            -- meant transferring thousands of rows per document that the screen then discarded.
+            -- Measured on this data: one document sent 3,183 users and the grid used 1.
+            AND drd.RoleId IS NOT NULL
+            AND drd.DocumentId = ANY(@DocumentIds);",
+            new { CompanyId = companyId, DocumentIds = documentIds })).ToList();
+
+        return (roleDistributions, userDistributions);
+    }
+
     public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int requestId)
     {
         try
@@ -4265,7 +4592,49 @@ public class DocumentComponent
             if (result == null)
                 throw new Exception("Draft document not available for finalization.");
 
-            return result;
+            // Whoever raised the Request filled in Document Users and a Distribution List, and
+            // approving it promoted both onto this Document. They belong in this response: the
+            // person finalizing the document is the one who has to confirm them, and until now
+            // the screen had nothing to show and nothing to edit.
+            var rows = result.ToList();
+            if (rows.Count == 0)
+                return rows;
+
+            var documentIds = rows
+                .Select(r => (int)((IDictionary<string, object>)r)["documentid"])
+                .Distinct()
+                .ToArray();
+
+            var (roleDistributions, userDistributions) =
+                await LoadDocumentDistributionsAsync(int.Parse(CompanyId), documentIds);
+
+            // Submitting a document expands an "Any role" pick into one row per role; collapsing
+            // them back makes the grid show the single "Any" row the person actually chose --
+            // the same treatment GetMyDraftDocumentsAsync gives it.
+            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(int.Parse(CompanyId), null);
+
+            var hydrated = new List<dynamic>();
+            foreach (var row in rows)
+            {
+                var source = (IDictionary<string, object>)row;
+                var documentId = (int)source["documentid"];
+
+                // Rebuilt as an ExpandoObject rather than written back into the Dapper row, so
+                // every key the screen already reads keeps its exact name and casing.
+                IDictionary<string, object?> hydratedRow = new System.Dynamic.ExpandoObject();
+                foreach (var pair in source)
+                    hydratedRow[pair.Key] = pair.Value;
+
+                hydratedRow["DistributionList"] = DMSUtilities.CollapseAnyRoleGroups(
+                    roleDistributions.Where(x => x.DocumentRequestId == documentId).ToList(),
+                    allActiveRoleIds);
+                hydratedRow["UserList"] = userDistributions
+                    .Where(x => x.DocumentRequestId == documentId).ToList();
+
+                hydrated.Add(hydratedRow);
+            }
+
+            return hydrated;
 
 
         }
@@ -6760,47 +7129,8 @@ public class DocumentComponent
 
             var documentIds = documents.Select(x => x.Id).ToArray();
 
-            var roleDistributions = (await _common.QueryAsync<DistributionListReadDto>(@"
-                SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
-                       dl.DistributionType AS DistributionTypeId,
-                       dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
-                       div.Name AS Division,
-                       dep.Name AS Department,
-                       subd.Name AS SubDepartment,
-                       bd.Name AS BusinessDomain,
-	                   dt.Name AS DistributionType
-                   FROM DocumentRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
-                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
-                        LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
-                        LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                        LEFT JOIN Roles r ON dl.RoleId = r.Id
-		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
-                WHERE dl.CompanyId = @CompanyId
-                AND dl.DocumentId = ANY(@DocumentIds);",
-                new { CompanyId, DocumentIds = documentIds })).ToList();
-
-            var userDistributions = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
-                SELECT drd.Id, drd.CompanyId, drd.DocumentId AS DocumentRequestId, drd.EmployeeCode,
-                drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
-                LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
-                COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-                FROM DocumentUserDistributions drd
-                LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
-                INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
-                LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
-                LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid AND des_fallback.CompanyId = @CompanyId
-                LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid AND r.CompanyId = @CompanyId
-                WHERE drd.CompanyId = @CompanyId
-                -- Only users picked in the Document Users grid are returned. Employees
-                -- auto-expanded from the Distribution List carry a NULL RoleId, and DRUsersComponent
-                -- skips those on purpose (it groups its rows by Role + Cabinet) -- so shipping them
-                -- meant transferring thousands of rows per document that the screen then discarded.
-                -- Measured on this data: one document sent 3,183 users and the grid used 1.
-                AND drd.RoleId IS NOT NULL
-                AND drd.DocumentId = ANY(@DocumentIds);",
-                new { CompanyId, DocumentIds = documentIds })).ToList();
+            var (roleDistributions, userDistributions) =
+                await LoadDocumentDistributionsAsync(CompanyId, documentIds);
 
             // See DMSUtilities.CollapseAnyRoleGroups -- a Reverted document was already submitted
             // once, which expanded any "Any role" picks into concrete per-role rows; collapsing
@@ -7279,11 +7609,39 @@ public class DocumentComponent
                 WHERE d.CompanyId = @CompanyId 
                   AND d.IsDeleted = FALSE 
                   AND d.IsActive = TRUE
-                  AND EXISTS (SELECT 1 FROM DocumentStateHistory dsh 
-			       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-			       WHERE dsh.DocumentId = d.Id
-			         AND ds.Code IN ('EFFECTIVE', 'AUTHORIZED') 
-			     )";
+                  -- The document's CURRENT state, not merely one it passed through.
+                  --
+                  -- This was an EXISTS over the whole state history, which asks whether
+                  -- the document was EVER effective -- and an obsoleted document was. So a document
+                  -- that had been formally retired was still offered for revision, and a user
+                  -- could raise a revision against a withdrawn SOP. Same for a document already
+                  -- superseded by a revision (REVISED).
+                  --
+                  -- Taking the latest transition is the idiom the draft list and My Documents
+                  -- already use, so all three screens agree on what state a document is in.
+                  AND (
+                      SELECT ds.Code
+                      FROM DocumentStateHistory dsh
+                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                      WHERE dsh.DocumentId = d.Id
+                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                  ) IN ('EFFECTIVE', 'AUTHORIZED')
+
+                  -- Not already under revision or obsoletion.
+                  --
+                  -- A revision now runs against the document itself and leaves it EFFECTIVE while
+                  -- it is reviewed, which is correct -- it is still the controlled copy. But that
+                  -- also means the state alone no longer says a change is in flight, so without
+                  -- this a second revision could be raised against a document whose first one is
+                  -- still with the approvers, and the two would write over each other on the same
+                  -- draft version row.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM WorkflowExecutions we
+                      WHERE we.CompanyId = d.CompanyId
+                        AND we.EntityType = 'Document'
+                        AND we.EntityId = d.Id
+                        AND we.Status = 'Running'
+                  )";
 
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {

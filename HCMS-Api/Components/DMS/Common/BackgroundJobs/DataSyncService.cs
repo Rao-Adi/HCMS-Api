@@ -44,6 +44,16 @@ public class DataSyncService : BackgroundService
         }
     }
 
+    // Every table below is replaced the same way: one transaction that truncates it and reloads
+    // it, committed only once the COPY has completed.
+    //
+    // Each truncate used to commit on its own, so between it and its COPY the table was visibly
+    // EMPTY to every other connection -- for the whole of a sync that takes minutes, at startup
+    // and every twelve hours after. Requests landing in that window read nothing: a document
+    // downloaded then printed its approval block with the Role and Date filled in but the Name,
+    // Designation and Signature blank, those being the three fields joined to tblEmployee. A COPY
+    // that failed part way was worse still -- the table stayed empty until the next sync, because
+    // the truncate had already been committed.
     private async Task RunFullSync()
     {
         try
@@ -93,7 +103,8 @@ public class DataSyncService : BackgroundService
     private async Task SyncSetupsDetail(NpgsqlConnection conn, IEnumerable<tblSetupsdetail> data)
     {
         int rowIndex = 0;
-        await Truncate(conn, "tblSetupsdetail");
+        await using var tx = await conn.BeginTransactionAsync();
+        await Truncate(conn, "tblSetupsdetail", tx);
 
         using var writer = await conn.BeginBinaryImportAsync(@"
         COPY tblSetupsdetail (
@@ -166,6 +177,12 @@ public class DataSyncService : BackgroundService
             }
         }
         await writer.CompleteAsync();
+        // The connection stays in COPY state until the importer is disposed, not merely
+        // completed, and Npgsql refuses every other command until then -- including this
+        // commit. Disposing twice is harmless, and the declaration above still covers the
+        // paths that throw before reaching here.
+        await writer.DisposeAsync();
+        await tx.CommitAsync();
     }
 
     private string Sanitize(string value)
@@ -177,7 +194,8 @@ public class DataSyncService : BackgroundService
 
     private async Task SyncDeptstrMaster(NpgsqlConnection conn, IEnumerable<tblDeptstrMaster> data)
     {
-        await Truncate(conn, "tblDeptstrMaster");
+        await using var tx = await conn.BeginTransactionAsync();
+        await Truncate(conn, "tblDeptstrMaster", tx);
 
         using var writer = await conn.BeginBinaryImportAsync(@"
         COPY tblDeptstrMaster (
@@ -227,13 +245,20 @@ public class DataSyncService : BackgroundService
             }
         }
         await writer.CompleteAsync();
+        // The connection stays in COPY state until the importer is disposed, not merely
+        // completed, and Npgsql refuses every other command until then -- including this
+        // commit. Disposing twice is harmless, and the declaration above still covers the
+        // paths that throw before reaching here.
+        await writer.DisposeAsync();
+        await tx.CommitAsync();
     }
 
     private async Task SyncJobProfile(NpgsqlConnection conn, IEnumerable<TblEmpJobProfile> data)
     {
         try
         {
-            await Truncate(conn, "TblEmpJobProfile");
+            await using var tx = await conn.BeginTransactionAsync();
+            await Truncate(conn, "TblEmpJobProfile", tx);
             using var writer = await conn.BeginBinaryImportAsync(@"COPY TblEmpJobProfile (JobProfileId, EmpId, JobCode, JobCDate, JobTitle, MdptId, dptId, JobId, baseId, typId, ReportingRelationship, KeyRelationshipInt, KeyRelationshipExt, AcademicQualifications, WorkExperience, JobSummary, KeyPerformanceIndicators, Responsibilities, Accountabilities, EOWorkCondition, EmpDate, MgrEmpId, MgrDate, HrEmpId, HRDate, CompanyId, AppDoc, DivId, DirectRptTo, DCompanyId, DGradeId, DDsgId, DDivId, DMdptId, DDptId, DBaseId, InDirectRptTo, IndCompanyId, IndGradeId, IndDsgId, IndDivId, IndMdptId, IndDptId, IndBaseId, PAgeRange, PrefGender, EYears, DsgId, RExpYears, chkqual, chkcert, chktrain, isDescripancyInCompetency, isDescripancyInKPI, JdId, Active, PageRangeTo, EYearsTo, RExpYearsTo, IncPackage, OtherBenifit, SalaryRemarks, visaStatus, SalaryAmountFrom, SalaryAmountTo, SalaryCurrencyId, PrefReligion, AssignedDate, UserId, ApplicationID, FormId, UserEmpId, UserEmpName, UserEmpCode, EntTerminal, EntTerminalIP, EntOperation, EntDate, EmoIntlProfiling, RoleId, DRoleId, IndRoleId, Received, JDChangeVersionNo, AcknowledgeOn, AcknowledgeByUserID, AcknowledgeTerminal, AcknowledgeByEmpID, changeResponsibilityDetail) FROM STDIN (FORMAT BINARY)");
             foreach (var i in data)
             {
@@ -329,6 +354,12 @@ public class DataSyncService : BackgroundService
                 await writer.WriteAsync(i.ChangeResponsibilityDetail, NpgsqlDbType.Varchar);
             }
             await writer.CompleteAsync();
+            // The connection stays in COPY state until the importer is disposed, not merely
+            // completed, and Npgsql refuses every other command until then -- including this
+            // commit. Disposing twice is harmless, and the declaration above still covers the
+            // paths that throw before reaching here.
+            await writer.DisposeAsync();
+            await tx.CommitAsync();
         }
         catch
         {
@@ -341,7 +372,8 @@ public class DataSyncService : BackgroundService
     {
         try
         {
-            await Truncate(conn, "tblEmployee");
+            await using var tx = await conn.BeginTransactionAsync();
+            await Truncate(conn, "tblEmployee", tx);
             // Column list for COPY command based on your InsertEmployeeAsync method
             string copySql = @"COPY tblEmployee (EmpId, EmpCode, CompanyId, EmpRefNo, FirstName, MidName, LastName, TitleID, Initial, Fname, gndId, NIC, NICnew, NTN, DateofBirth, Address, ctyId, Phone, PhoneCntCode, PhoneCtyCode, PhoneNumber, Phone2, Phone2CntCode, Phone2CtyCode, Phone2Number, Mobile, MobileCode, MobileNumber, Email, rlgId, mrtId, bldId, nationalityid, qlfId, EmgPerson, EmgPhone, EmgAddress, MdptId, dptId, dsgId, cmpid, brnId, typId, DateJoin, DateConfirm, CDueDate, ExtDate, JobDes, Active, JobId, NotePad, ReportTo, Dotted, Medical, GShift, Gross, PDate, LastIncDate, Height, Weight, EyeColor, Glass, MedicalHistory, Disabilities, DisReason, PGId, RelName, RelWorking, RelationshipId, RelPositionId, SectId, AreaId, MTId, DivId, UId, PWD, VDesigId, VDesigId2, BaseId, RegionId, MTeamId, TeamId, ExpYr, EditBy, ConfirmBy, Hold, IsDirty, DispID, Identification, SDWId, DomId, InsurerId, GrpInsrNum, GrpInsrAmt, SumInsured, AssetStatus, LReason, Shift, AutoPresent, PGIds, CountryId, OfferDate, AppId, VaccinationHistory, ContractExpireDate, ProratedLeave, PassportNo, FatherNIC, Dgid, Dutyid, PayrollStatus, SLICAmount, TotalSLICAmount, OPDID, Email2, EmgMobile, MdptIdCurrent, MdptIdOld, dptIdCurrent, dptIdOld, dsgIdCurrent, dsgIdOld, JobIdCurrent, PGIdCurrent, ReportToCurrent, CNICExpiryDate, InternExpiryDate, HiringChecklistProcess, OldEmpId, LeavingDate, InterCompanyTransfer, SourceCompanyId, TargetCompanyId, OriginalCompanyId, SourceEmpId, TargetEmpId, OriginalEmpId, InterCompanyInduction, lastWorkingDate, ReportingDate, BaseCntId, DispCntId, ReportToCompany, relId, DottedReportToCompany, PassportExpiryDate, UserId, FormId, UserEmpId, UserEmpName, EntTerminal, EntTerminalIP, UserEmpCode, VisaNumer, VisaExpiryDate, VisaNumber, nextincDate, Matchedwithblacklist, processmanualmap, duplicatedRecordId, duplicatedMapEmpId, IdCardRemarks, FamilyCardNo, IqamaNo, IqamaExpiryHijri, IqamaExpiryGregorian, CurrSpnsName, SpnsTransferable, SpnsType, SpnsCountry, SpnsCity, SpnsContactDetails, SpnsNatureOfBusiness, IqamaProfession, SpnsExpiryHijri, SpnsExpiryGregorian, FirstNameArabic, MidNameArabic, LastNameArabic, TitleIDArabic, ValidDrivingLicenseKSA, HstOfPersecution, HstOfPenalties, PendingCases, SpnsCategory, NoOfSpnsChangedOfVisa, EmpCategoryId, AutoPresentFromDate, AutoPresentToDate, TransactionSource, SalaryChangedStatus, ReviewTransactionId, HrSeries, IsLeaveAllocated, IsEmployeeSalary, IsHiringChecklistFinalized, IsEmployeeProfileExtended, IsEmployeeExpenseEntitlement, IsEmployeeJD, IsApprovalForPayroll, IsUserId, PreferredCulture, DomCntId, EntDate, ApplicationId, RetirementDate, SalaryReviewChangedStatus, TimeStamp, JobIdOld, PGIdOld, ReportToOld, FlexiShift, FlexiType, RequiredHours, EditByUser, secondment, PhotoPath, CompanyShortName, ACids, DrivingLicenseNo, DrivingLicenseExpiryDate, isSpouseEmployed, isAnyOtherIncomeSource, isAnyPhysicalDisability, OtherIncomeSourceDetails, PhysicalDisabilityDetails, ResidentialStatusId, FatherHusbandPhone, FatherHusbandOccupation, isOwnConveyance, ConveyanceType, ConveyanceMake, ConveyanceModel, ConveyanceYear, ConveyanceRegisterationNo, PhoneExtension, SittingLocation) FROM STDIN (FORMAT BINARY)";
 
@@ -595,6 +627,12 @@ public class DataSyncService : BackgroundService
                 await writer.WriteAsync(i.SittingLocation, NpgsqlDbType.Varchar);
             }
             await writer.CompleteAsync();
+            // The connection stays in COPY state until the importer is disposed, not merely
+            // completed, and Npgsql refuses every other command until then -- including this
+            // commit. Disposing twice is harmless, and the declaration above still covers the
+            // paths that throw before reaching here.
+            await writer.DisposeAsync();
+            await tx.CommitAsync();
         }
         catch
         {
@@ -609,7 +647,8 @@ public class DataSyncService : BackgroundService
 
         try
         {
-            await ExecuteCommand(conn, "TRUNCATE TABLE tblDeptstrDetail CASCADE");
+            await using var tx = await conn.BeginTransactionAsync();
+            await ExecuteCommand(conn, "TRUNCATE TABLE tblDeptstrDetail CASCADE", tx);
 
             using var writer = await conn.BeginBinaryImportAsync(@"
         COPY tblDeptstrDetail (
@@ -668,6 +707,12 @@ public class DataSyncService : BackgroundService
             }
 
             await writer.CompleteAsync();
+            // The connection stays in COPY state until the importer is disposed, not merely
+            // completed, and Npgsql refuses every other command until then -- including this
+            // commit. Disposing twice is harmless, and the declaration above still covers the
+            // paths that throw before reaching here.
+            await writer.DisposeAsync();
+            await tx.CommitAsync();
 
             Console.WriteLine("Bulk import completed successfully.");
         }
@@ -679,15 +724,18 @@ public class DataSyncService : BackgroundService
         }
     }
 
-    private async Task Truncate(NpgsqlConnection conn, string table)
+    // Always called inside the transaction that also reloads the table -- see the note on
+    // RunFullSync. Truncating on its own commit is what used to leave the table empty for
+    // everyone else while the COPY ran.
+    private async Task Truncate(NpgsqlConnection conn, string table, NpgsqlTransaction tx = null)
     {
-        using var cmd = new NpgsqlCommand($"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE", conn);
+        using var cmd = new NpgsqlCommand($"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE", conn, tx);
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task ExecuteCommand(NpgsqlConnection conn, string sql)
+    private async Task ExecuteCommand(NpgsqlConnection conn, string sql, NpgsqlTransaction tx = null)
     {
-        using var cmd = new NpgsqlCommand(sql, conn);
+        using var cmd = new NpgsqlCommand(sql, conn, tx);
         await cmd.ExecuteNonQueryAsync();
     }
 

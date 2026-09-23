@@ -120,7 +120,7 @@ public class BusinessDomainComponent
                     VALUES
                     (
                         '{CompanyId}',
-                        '{input.SubDepartmentCode}',
+                        {CabinetSql.Literal(input.SubDepartmentCode)},
                         '{generatedCode}',
                         '{input.Name.Replace("'", "''")}',
                         TRUE,

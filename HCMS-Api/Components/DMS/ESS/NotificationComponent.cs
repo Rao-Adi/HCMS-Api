@@ -64,7 +64,7 @@ public class NotificationComponent
             INSERT INTO Notifications
             (CompanyId, EmployeeCode, Title, Message, NotificationType, RelatedEntityType, RelatedEntityId, RedirectionUrl, IsRead, CreatedAt)
             VALUES
-            (@CompanyId, @EmployeeCode, @Title, @Message, @NotificationType, @RelatedEntityType, @RelatedEntityId, @RedirectionUrl, FALSE, NOW())
+            (@CompanyId, @EmployeeCode, @Title, @Message, @NotificationType, @RelatedEntityType, @RelatedEntityId, @RedirectionUrl, FALSE, (NOW() AT TIME ZONE 'UTC'))
             RETURNING Id;";
 
             int newId = await _common.ExecuteScalarAsync<int>(insertQuery, new
@@ -296,7 +296,7 @@ public class NotificationComponent
                 '{input.RelatedEntityType}',
                 '{input.RelatedEntityId}',
                 '{input.IsRead}',
-                NOW()
+                (NOW() AT TIME ZONE 'UTC')
             )
             RETURNING Id;";
 
@@ -674,11 +674,11 @@ public class NotificationComponent
             string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
             var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId, CompanyId = companyId }, transaction);
 
-            //if (!string.IsNullOrWhiteSpace(recipientEmail))
-            //{
-            //    string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
-            //    await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
-            //}
+            if (!string.IsNullOrWhiteSpace(recipientEmail))
+            {
+                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
+                await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+            }
         }
         catch (Exception ex)
         {

@@ -86,10 +86,10 @@ public class AttributeMandatoryScopeComponent
             (
                 '{CompanyId}',
                 '{input.DocumentAttributeId}',
-                '{input.DivisionCode}',
-                '{input.DepartmentCode}',
-                '{input.SubDepartmentCode}',
-                '{input.BusinessDomainCode}',
+                {CabinetSql.Literal(input.DivisionCode)},
+                {CabinetSql.Literal(input.DepartmentCode)},
+                {CabinetSql.Literal(input.SubDepartmentCode)},
+                {CabinetSql.Literal(input.BusinessDomainCode)},
                 '{input.IsMandatory}',
                 TRUE,
                 FALSE,
@@ -568,9 +568,9 @@ public class AttributeMandatoryScopeComponent
             string updateQuery = $@"
             UPDATE AttributeMandatoryScopes
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
-                DepartmentCode = '{input.DepartmentCode.Replace("'", "''")}',
-                SubDepartmentCode = '{input.SubDepartmentCode.Replace("'", "''")}',
+                DivisionCode = {CabinetSql.Literal(input.DivisionCode)},
+                DepartmentCode = {CabinetSql.Literal(input.DepartmentCode)},
+                SubDepartmentCode = {CabinetSql.Literal(input.SubDepartmentCode)},
                 IsMandatory = {(input.IsMandatory ? "TRUE" : "FALSE")},
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),

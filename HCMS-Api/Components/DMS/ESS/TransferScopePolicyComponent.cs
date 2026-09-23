@@ -86,10 +86,10 @@ public class TransferScopePolicyComponent
             VALUES
             (
                 '{CompanyId}', 
-                '{input.DivisionCode.Replace("'", "''")}', 
-                '{input.DepartmentCode!.Replace("'", "''")}', 
-                '{input.SubDepartmentCode!.Replace("'", "''")}', 
-                '{input.BusinessDomainCode!.Replace("'", "''")}', 
+                {CabinetSql.Literal(input.DivisionCode)}, 
+                {CabinetSql.Literal(input.DepartmentCode)}, 
+                {CabinetSql.Literal(input.SubDepartmentCode)}, 
+                {CabinetSql.Literal(input.BusinessDomainCode)}, 
                 '{input.ReportingToLevel}',
                 TRUE,
                 FALSE,
@@ -413,10 +413,10 @@ public class TransferScopePolicyComponent
             string updateQuery = $@"
             UPDATE TransferScopePolicies
             SET 
-                DivisionCode = '{input.DivisionCode.Replace("'", "''")}',
-                DepartmentCode = '{input.DepartmentCode!.Replace("'", "''")}',
-                SubDepartmentCode = '{input.SubDepartmentCode!.Replace("'", "''")}',
-                BusinessDomainCode = '{input.BusinessDomainCode!.Replace("'", "''")}',
+                DivisionCode = {CabinetSql.Literal(input.DivisionCode)},
+                DepartmentCode = {CabinetSql.Literal(input.DepartmentCode)},
+                SubDepartmentCode = {CabinetSql.Literal(input.SubDepartmentCode)},
+                BusinessDomainCode = {CabinetSql.Literal(input.BusinessDomainCode)},
                 ReportingToLevel = '{input.ReportingToLevel}',
                 IsActive = {(input.IsActive ? "TRUE" : "FALSE")},
                 LastModifiedAt = NOW(),

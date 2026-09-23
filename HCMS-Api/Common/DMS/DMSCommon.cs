@@ -11,7 +11,7 @@ using System.Text.Json;
 
 
 namespace HCMS_Api.Common.DMS;
-public class DMSCommon
+public class DMSCommon : IAsyncDisposable, IDisposable
 {
     private readonly string _connectionString;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -91,12 +91,62 @@ public class DMSCommon
     // CONNECTION FACTORY
     //------------------------------------------------
 
+    /// <summary>
+    /// Connections handed out by CreateOpenConnectionAsync / BeginTransactionAsync.
+    ///
+    /// They are remembered so they can be closed when this scope ends. Disposing an
+    /// NpgsqlTransaction does NOT close its connection, and callers only ever dispose the
+    /// transaction, so without this every transactional call leaked a pooled connection
+    /// permanently -- until the pool, and then the database, ran out.
+    /// </summary>
+    private readonly List<NpgsqlConnection> _openedConnections = new();
+
     public async Task<NpgsqlConnection> CreateOpenConnectionAsync()
     {
         var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync();
         await ApplyAuditSessionContextAsync(conn);
+        lock (_openedConnections) { _openedConnections.Add(conn); }
         return conn;
+    }
+
+    /// <summary>
+    /// Closes every connection this scope opened. DMSCommon is registered Scoped, so the
+    /// container calls this at the end of the request that created it.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        List<NpgsqlConnection> toClose;
+        lock (_openedConnections)
+        {
+            toClose = new List<NpgsqlConnection>(_openedConnections);
+            _openedConnections.Clear();
+        }
+
+        foreach (var conn in toClose)
+        {
+            // One bad connection must not strand the others.
+            try { await conn.DisposeAsync(); } catch { }
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    public void Dispose()
+    {
+        List<NpgsqlConnection> toClose;
+        lock (_openedConnections)
+        {
+            toClose = new List<NpgsqlConnection>(_openedConnections);
+            _openedConnections.Clear();
+        }
+
+        foreach (var conn in toClose)
+        {
+            try { conn.Dispose(); } catch { }
+        }
+
+        GC.SuppressFinalize(this);
     }
 
     //------------------------------------------------

@@ -82,7 +82,23 @@ public class DashboardComponent
                     (SELECT COUNT(1) FROM DocumentRequests dr WHERE dr.CompanyId = @CompanyId AND dr.CreatedBy = @UserId AND dr.Status = 0 AND dr.IsDeleted = FALSE
                         AND EXISTS (SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request')
                         AND NOT EXISTS (SELECT 1 FROM DocumentRequests child WHERE child.ParentRequestId = dr.Id AND child.CompanyId = dr.CompanyId)) AS MyRevertedRequests,
-                    (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.CompanyId = @CompanyId AND dut.EmployeeCode = @EmployeeCode AND dut.TrainingStatus = 0 AND dut.IsDeleted = FALSE) AS PendingTrainings,
+                    -- A training that is actually due, which is what the Training page lists:
+                    -- the document has to BE in training. TrainingStatus = 0 alone only says an
+                    -- assignment was made at submit time, and that row stays behind after the
+                    -- document is approved, rejected, revised or retired -- which is why this
+                    -- read 45 for a user whose Training page was empty.
+                    (SELECT COUNT(1) FROM DocumentUserTraining dut
+                      WHERE dut.CompanyId = @CompanyId AND dut.EmployeeCode = @EmployeeCode
+                        AND dut.TrainingStatus = 0 AND dut.IsDeleted = FALSE
+                        AND EXISTS (
+                            SELECT 1 FROM Documents doc2
+                            WHERE doc2.Id = dut.DocumentId AND doc2.CompanyId = dut.CompanyId
+                              AND doc2.IsDeleted = FALSE
+                              AND (SELECT ds.Code FROM DocumentStateHistory dsh
+                                   JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                                   WHERE dsh.DocumentId = doc2.Id
+                                   ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) = 'TRAINING_PENDING'
+                        )) AS PendingTrainings,
                     -- Previously company-wide (no CreatedBy filter at all), so every user saw the
                     -- same shared number regardless of whether any of it was theirs. Scoped to
                     -- documents you created, matching MyApprovedDocuments above -- both are
@@ -124,8 +140,11 @@ public class DashboardComponent
                     dt.Name AS DocumentTypeName, 
                     COUNT(d.Id) AS Count
                 FROM DocumentTypes dt
-                LEFT JOIN Documents d ON d.DocumentTypeCode = dt.Code AND d.CompanyId = @CompanyId 
-                --AND d.CreatedBy = @UserId AND d.IsDeleted = FALSE
+                -- Scoped to the signed-in user. With this commented out the panel showed the
+                -- whole company library to everyone, so a user who had created nothing still saw
+                -- a full chart -- and no number on the dashboard agreed with any page.
+                LEFT JOIN Documents d ON d.DocumentTypeCode = dt.Code AND d.CompanyId = @CompanyId
+                                     AND d.CreatedBy = @UserId AND d.IsDeleted = FALSE
                 WHERE dt.IsActive = TRUE AND dt.IsDeleted = FALSE
                 GROUP BY dt.Code, dt.Name
                 ORDER BY Count DESC;";
@@ -147,10 +166,13 @@ public class DashboardComponent
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId
                 LEFT JOIN DocumentRequests dr ON dr.Id = we.EntityId AND we.EntityType = 'Request'
                 LEFT JOIN Documents doc ON doc.Id = we.EntityId AND we.EntityType = 'Document'
-                WHERE we.CompanyId = @CompanyId 
-                  AND wes.AssignedUserId = @EmployeeCode 
-                  AND wes.IsActive = TRUE 
+                WHERE we.CompanyId = @CompanyId
+                  AND wes.AssignedUserId = @EmployeeCode
+                  AND wes.IsActive = TRUE
                   AND wes.Decision IS NULL
+                  -- Only a workflow still running is waiting on anyone. A step left undecided on
+                  -- a Completed, Rejected or Reworked execution was overtaken, not skipped.
+                  AND we.Status = 'Running'
                 
                 UNION ALL
                 
@@ -164,10 +186,16 @@ public class DashboardComponent
                     'EntityType' AS EntityType
                 FROM DocumentUserTraining dut
                 JOIN Documents doc ON doc.Id = dut.DocumentId
-                WHERE dut.CompanyId = @CompanyId 
-                  AND dut.EmployeeCode = @EmployeeCode 
-                  AND dut.TrainingStatus = 0 
+                WHERE dut.CompanyId = @CompanyId
+                  AND dut.EmployeeCode = @EmployeeCode
+                  AND dut.TrainingStatus = 0
                   AND dut.IsDeleted = FALSE
+                  -- Same rule as the Pending Trainings count above: the document has to be in
+                  -- training for the training to be outstanding.
+                  AND (SELECT ds.Code FROM DocumentStateHistory dsh
+                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                       WHERE dsh.DocumentId = doc.Id
+                       ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) = 'TRAINING_PENDING'
                 
                 ORDER BY AssignedDate DESC
                 LIMIT 10;";

@@ -474,6 +474,12 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads"
 });
 
+// Stops a DMS request whose session cannot be resolved, so an unreachable Security database or
+// Redis produces one clear 401 instead of a FormatException from whichever query ran first.
+// Placed after authentication/authorization and before the controllers, which is where the
+// session is first actually needed.
+app.UseMiddleware<HCMS_Api.Common.DMS.DmsSessionGuardMiddleware>();
+
 app.MapControllers();
 app.MapHub<NotificationHub>("/notificationHub");
 
