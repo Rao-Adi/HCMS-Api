@@ -282,9 +282,22 @@ public class DocumentComponent
     {
         try
         {
+            // Only documents imported through Upload Old Documents, which is what this list is.
+            //
+            // The old test was "RequestId IS NULL" -- did not come from a Document Request. That
+            // is true of an imported record, but just as true of every document created directly
+            // on the Create/Update Document screen, so the entire direct-creation path showed up
+            // here alongside the imports.
+            //
+            // An imported record is inserted straight into Documents with its number and file
+            // already decided and never enters the workflow, so it has no DocumentStateHistory at
+            // all. Anything authored in the system gets a DRAFT row the moment it is created.
             var whereClause = @"
                 WHERE doc.IsDeleted = False 
-                  AND doc.RequestId IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM DocumentStateHistory dsh
+                      WHERE dsh.DocumentId = doc.Id AND dsh.CompanyId = doc.CompanyId
+                  )
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
             // Search
@@ -1031,9 +1044,43 @@ public class DocumentComponent
             // even if one was supplied.
             //-------------------------------------------------
 
-            if (input.AdHocApprovers != null && input.AdHocApprovers.Any())
+            // A rework does not discharge an ad-hoc approver. They were added because this
+            // document needed their review, and the corrected version needs it just as much --
+            // but they live only as steps on the execution that was sent back, so a resubmission
+            // built from the policy alone silently dropped them.
+            //
+            // A caller that names ad-hoc approvers is authoritative, including when it names none
+            // after having shown them (that is how one is removed). Only a caller that sends the
+            // field empty or not at all inherits the previous execution's.
+            var adHocApprovers = input.AdHocApprovers;
+            if (adHocApprovers == null || !adHocApprovers.Any())
             {
-                foreach (var adHoc in input.AdHocApprovers)
+                // Every ad-hoc step hangs off the sentinel policy EnsureAdHocApproverStepDefinitionAsync
+                // creates, which nothing else uses -- so this finds them and nothing else.
+                var carriedOver = (await _common.QueryAsync<string>(@"
+                    SELECT DISTINCT wes.AssignedUserId
+                    FROM WorkflowExecutionSteps wes
+                    JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+                    JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+                    JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                    JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                    WHERE we.CompanyId = @CompanyId
+                      AND we.EntityType = 'Document'
+                      AND we.EntityId = @DocumentId
+                      AND we.Id <> @ExecutionId
+                      AND wp.Name = 'System Generated - Ad-hoc Approvers'
+                      AND wes.AssignedUserId IS NOT NULL;",
+                    new { CompanyId, input.DocumentId, ExecutionId = executionId }, transaction)).ToList();
+
+                if (carriedOver.Any())
+                    adHocApprovers = carriedOver
+                        .Select(code => new AdHocApproverDto { EmployeeCode = code })
+                        .ToList();
+            }
+
+            if (adHocApprovers != null && adHocApprovers.Any())
+            {
+                foreach (var adHoc in adHocApprovers)
                 {
                     var employeeActive = await _common.ExecuteScalarAsync<int>(@"
                         SELECT COUNT(1)
@@ -2391,10 +2438,17 @@ public class DocumentComponent
                 ? FormatMergeDate((object)doc.nextreviewdate)
                 : "";
 
+            // Issued number if there is one, otherwise what this document would be issued.
+            var documentNumberForDisplay =
+                await ResolveProposedDocumentNumberAsync(companyId, documentId, transaction) ?? "";
+
             var placeholders = new Dictionary<string, string>
         {
             { "DocumentTitle", (string)doc.title ?? "" },
-            { "DocumentNumber", (string)doc.documentnumber ?? "" },
+            // Before final approval there is no issued number (BL-001), and the template printed
+            // an empty "Doc No.". The approver is reviewing a real document and needs to see
+            // which one, so it prints the proposal until the real number exists.
+            { "DocumentNumber", documentNumberForDisplay },
             { "Version", version },
             { "EffectiveDate", effectiveDate.HasValue ? FormatMergeDate(effectiveDate.Value) : "N/A" },
             { "ReviewDate", reviewDate },
@@ -2436,11 +2490,17 @@ public class DocumentComponent
             // being reviewed by an approver needs the exact same "drop this content into the
             // DocumentType's Word template, with whichever approvers are on the workflow so far"
             // treatment as a finalized Document, just sourced from a different table.
+            // Who signs each line of the newer block. Resolved here rather than inside the shared
+            // merge because only a real Document has a workflow behind it -- a pending Request
+            // does not, and passes none.
+            var signatories = await ResolveDocumentSignatoriesAsync(companyId, documentId, transaction);
+
             return await MergeContentIntoTemplateAsync(
                 (string)doc.documenttypecode,
                 (string?)doc.divisioncode, (string?)doc.departmentcode, (string?)doc.subdepartmentcode, (string?)doc.businessdomaincode,
                 placeholders, versionHtmlContent, contentStream, approvers,
-                ResolveWatermarkText(currentStateCode, isReverted));
+                ResolveWatermarkText(currentStateCode, isReverted),
+                signatories);
         }
         catch(Exception ex)
         {
@@ -2464,7 +2524,8 @@ public class DocumentComponent
         string? htmlContent,
         Stream? contentStream,
         List<dynamic> approvers,
-        string? watermarkText = null)
+        string? watermarkText = null,
+        Dictionary<string, Signatory>? signatories = null)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(_CompanyId);
@@ -2614,7 +2675,15 @@ public class DocumentComponent
             // have a saved signature.
             uint drawingId = 1;
             foreach (var (container, ownerPart) in textContainers)
+            {
+                // Older templates repeat one row per approver; the newer ones carry a fixed
+                // Written/Reviewed/Approved/Authorized block. Each of these does nothing on the
+                // other template, so both can run and either style works.
                 PopulateSignatureBlock(ownerPart, container, approvers, ref drawingId);
+
+                if (signatories != null)
+                    PopulateRoleSignatureBlock(ownerPart, container, signatories, ref drawingId);
+            }
 
             mainPart.Document.Save();
         }
@@ -2628,6 +2697,29 @@ public class DocumentComponent
     // found -- everything else in that paragraph's text (surrounding labels, etc.) is kept,
     // only its per-run formatting is simplified to the first run's formatting. Paragraphs
     // that don't contain the placeholder are left completely untouched.
+    /// <summary>
+    /// Matches a placeholder by its token, tolerating whitespace inside the braces: both
+    /// "{{DocumentTitle}}" and "{{ DocumentTitle }}" match. The templates are authored in Word by
+    /// different people and the two spellings are both in use, so matching the exact string left
+    /// whole templates unsubstituted.
+    /// </summary>
+    private static System.Text.RegularExpressions.Regex PlaceholderPattern(string placeholder)
+    {
+        var token = placeholder.Trim();
+        if (token.StartsWith("{{")) token = token[2..];
+        if (token.EndsWith("}}")) token = token[..^2];
+        token = token.Trim();
+
+        return new System.Text.RegularExpressions.Regex(
+            @"\{\{\s*" + System.Text.RegularExpressions.Regex.Escape(token) + @"\s*\}\}",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>True if this element contains the placeholder anywhere in its text.</summary>
+    private static bool ContainsPlaceholder(OpenXmlElement root, string placeholder) =>
+        PlaceholderPattern(placeholder).IsMatch(
+            string.Concat(root.Descendants<Text>().Select(t => t.Text)));
+
     private static void ReplacePlaceholderText(OpenXmlElement root, string placeholder, string value)
     {
         foreach (var paragraph in root.Descendants<Paragraph>().ToList())
@@ -2636,9 +2728,10 @@ public class DocumentComponent
             if (runs.Count == 0) continue;
 
             string fullText = string.Concat(runs.SelectMany(r => r.Elements<Text>().Select(t => t.Text)));
-            if (!fullText.Contains(placeholder)) continue;
+            var pattern = PlaceholderPattern(placeholder);
+            if (!pattern.IsMatch(fullText)) continue;
 
-            string replaced = fullText.Replace(placeholder, value);
+            string replaced = pattern.Replace(fullText, value ?? string.Empty);
 
             var firstRun = runs[0];
             var firstText = firstRun.Elements<Text>().FirstOrDefault();
@@ -2798,8 +2891,10 @@ public class DocumentComponent
     // uploaded file's (already-cloned, detached) body elements, in order.
     private static void InsertContentPlaceholder(Body templateBody, string placeholder, List<OpenXmlElement> contentElements)
     {
+        var contentPattern = PlaceholderPattern(placeholder);
         var targetParagraph = templateBody.Descendants<Paragraph>()
-            .FirstOrDefault(p => string.Concat(p.Descendants<Text>().Select(t => t.Text)).Contains(placeholder));
+            .FirstOrDefault(p => contentPattern.IsMatch(
+                string.Concat(p.Descendants<Text>().Select(t => t.Text))));
 
         if (targetParagraph == null)
             return; // Template doesn't have a content placeholder -- nothing to insert.
@@ -2815,10 +2910,197 @@ public class DocumentComponent
     // on this document's workflow -- as many rows as are actually configured, not a fixed set of
     // roles. Called once per text container (see callers); most templates only have the row in
     // one of them, so this is a no-op for the rest.
+    /// <summary>
+    /// What an empty cell of the signature block shows. A blank reads as something the system
+    /// failed to print; this says the step has not happened, or that there is nothing on file.
+    /// The same convention the header already uses for Effective Date and Supersede.
+    /// </summary>
+    private const string SignatureCellWhenEmpty = "N/A";
+
+    private static string OrNotApplicable(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? SignatureCellWhenEmpty : value;
+
+    /// <summary>One line of the fixed signature block.</summary>
+    public sealed class Signatory
+    {
+        public string Name { get; init; } = string.Empty;
+        public string Designation { get; init; } = string.Empty;
+        public string? SignatureUrl { get; init; }
+        public DateTime? Date { get; init; }
+    }
+
+    /// <summary>
+    /// Who signs each line of the new templates' signature block, and when.
+    ///
+    /// Written By is the person who authored the document. Reviewed By and Approved By come from
+    /// the approval chain -- the first step to act and the last -- so a two-stage policy shows two
+    /// different people, and a single-stage policy shows the same person on both lines, which is
+    /// what actually happened. Authorized By is the post-training authorisation that makes the
+    /// document effective.
+    ///
+    /// A line whose event has not happened yet is left blank rather than filled with something
+    /// that did not occur; the block fills in as the document moves through its workflow.
+    /// </summary>
+    private async Task<Dictionary<string, Signatory>> ResolveDocumentSignatoriesAsync(
+        int companyId, int documentId, IDbTransaction? transaction = null)
+    {
+        // Pick the four parties first, then look up only those people. Building the employee
+        // projection first and filtering afterwards meant touching every employee in the company
+        // for one document, which timed out and sent the caller the unmerged file instead.
+        var rows = (await _common.QueryAsync<dynamic>(@"
+            WITH Steps AS (
+                SELECT wes.AssignedUserId, wes.ActionAt, wes.StepOrder, wes.Id
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+                WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
+                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
+            ),
+            Parties AS (
+                SELECT 'Writer' AS Role, TRIM(d.CreatedBy) AS EmpCode,
+                       (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
+                         WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId) AS ActedAt
+                FROM Documents d
+                WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
+
+                UNION ALL
+                SELECT 'Reviewer', TRIM(s.AssignedUserId), s.ActionAt
+                FROM (SELECT * FROM Steps ORDER BY StepOrder ASC, Id ASC LIMIT 1) s
+
+                UNION ALL
+                SELECT 'Approver', TRIM(s.AssignedUserId), s.ActionAt
+                FROM (SELECT * FROM Steps ORDER BY StepOrder DESC, Id DESC LIMIT 1) s
+
+                UNION ALL
+                SELECT 'Authorizer', TRIM(h.ChangedBy), h.ChangedAt
+                FROM (
+                    SELECT dsh.ChangedBy, dsh.ChangedAt
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = @DocumentId AND dsh.CompanyId = @CompanyId AND ds.Code = 'EFFECTIVE'
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) h
+            )
+            SELECT p.Role, emp.FullName, emp.Designation, emp.SignatureURL, p.ActedAt
+            FROM Parties p
+            LEFT JOIN LATERAL (
+                SELECT LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS FullName,
+                       desig.name AS Designation,
+                       es.SignatureURL
+                FROM tblEmployee e
+                LEFT JOIN LATERAL (
+                    SELECT j.dsgid FROM public.tblempjobprofile j
+                    WHERE j.empid = e.empid AND j.Active IS NOT FALSE
+                    ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1
+                ) ejp ON TRUE
+                LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid
+                LEFT JOIN LATERAL (
+                    SELECT sg.SignatureURL FROM ESignatures sg
+                    WHERE TRIM(sg.UserId) = TRIM(e.empCode) AND sg.IsActive = TRUE AND sg.IsDeleted = FALSE
+                    ORDER BY (sg.CompanyId = @CompanyId) DESC, sg.Id DESC LIMIT 1
+                ) es ON TRUE
+                -- Prefer this company's record, but do not require it: a person can work in one
+                -- company's DMS while their HR record sits under another group entity, and
+                -- requiring a match lost them from the block entirely.
+                WHERE TRIM(e.empCode) = p.EmpCode
+                ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
+                LIMIT 1
+            ) emp ON TRUE;",
+            new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
+
+        var signatories = new Dictionary<string, Signatory>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var role = Convert.ToString(row.role);
+            if (string.IsNullOrWhiteSpace(role)) continue;
+
+            signatories[role] = new Signatory
+            {
+                Name = Convert.ToString(row.fullname) ?? string.Empty,
+                Designation = Convert.ToString(row.designation) ?? string.Empty,
+                SignatureUrl = row.signatureurl as string,
+                Date = row.actedat as DateTime?,
+            };
+        }
+
+        return signatories;
+    }
+
+    /// <summary>
+    /// Fills the fixed Written By / Reviewed By / Approved By / Authorized By block used by the
+    /// newer templates. Does nothing on a template that has no such block, so it is safe to run
+    /// alongside PopulateSignatureBlock, which handles the older repeating-row layout.
+    /// </summary>
+    private void PopulateRoleSignatureBlock(
+        OpenXmlPart ownerPart, OpenXmlElement container,
+        Dictionary<string, Signatory> signatories, ref uint drawingId)
+    {
+        // Label in the row, role in the data, and the placeholder stems used by that row. The
+        // Authorizer carries two name spellings because the template misspells one of them.
+        var lines = new[]
+        {
+            (Label: "Written By",    Role: "Writer",     Names: new[] { "WritersName", "WriterName" },         Designation: "WritersDesignation",   Signature: "WriterSignature"),
+            (Label: "Reviewed By",   Role: "Reviewer",   Names: new[] { "ReviewerName" },                      Designation: "ReviewerDesignation",  Signature: "ReviewerSignature"),
+            (Label: "Approved By",   Role: "Approver",   Names: new[] { "ApproverName" },                      Designation: "ApproverDesignation",  Signature: "ApproverSignature"),
+            (Label: "Authorized By", Role: "Authorizer", Names: new[] { "AuthroizerName", "AuthorizerName" },  Designation: "AuthorizerDesignation", Signature: "AuthorizerSignature"),
+        };
+
+        foreach (var line in lines)
+        {
+            signatories.TryGetValue(line.Role, out var who);
+
+            foreach (var name in line.Names)
+                ReplacePlaceholderText(container, "{{" + name + "}}", OrNotApplicable(who?.Name));
+
+            ReplacePlaceholderText(container, "{{" + line.Designation + "}}", OrNotApplicable(who?.Designation));
+
+            // The date lives inside the row it belongs to: all four rows spell it the same way,
+            // so replacing it across the container would give every line one date.
+            var row = container.Descendants<TableRow>().FirstOrDefault(r =>
+                string.Concat(r.Descendants<Text>().Select(t => t.Text))
+                      .Replace(" ", string.Empty)
+                      .Contains(line.Label.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase));
+
+            if (row != null)
+            {
+                ReplacePlaceholderText(row, "{{ApprovalDate}}",
+                    who?.Date.HasValue == true ? FormatMergeDate(who.Date!.Value) : SignatureCellWhenEmpty);
+            }
+
+            // Signature image, scoped to this line's own row when there is one so a shared
+            // placeholder spelling can never land in the wrong line.
+            var target = row ?? container;
+            byte[]? signatureData = null;
+            string? signaturePath = null;
+
+            if (!string.IsNullOrWhiteSpace(who?.SignatureUrl))
+            {
+                signaturePath = DmsPaths.WebRootCombine(
+                    who!.SignatureUrl!.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(signaturePath))
+                    signatureData = File.ReadAllBytes(signaturePath);
+            }
+
+            if (signatureData is { Length: > 0 })
+            {
+                if (InsertSignatureImage(ownerPart, target, "{{" + line.Signature + "}}", signatureData, who!.SignatureUrl, drawingId))
+                    drawingId++;
+            }
+            else
+            {
+                if (who != null && !string.IsNullOrWhiteSpace(who.Name))
+                    _logger.LogWarning(
+                        "MergeDocumentTemplateAsync: no signature image for {Role} {Name} -- SignatureURL={SignatureUrl}, ResolvedPath={SignaturePath}. Leaving the cell blank.",
+                        line.Role, who.Name, who.SignatureUrl, signaturePath);
+
+                ReplacePlaceholderText(target, "{{" + line.Signature + "}}", SignatureCellWhenEmpty);
+            }
+        }
+    }
+
     private void PopulateSignatureBlock(OpenXmlPart ownerPart, OpenXmlElement container, List<dynamic> approvers, ref uint drawingId)
     {
         var templateRow = container.Descendants<TableRow>()
-            .FirstOrDefault(r => string.Concat(r.Descendants<Text>().Select(t => t.Text)).Contains("{{ApproverRole}}"));
+            .FirstOrDefault(r => ContainsPlaceholder(r, "{{ApproverRole}}"));
 
         if (templateRow == null)
             return; // This container doesn't have a signature block row -- nothing to populate.
@@ -3019,8 +3301,10 @@ public class DocumentComponent
     // owning part's XML can't resolve. Word then renders nothing, with no error at all.
     private static bool InsertSignatureImage(OpenXmlPart ownerPart, OpenXmlElement container, string placeholder, byte[] imageBytes, string? signatureUrl, uint drawingId)
     {
+        var signaturePattern = PlaceholderPattern(placeholder);
         var paragraph = container.Descendants<Paragraph>()
-            .FirstOrDefault(p => string.Concat(p.Descendants<Text>().Select(t => t.Text)).Contains(placeholder));
+            .FirstOrDefault(p => signaturePattern.IsMatch(
+                string.Concat(p.Descendants<Text>().Select(t => t.Text))));
 
         if (paragraph == null)
             return false;
@@ -3964,6 +4248,117 @@ public class DocumentComponent
     /// the number the document already has. So this is a no-op for everything else, which is why
     /// it is written as "fill it in if it is missing" rather than "generate one".
     /// </summary>
+    /// <summary>
+    /// The number a document would be issued if it were approved now, for a document that has
+    /// not been issued one yet. Returns the real number once there is one.
+    ///
+    /// BL-001 issues the number on final approval, so before that there is nothing stored -- but
+    /// the approver's screen calls its column "Proposed Document Number" and is meant to show the
+    /// suggestion. This produces it from the same generator that will issue the real one, so the
+    /// two cannot disagree.
+    ///
+    /// It is a proposal, not a reservation: nothing is written and no sequence is consumed, so if
+    /// another document in the same cabinet and type is approved first, this one moves on by one.
+    /// </summary>
+    public async Task<string?> ResolveProposedDocumentNumberAsync(int companyId, int documentId, IDbTransaction? tx = null)
+    {
+        var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT DocumentNumber, DocumentTypeCode, DivisionCode, DepartmentCode,
+                   SubDepartmentCode, BusinessDomainCode
+            FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            new { DocumentId = documentId, CompanyId = companyId }, tx);
+
+        if (doc == null)
+            return null;
+
+        var issued = (string?)doc.documentnumber;
+        if (!string.IsNullOrWhiteSpace(issued))
+            return issued;
+
+        return await GenerateDocumentNumberAsync(
+            companyId,
+            (string?)doc.divisioncode,
+            (string?)doc.departmentcode,
+            (string?)doc.subdepartmentcode,
+            (string?)doc.documenttypecode,
+            parentDocumentId: null,
+            (string?)doc.businessdomaincode,
+            tx);
+    }
+
+    /// <summary>
+    /// Proposed numbers for whichever of <paramref name="documentIds"/> have not been issued one
+    /// yet. Documents that already have a number are absent from the result -- their real number
+    /// stands.
+    ///
+    /// One generator call per distinct cabinet-and-type, not per document: the prefix and the
+    /// sequence both come from that grouping, so a page showing twenty documents from one cabinet
+    /// costs one lookup rather than twenty.
+    /// </summary>
+    private async Task<Dictionary<int, string>> ProposeDocumentNumbersAsync(
+        int companyId, IEnumerable<int> documentIds, IDbTransaction? tx = null)
+    {
+        var proposals = new Dictionary<int, string>();
+        var ids = documentIds.Distinct().ToArray();
+        if (ids.Length == 0)
+            return proposals;
+
+        var pending = (await _common.QueryAsync<dynamic>(@"
+            SELECT Id, DocumentTypeCode, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode
+            FROM Documents
+            WHERE CompanyId = @CompanyId
+              AND Id = ANY(@Ids)
+              AND DocumentNumber IS NULL
+              AND IsDeleted = FALSE
+            ORDER BY Id;",
+            new { CompanyId = companyId, Ids = ids }, tx)).ToList();
+
+        foreach (var group in pending.GroupBy(r => new
+        {
+            Division = (string?)r.divisioncode,
+            Department = (string?)r.departmentcode,
+            SubDepartment = (string?)r.subdepartmentcode,
+            BusinessDomain = (string?)r.businessdomaincode,
+            DocumentType = (string?)r.documenttypecode,
+        }))
+        {
+            var first = await GenerateDocumentNumberAsync(
+                companyId, group.Key.Division, group.Key.Department, group.Key.SubDepartment,
+                group.Key.DocumentType, parentDocumentId: null, group.Key.BusinessDomain, tx);
+
+            if (string.IsNullOrWhiteSpace(first))
+                continue;
+
+            // Consecutive from there, oldest first -- see the note on this method.
+            int offset = 0;
+            foreach (var row in group.OrderBy(r => (int)r.id))
+            {
+                proposals[(int)row.id] = offset == 0 ? first : AddToDocumentNumber(first, offset);
+                offset++;
+            }
+        }
+
+        return proposals;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="offset"/> to the trailing sequence of a document number, keeping its
+    /// width (e.g. "IT-II-SOP-003" + 2 -> "IT-II-SOP-005"). A number that does not end in digits
+    /// is returned unchanged rather than mangled.
+    /// </summary>
+    private static string AddToDocumentNumber(string number, int offset)
+    {
+        int cut = number.LastIndexOf('-');
+        if (cut < 0 || cut == number.Length - 1)
+            return number;
+
+        var tail = number[(cut + 1)..];
+        if (!int.TryParse(tail, out int sequence))
+            return number;
+
+        return number[..(cut + 1)] + (sequence + offset).ToString().PadLeft(tail.Length, '0');
+    }
+
     private async Task AssignDocumentNumberOnApprovalAsync(int companyId, int documentId, IDbTransaction tx)
     {
         var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -4727,6 +5122,18 @@ public class DocumentComponent
             var requests = (await _common.QueryAsync<AllDocumentDto>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
+            // The column on this screen is "Proposed Document Number", and a document under
+            // approval has not been issued one yet (BL-001 issues it on final approval). It showed
+            // blank to the very person being asked to approve it. The list comes from a Postgres
+            // function, so the proposal is filled in here, from the generator that will issue the
+            // real number.
+            var proposed = await ProposeDocumentNumbersAsync(
+                CompanyId, requests.Where(r => string.IsNullOrWhiteSpace(r.DocumentNumber)).Select(r => r.Id));
+
+            foreach (var row in requests)
+                if (string.IsNullOrWhiteSpace(row.DocumentNumber) && proposed.TryGetValue(row.Id, out var number))
+                    row.DocumentNumber = number;
+
             if (!requests.Any())
                 return new PaginationResult<AllDocumentDto>
                 {
@@ -4963,10 +5370,10 @@ public class DocumentComponent
                         (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
                         (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS TotalCompleted,
                         (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.TrainingStatus = 1 AND dut.IsDeleted = FALSE) AS AverageScore,
-                        prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                        prevver.CreatedAt AS PreviousVersionCreatedOn,
                         COALESCE(
                             NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
-                            prevdoc.CreatedBy
+                            prevver.CreatedBy
                         )::character varying AS PreviousVersionCreatedBy
 
                     FROM VW_Documents doc
@@ -4993,9 +5400,31 @@ public class DocumentComponent
                     LEFT JOIN tblEmployee e ON CAST(e.empId AS VARCHAR) = doc.CreatedBy  AND e.CompanyId = @CompanyId
                     -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
                     LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
-                    -- The earlier document this one is a revision of (only present for revisions)
-                    LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
-                    LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                    -- The version before this one -- what this record supersedes.
+                    --
+                    -- Not merely the archived one: a version is only archived once its successor is authorised,
+                    -- so while a revision is out for approval nothing is archived yet and the approver
+                    -- deciding on it would see nothing. Ordering by version number and taking the second
+                    -- answers the same at every stage, before and after authorisation.
+                    --
+                    -- Reverted attempts are skipped: one an approver sent back was never in force, so it is
+                    -- not a predecessor and must not displace the release that is.
+                    LEFT JOIN LATERAL (
+                        SELECT v.CreatedAt, v.CreatedBy
+                        FROM DocumentVersions v
+                        WHERE v.DocumentId = doc.Id
+                          AND v.CompanyId = doc.CompanyId
+                          AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                          AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                        ORDER BY
+                            CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                                 THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                            CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                                 THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                            v.Id DESC
+                        OFFSET 1 LIMIT 1
+                    ) prevver ON TRUE
+                    LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                     {whereClause}
                 ) sub
                 ORDER BY {sortColumn} {sortDirection}
@@ -5196,10 +5625,10 @@ public class DocumentComponent
                     'Pending Training/Authorization'
                 ) AS CurrentWorkflowAuthority,
                 doc.CreatedAt,
-                prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                prevver.CreatedAt AS PreviousVersionCreatedOn,
                 COALESCE(
                     NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
-                    prevdoc.CreatedBy
+                    prevver.CreatedBy
                 )::character varying AS PreviousVersionCreatedBy
             FROM Vw_Documents doc
             LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
@@ -5211,9 +5640,31 @@ public class DocumentComponent
             LEFT JOIN WorkflowExecutions we ON we.EntityId = doc.Id AND we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.Status = 'Running'
             -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
             LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
-            -- The earlier document this one is a revision of (only present for revisions)
-            LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
-            LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+            -- The version before this one -- what this record supersedes.
+            --
+            -- Not merely the archived one: a version is only archived once its successor is authorised,
+            -- so while a revision is out for approval nothing is archived yet and the approver
+            -- deciding on it would see nothing. Ordering by version number and taking the second
+            -- answers the same at every stage, before and after authorisation.
+            --
+            -- Reverted attempts are skipped: one an approver sent back was never in force, so it is
+            -- not a predecessor and must not displace the release that is.
+            LEFT JOIN LATERAL (
+                SELECT v.CreatedAt, v.CreatedBy
+                FROM DocumentVersions v
+                WHERE v.DocumentId = doc.Id
+                  AND v.CompanyId = doc.CompanyId
+                  AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                  AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                ORDER BY
+                    CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                         THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                    CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                         THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                    v.Id DESC
+                OFFSET 1 LIMIT 1
+            ) prevver ON TRUE
+            LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
             {whereClause}
             ORDER BY {sortColumn} {sortDirection}
             OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -5823,10 +6274,10 @@ public class DocumentComponent
                     (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.IsDeleted = FALSE) AS TotalAssigned,
                     (SELECT COUNT(1) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS TotalCompleted,
                     (SELECT COALESCE(AVG(AssessmentScore), 0) FROM DocumentUserTraining dut2 WHERE dut2.DocumentId = doc.Id AND dut2.TrainingMode = @TrainingMode AND dut2.TrainingStatus = 1 AND dut2.IsDeleted = FALSE) AS AverageScore,
-                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
                     COALESCE(
                         NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
-                        prevdoc.CreatedBy
+                        prevver.CreatedBy
                     )::character varying AS PreviousVersionCreatedBy
                 FROM Vw_Documents doc
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
@@ -5834,9 +6285,31 @@ public class DocumentComponent
                 LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
                 -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
                 LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
-                -- The earlier document this one is a revision of (only present for revisions)
-                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
-                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                -- The version before this one -- what this record supersedes.
+                --
+                -- Not merely the archived one: a version is only archived once its successor is authorised,
+                -- so while a revision is out for approval nothing is archived yet and the approver
+                -- deciding on it would see nothing. Ordering by version number and taking the second
+                -- answers the same at every stage, before and after authorisation.
+                --
+                -- Reverted attempts are skipped: one an approver sent back was never in force, so it is
+                -- not a predecessor and must not displace the release that is.
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = doc.Id
+                      AND v.CompanyId = doc.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -6120,19 +6593,41 @@ public class DocumentComponent
                      WHERE dsh2.DocumentId = doc.Id
                        AND ds2.Code = 'EFFECTIVE'
                      ORDER BY dsh2.ChangedAt DESC, dsh2.Id DESC LIMIT 1) AS DateOfAuthorization,
-                    prevdoc.CreatedAt AS PreviousVersionCreatedOn,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
                     COALESCE(
                         NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
-                        prevdoc.CreatedBy
+                        prevver.CreatedBy
                     )::character varying AS PreviousVersionCreatedBy
                 FROM VW_Documents doc
                 LEFT JOIN DocumentTypes dt ON doc.DocumentTypeCode = dt.Code AND dt.CompanyId = doc.CompanyId
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.VersionType = 2 AND dv.IsActive = TRUE
                 -- Raw document row, needed for ParentDocumentId (VW_Documents may not expose it)
                 LEFT JOIN Documents rawdoc ON rawdoc.Id = doc.Id AND rawdoc.CompanyId = doc.CompanyId
-                -- The earlier document this one is a revision of (only present for revisions)
-                LEFT JOIN Documents prevdoc ON prevdoc.Id = rawdoc.ParentDocumentId AND prevdoc.CompanyId = doc.CompanyId
-                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevdoc.CreatedBy::text), '0')
+                -- The version before this one -- what this record supersedes.
+                --
+                -- Not merely the archived one: a version is only archived once its successor is authorised,
+                -- so while a revision is out for approval nothing is archived yet and the approver
+                -- deciding on it would see nothing. Ordering by version number and taking the second
+                -- answers the same at every stage, before and after authorisation.
+                --
+                -- Reverted attempts are skipped: one an approver sent back was never in force, so it is
+                -- not a predecessor and must not displace the release that is.
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = doc.Id
+                      AND v.CompanyId = doc.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -6847,8 +7342,33 @@ public class DocumentComponent
                     COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS LastModifiedByName,
                     pend.CurrentAssignedUser,
                     pend.CurrentAssignedUserId,
-                    pend.CurrentStepOrder
+                    pend.CurrentStepOrder,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevver.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
                 FROM Vw_Documents doc
+                -- The version before this one -- what this record supersedes. Same rule as every other
+                -- grid that shows these two columns: order the document's versions by number and take
+                -- the second, so it reads the same before and after the successor is authorised.
+                -- Reverted attempts are skipped; one an approver sent back was never in force.
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = doc.Id
+                      AND v.CompanyId = doc.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 LEFT JOIN LATERAL (
                     SELECT Version FROM DocumentVersions
                     WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
@@ -7052,8 +7572,33 @@ public class DocumentComponent
                           AND rw.DocumentId = doc.Id
                           AND rw.ToStateId = 1
                           AND rw.WorkflowExecutionId IS NOT NULL
-                    ) AS IsReworked
+                    ) AS IsReworked,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevver.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
                 FROM Vw_Documents doc
+                -- The version before this one -- what this record supersedes. Same rule as every other
+                -- grid that shows these two columns: order the document's versions by number and take
+                -- the second, so it reads the same before and after the successor is authorised.
+                -- Reverted attempts are skipped; one an approver sent back was never in force.
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = doc.Id
+                      AND v.CompanyId = doc.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -7116,7 +7661,12 @@ public class DocumentComponent
                     LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
                     LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
                     CreatedByName = GetValue<string>(dict, "createdbyname"),
-                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname"),
+                    // Copied across like everything else here -- this query reads rows as dynamic
+                    // and builds the DTO by hand, so a column that is selected but not copied is
+                    // dropped without trace.
+                    PreviousVersionCreatedOn = GetValue<DateTime?>(dict, "previousversioncreatedon"),
+                    PreviousVersionCreatedBy = GetValue<string>(dict, "previousversioncreatedby")
                 });
             }
 
@@ -7686,8 +8236,33 @@ public class DocumentComponent
             int offset = (input.PageNumber - 1) * input.PageSize;
 
             var dataSql = $@"
-                SELECT DISTINCT d.*
+                SELECT DISTINCT d.*,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevver.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
                 FROM Vw_Documents d
+                -- The version before this one -- what this record supersedes. Same rule as every other
+                -- grid that shows these two columns: order the document's versions by number and take
+                -- the second, so it reads the same before and after the successor is authorised.
+                -- Reverted attempts are skipped; one an approver sent back was never in force.
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = d.Id
+                      AND v.CompanyId = d.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 INNER JOIN DocumentVersions dv ON dv.DocumentId = d.Id AND dv.CompanyId = d.CompanyId AND dv.VersionType = 2 
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
@@ -7751,7 +8326,12 @@ public class DocumentComponent
                     LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
                     LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
                     CreatedByName = GetValue<string>(dict, "createdbyname"),
-                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname")
+                    LastModifiedByName = GetValue<string>(dict, "lastmodifiedbyname"),
+                    // Copied across like everything else here -- this query reads rows as dynamic
+                    // and builds the DTO by hand, so a column that is selected but not copied is
+                    // dropped without trace.
+                    PreviousVersionCreatedOn = GetValue<DateTime?>(dict, "previousversioncreatedon"),
+                    PreviousVersionCreatedBy = GetValue<string>(dict, "previousversioncreatedby")
                 });
             }
 

@@ -569,6 +569,11 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
     public string? ChangeDescription { get; set; } 
     public string? CreatedByName { get; set; } 
     public string? LastModifiedByName { get; set; } 
+
+    // The version this record supersedes. Several grids bind these two columns; without the
+    // properties Dapper discarded them even once the queries selected them.
+    public DateTime? PreviousVersionCreatedOn { get; set; }
+    public string? PreviousVersionCreatedBy { get; set; }
      
 
     // Lists to populate on the FrontEnd

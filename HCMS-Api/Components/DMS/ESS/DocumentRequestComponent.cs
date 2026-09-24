@@ -4084,9 +4084,25 @@ public class DocumentRequestComponent
                     -- point of archiving). Rows archived before that column existed fall back to
                     -- Revised. Live rows (the working draft, or the effective version) report the
                     -- document state, which is what they actually reflect.
-                    CASE WHEN dv.VersionType = 3
-                         THEN COALESCE(NULLIF(dv.ArchiveReason, ''), 'Revised')
-                         ELSE curState.Name END AS CurrentStatus,
+                    CASE
+                        WHEN dv.VersionType = 3
+                            THEN COALESCE(NULLIF(dv.ArchiveReason, ''), 'Revised')
+                        WHEN dv.VersionType = 2 THEN 'Effective'
+                        -- The draft row cannot report the document state either: a revision
+                        -- leaves the document EFFECTIVE while it is reviewed, which is how this
+                        -- row came to read 'Effective' before it was approved. A running
+                        -- execution against the document is this draft being reviewed; once it
+                        -- is approved the document moves on by itself and those states are its
+                        -- own (Training Pending, Authorization Pending).
+                        WHEN EXISTS (
+                            SELECT 1 FROM WorkflowExecutions we
+                            WHERE we.CompanyId = d.CompanyId
+                              AND we.EntityType = 'Document'
+                              AND we.EntityId = d.Id
+                              AND we.Status = 'Running'
+                        ) THEN 'Pending Approval'
+                        ELSE curState.Name
+                    END AS CurrentStatus,
                     -- The current version is the newest LIVE version in the chain -- the highest
                     -- version number that has not been retired -- whether or not it has reached
                     -- Effective yet. While a revision is still in approval or training it is the
@@ -4109,21 +4125,14 @@ public class DocumentRequestComponent
                     -- a plain major.minor sorts last rather than winning by accident. The
                     -- ROW_NUMBER guarantees exactly one row is flagged even when two documents in
                     -- the chain somehow share a number.
-                    (
-                        dv.VersionType IN (1, 2)
-                        AND COALESCE(curState.Code, '') NOT IN ('REJECTED', 'OBSOLETE')
-                        AND ROW_NUMBER() OVER (
-                            ORDER BY
-                                CASE WHEN dv.VersionType IN (1, 2)
-                                      AND COALESCE(curState.Code, '') NOT IN ('REJECTED', 'OBSOLETE')
-                                     THEN 0 ELSE 1 END ASC,
-                                CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
-                                     THEN split_part(dv.Version, '.', 1)::int ELSE -1 END DESC,
-                                CASE WHEN dv.Version ~ '^[0-9]+\.[0-9]+$'
-                                     THEN split_part(dv.Version, '.', 2)::int ELSE -1 END DESC,
-                                dv.Id DESC
-                        ) = 1
-                    ) AS IsCurrentVersion
+                    -- The version in force, which is exactly the one stored as VersionType 2.
+                    --
+                    -- This used to flag the newest LIVE version whether or not it had taken
+                    -- effect, so raising a revision moved the flag off the release still in use
+                    -- and onto a draft nobody had approved. During a revision it now stays on the
+                    -- earlier release until the new one is promoted, and a first release carries
+                    -- no flag at all until it goes effective -- which is what was asked for.
+                    (dv.VersionType = 2) AS IsCurrentVersion
                 FROM Chain c
                 INNER JOIN Documents d ON d.Id = c.Id AND d.CompanyId = @CompanyId
                 LEFT JOIN DocumentRequests dr ON dr.Id = d.RequestId AND dr.CompanyId = @CompanyId
@@ -4147,11 +4156,30 @@ public class DocumentRequestComponent
                     ORDER BY (ven.companyid = @CompanyId) DESC
                     LIMIT 1
                 ) reqEmp ON TRUE
+                -- Scoped to the version this row is about, not to the document.
+                --
+                -- This used to take the document's FIRST APPROVED transition and repeat it on
+                -- every row, so each version reported the original release's dates -- and a
+                -- version still awaiting authorisation was handed an Effective date that
+                -- contradicted its own Status on the same row.
+                --
+                -- Nothing ties a transition to a version directly, but the versions divide the
+                -- timeline: a version owns the events from its own creation until the next
+                -- version begins. A version that never reached this state reports nothing,
+                -- which is the honest answer.
                 LEFT JOIN LATERAL (
                     SELECT dsh.ChangedAt, dsh.ChangedBy
                     FROM DocumentStateHistory dsh
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId AND ds.Code = 'APPROVED'
+                      AND dsh.ChangedAt >= dv.CreatedAt
+                      AND dsh.ChangedAt < COALESCE((
+                          SELECT MIN(nv.CreatedAt)
+                          FROM DocumentVersions nv
+                          WHERE nv.DocumentId = d.Id AND nv.CompanyId = d.CompanyId
+                            AND COALESCE(nv.IsDeleted, FALSE) = FALSE
+                            AND nv.CreatedAt > dv.CreatedAt
+                      ), TIMESTAMP 'infinity')
                     ORDER BY dsh.ChangedAt ASC, dsh.Id ASC LIMIT 1
                 ) apprv ON TRUE
                 LEFT JOIN LATERAL (
@@ -4161,11 +4189,30 @@ public class DocumentRequestComponent
                     ORDER BY (ven.companyid = @CompanyId) DESC
                     LIMIT 1
                 ) apEmp ON TRUE
+                -- Scoped to the version this row is about, not to the document.
+                --
+                -- This used to take the document's FIRST EFFECTIVE transition and repeat it on
+                -- every row, so each version reported the original release's dates -- and a
+                -- version still awaiting authorisation was handed an Effective date that
+                -- contradicted its own Status on the same row.
+                --
+                -- Nothing ties a transition to a version directly, but the versions divide the
+                -- timeline: a version owns the events from its own creation until the next
+                -- version begins. A version that never reached this state reports nothing,
+                -- which is the honest answer.
                 LEFT JOIN LATERAL (
                     SELECT dsh.ChangedAt, dsh.ChangedBy
                     FROM DocumentStateHistory dsh
                     JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                     WHERE dsh.DocumentId = d.Id AND dsh.CompanyId = d.CompanyId AND ds.Code = 'EFFECTIVE'
+                      AND dsh.ChangedAt >= dv.CreatedAt
+                      AND dsh.ChangedAt < COALESCE((
+                          SELECT MIN(nv.CreatedAt)
+                          FROM DocumentVersions nv
+                          WHERE nv.DocumentId = d.Id AND nv.CompanyId = d.CompanyId
+                            AND COALESCE(nv.IsDeleted, FALSE) = FALSE
+                            AND nv.CreatedAt > dv.CreatedAt
+                      ), TIMESTAMP 'infinity')
                     ORDER BY dsh.ChangedAt ASC, dsh.Id ASC LIMIT 1
                 ) eff ON TRUE
                 LEFT JOIN LATERAL (
