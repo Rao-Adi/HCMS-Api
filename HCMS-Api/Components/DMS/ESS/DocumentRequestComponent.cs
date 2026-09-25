@@ -2205,6 +2205,8 @@ public class DocumentRequestComponent
             }
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
+            await ApplyProposedDocumentNumbersAsync(CompanyId, requests);
+
             return new PaginationResult<DocumentRequestReadDto>
             {
                 Items = requests,
@@ -2505,6 +2507,8 @@ public class DocumentRequestComponent
             }
 
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+
+            await ApplyProposedDocumentNumbersAsync(CompanyId, requests);
 
             return new PaginationResult<DocumentRequestReadDto>
             {
@@ -4026,6 +4030,61 @@ public class DocumentRequestComponent
     // Walks Documents.ParentDocumentId backward to find the original, then forward to collect
     // every revision made since, so the caller doesn't need to know where in the chain
     // `documentId` sits.
+    /// <summary>
+    /// Fills in the document number each request will produce, for the Proposed Document Number
+    /// column. The list function returns neither the number nor the target document, so both are
+    /// looked up here in one query and only the genuinely unknown ones are proposed.
+    /// </summary>
+    private async Task ApplyProposedDocumentNumbersAsync(int companyId, List<DocumentRequestReadDto> requests)
+    {
+        if (requests == null || requests.Count == 0)
+            return;
+
+        var ids = requests.Select(r => r.Id).Distinct().ToArray();
+
+        // A number already exists when the request produced a document, and for a Revision or
+        // Obsoletion the target document keeps the number it was issued.
+        var known = (await _common.QueryAsync<dynamic>(@"
+            SELECT dr.Id AS RequestId,
+                   COALESCE(doc.DocumentNumber, parent.DocumentNumber) AS DocumentNumber
+            FROM DocumentRequests dr
+            LEFT JOIN Documents doc    ON doc.Id = dr.DocumentId       AND doc.CompanyId = dr.CompanyId
+            LEFT JOIN Documents parent ON parent.Id = dr.ParentDocumentId AND parent.CompanyId = dr.CompanyId
+            WHERE dr.CompanyId = @CompanyId AND dr.Id = ANY(@Ids);",
+            new { CompanyId = companyId, Ids = ids })).ToList();
+
+        var issued = new Dictionary<int, string>();
+        foreach (var row in known)
+        {
+            var number = Convert.ToString(row.documentnumber);
+            if (!string.IsNullOrWhiteSpace(number))
+                issued[(int)row.requestid] = number;
+        }
+
+        foreach (var request in requests)
+            if (issued.TryGetValue(request.Id, out var number))
+                request.DocumentNumber = number;
+
+        // Whatever is left has no document yet: propose from the request's own placement.
+        var pending = requests.Where(r => string.IsNullOrWhiteSpace(r.DocumentNumber)).ToList();
+        if (pending.Count == 0)
+            return;
+
+        var proposals = await _documentComponent.ProposeNumbersForScopesAsync(
+            companyId,
+            pending.Select(r => (
+                Key: r.Id,
+                Division: BlankToNull(r.DivisionCode),
+                Department: BlankToNull(r.DepartmentCode),
+                SubDepartment: BlankToNull(r.SubDepartmentCode),
+                BusinessDomain: BlankToNull(r.BusinessDomainCode),
+                DocumentType: r.DocumentTypeCode)));
+
+        foreach (var request in pending)
+            if (proposals.TryGetValue(request.Id, out var proposed))
+                request.DocumentNumber = proposed;
+    }
+
     public async Task<IEnumerable<RevisionHistoryItemDto>> GetDocumentRevisionHistoryAsync(int documentId)
     {
         try

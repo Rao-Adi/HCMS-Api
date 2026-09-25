@@ -1384,17 +1384,32 @@ public class DocumentComponent
         if (reviewYears.HasValue && reviewYears.Value > 0)
             nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
 
-        // No number yet.
+        // The number is issued here, as the document comes into existence, and never changes.
         //
-        // BL-001 issues the number on final approval. This method now only ever runs for a
-        // direct creation (Revision and Obsoletion no longer create a document at all), and a
-        // document being drafted has not been approved of anything yet. Issuing here meant an
-        // abandoned draft and a rejected document both held a number, each of them consuming a
-        // value from the per-cabinet sequence BL-002 defines -- gaps in the register that an
-        // auditor cannot account for.
+        // BL-001 reads "assigned upon final approval of the Request for Creation/Revision", and
+        // this path has no Request to approve -- it is the direct-creation screen. The client has
+        // confirmed the rule for it: assign and lock the next available number immediately upon
+        // draft initiation, so the number is on screen and in the document from the start.
         //
-        // AssignDocumentNumberOnApprovalAsync fills it in when the approval completes.
-        string documentNumber = null;
+        // A draft that is later abandoned, or a document that is rejected, keeps its number: it
+        // is retained rather than reused, and the gap it leaves in the series is deliberate -- an
+        // explicit record that a document existed there. GenerateDocumentNumberAsync produces
+        // that behaviour already, since it takes the highest number issued in the cabinet and
+        // adds one, and a discarded document keeps its row.
+        //
+        // A Revision or Obsoletion is excluded: it works on a document that already has a number
+        // and must keep it (BL-001 issues one number per document, not per version).
+        string documentNumber = input.ParentDocumentId == null
+            ? await GenerateDocumentNumberAsync(
+                companyId,
+                NullIfBlank(input.DivisionCode),
+                NullIfBlank(input.DepartmentCode),
+                NullIfBlank(input.SubDepartmentCode),
+                input.DocumentTypeCode,
+                parentDocumentId: null,
+                NullIfBlank(input.BusinessDomainCode),
+                transaction)
+            : null;
 
         var documentId = await _common.ExecuteScalarAsync<int>(@"
             INSERT INTO Documents
@@ -2525,7 +2540,7 @@ public class DocumentComponent
         Stream? contentStream,
         List<dynamic> approvers,
         string? watermarkText = null,
-        Dictionary<string, Signatory>? signatories = null)
+        Dictionary<string, List<Signatory>>? signatories = null)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(_CompanyId);
@@ -2941,37 +2956,53 @@ public class DocumentComponent
     /// A line whose event has not happened yet is left blank rather than filled with something
     /// that did not occur; the block fills in as the document moves through its workflow.
     /// </summary>
-    private async Task<Dictionary<string, Signatory>> ResolveDocumentSignatoriesAsync(
+    /// <summary>
+    /// Who signs each line of the block, and when.
+    ///
+    /// Written By is whoever raised the document. Reviewed By is every INTERMEDIATE approver --
+    /// those leading up to the final one -- and Approved By is that final approver. A single-step
+    /// workflow therefore has no reviewer at all, which is the honest answer: nobody reviewed it
+    /// before the person who approved it.
+    ///
+    /// Every role is a list because the block is one row per person, and a policy can name several
+    /// intermediate approvers. A role whose step has not happened yet comes back empty and its row
+    /// reads N/A rather than borrowing somebody else's name.
+    /// </summary>
+    private async Task<Dictionary<string, List<Signatory>>> ResolveDocumentSignatoriesAsync(
         int companyId, int documentId, IDbTransaction? transaction = null)
     {
-        // Pick the four parties first, then look up only those people. Building the employee
+        // Pick the parties first, then look up only those people. Building the employee
         // projection first and filtering afterwards meant touching every employee in the company
         // for one document, which timed out and sent the caller the unmerged file instead.
         var rows = (await _common.QueryAsync<dynamic>(@"
             WITH Steps AS (
-                SELECT wes.AssignedUserId, wes.ActionAt, wes.StepOrder, wes.Id
+                SELECT wes.AssignedUserId, wes.ActionAt,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
                 WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
                   AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
             ),
             Parties AS (
-                SELECT 'Writer' AS Role, TRIM(d.CreatedBy) AS EmpCode,
+                SELECT 'Writer' AS Role, 1 AS Position, TRIM(d.CreatedBy) AS EmpCode,
                        (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
                          WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId) AS ActedAt
                 FROM Documents d
                 WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
 
                 UNION ALL
-                SELECT 'Reviewer', TRIM(s.AssignedUserId), s.ActionAt
-                FROM (SELECT * FROM Steps ORDER BY StepOrder ASC, Id ASC LIMIT 1) s
+                -- Everyone except the last to act: the intermediate approvers.
+                SELECT 'Reviewer', s.Position::int, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast > 1
 
                 UNION ALL
-                SELECT 'Approver', TRIM(s.AssignedUserId), s.ActionAt
-                FROM (SELECT * FROM Steps ORDER BY StepOrder DESC, Id DESC LIMIT 1) s
+                -- The last to act: the final approver.
+                SELECT 'Approver', 1, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast = 1
 
                 UNION ALL
-                SELECT 'Authorizer', TRIM(h.ChangedBy), h.ChangedAt
+                SELECT 'Authorizer', 1, TRIM(h.ChangedBy), h.ChangedAt
                 FROM (
                     SELECT dsh.ChangedBy, dsh.ChangedAt
                     FROM DocumentStateHistory dsh
@@ -2980,7 +3011,7 @@ public class DocumentComponent
                     ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
                 ) h
             )
-            SELECT p.Role, emp.FullName, emp.Designation, emp.SignatureURL, p.ActedAt
+            SELECT p.Role, p.Position, emp.FullName, emp.Designation, emp.SignatureURL, p.ActedAt
             FROM Parties p
             LEFT JOIN LATERAL (
                 SELECT LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS FullName,
@@ -3004,96 +3035,126 @@ public class DocumentComponent
                 WHERE TRIM(e.empCode) = p.EmpCode
                 ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
                 LIMIT 1
-            ) emp ON TRUE;",
+            ) emp ON TRUE
+            ORDER BY p.Role, p.Position;",
             new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
 
-        var signatories = new Dictionary<string, Signatory>(StringComparer.OrdinalIgnoreCase);
+        var signatories = new Dictionary<string, List<Signatory>>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
         {
             var role = Convert.ToString(row.role);
             if (string.IsNullOrWhiteSpace(role)) continue;
 
-            signatories[role] = new Signatory
+            if (!signatories.TryGetValue(role, out List<Signatory> list))
+            {
+                list = new List<Signatory>();
+                signatories[role] = list;
+            }
+
+            list.Add(new Signatory
             {
                 Name = Convert.ToString(row.fullname) ?? string.Empty,
                 Designation = Convert.ToString(row.designation) ?? string.Empty,
                 SignatureUrl = row.signatureurl as string,
                 Date = row.actedat as DateTime?,
-            };
+            });
         }
 
         return signatories;
     }
 
     /// <summary>
-    /// Fills the fixed Written By / Reviewed By / Approved By / Authorized By block used by the
-    /// newer templates. Does nothing on a template that has no such block, so it is safe to run
-    /// alongside PopulateSignatureBlock, which handles the older repeating-row layout.
+    /// Fills the Written By / Reviewed By / Approved By / Authorized By block. Does nothing on a
+    /// template without one, so it is safe to run alongside PopulateSignatureBlock, which handles
+    /// the older repeating-row layout.
+    ///
+    /// One row per person: a line whose role has several people (intermediate approvers) has its
+    /// template row cloned for each, and a line with nobody keeps its single row reading N/A.
     /// </summary>
     private void PopulateRoleSignatureBlock(
         OpenXmlPart ownerPart, OpenXmlElement container,
-        Dictionary<string, Signatory> signatories, ref uint drawingId)
+        Dictionary<string, List<Signatory>> signatories, ref uint drawingId)
     {
-        // Label in the row, role in the data, and the placeholder stems used by that row. The
+        // Label in the row, role in the data, and the placeholder stems that row uses. The
         // Authorizer carries two name spellings because the template misspells one of them.
         var lines = new[]
         {
-            (Label: "Written By",    Role: "Writer",     Names: new[] { "WritersName", "WriterName" },         Designation: "WritersDesignation",   Signature: "WriterSignature"),
-            (Label: "Reviewed By",   Role: "Reviewer",   Names: new[] { "ReviewerName" },                      Designation: "ReviewerDesignation",  Signature: "ReviewerSignature"),
-            (Label: "Approved By",   Role: "Approver",   Names: new[] { "ApproverName" },                      Designation: "ApproverDesignation",  Signature: "ApproverSignature"),
-            (Label: "Authorized By", Role: "Authorizer", Names: new[] { "AuthroizerName", "AuthorizerName" },  Designation: "AuthorizerDesignation", Signature: "AuthorizerSignature"),
+            (Label: "Written By",    Role: "Writer",     Names: new[] { "WritersName", "WriterName" },        Designation: "WritersDesignation",    Signature: "WriterSignature"),
+            (Label: "Reviewed By",   Role: "Reviewer",   Names: new[] { "ReviewerName" },                     Designation: "ReviewerDesignation",   Signature: "ReviewerSignature"),
+            (Label: "Approved By",   Role: "Approver",   Names: new[] { "ApproverName" },                     Designation: "ApproverDesignation",   Signature: "ApproverSignature"),
+            (Label: "Authorized By", Role: "Authorizer", Names: new[] { "AuthroizerName", "AuthorizerName" }, Designation: "AuthorizerDesignation", Signature: "AuthorizerSignature"),
         };
 
         foreach (var line in lines)
         {
-            signatories.TryGetValue(line.Role, out var who);
-
-            foreach (var name in line.Names)
-                ReplacePlaceholderText(container, "{{" + name + "}}", OrNotApplicable(who?.Name));
-
-            ReplacePlaceholderText(container, "{{" + line.Designation + "}}", OrNotApplicable(who?.Designation));
-
-            // The date lives inside the row it belongs to: all four rows spell it the same way,
-            // so replacing it across the container would give every line one date.
-            var row = container.Descendants<TableRow>().FirstOrDefault(r =>
+            var templateRow = container.Descendants<TableRow>().FirstOrDefault(r =>
                 string.Concat(r.Descendants<Text>().Select(t => t.Text))
                       .Replace(" ", string.Empty)
                       .Contains(line.Label.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase));
 
-            if (row != null)
+            if (templateRow == null)
+                continue;
+
+            signatories.TryGetValue(line.Role, out var people);
+
+            // Nobody yet: leave the single row in place, reading N/A across.
+            if (people == null || people.Count == 0)
             {
-                ReplacePlaceholderText(row, "{{ApprovalDate}}",
-                    who?.Date.HasValue == true ? FormatMergeDate(who.Date!.Value) : SignatureCellWhenEmpty);
+                FillSignatureRow(ownerPart, templateRow, line.Names, line.Designation, line.Signature, null, ref drawingId);
+                continue;
             }
 
-            // Signature image, scoped to this line's own row when there is one so a shared
-            // placeholder spelling can never land in the wrong line.
-            var target = row ?? container;
-            byte[]? signatureData = null;
-            string? signaturePath = null;
-
-            if (!string.IsNullOrWhiteSpace(who?.SignatureUrl))
+            // One row per person: clone the template row for each, then drop the template itself.
+            foreach (var person in people)
             {
-                signaturePath = DmsPaths.WebRootCombine(
-                    who!.SignatureUrl!.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(signaturePath))
-                    signatureData = File.ReadAllBytes(signaturePath);
+                var row = (TableRow)templateRow.CloneNode(true);
+                FillSignatureRow(ownerPart, row, line.Names, line.Designation, line.Signature, person, ref drawingId);
+                templateRow.InsertBeforeSelf(row);
             }
 
-            if (signatureData is { Length: > 0 })
-            {
-                if (InsertSignatureImage(ownerPart, target, "{{" + line.Signature + "}}", signatureData, who!.SignatureUrl, drawingId))
-                    drawingId++;
-            }
-            else
-            {
-                if (who != null && !string.IsNullOrWhiteSpace(who.Name))
-                    _logger.LogWarning(
-                        "MergeDocumentTemplateAsync: no signature image for {Role} {Name} -- SignatureURL={SignatureUrl}, ResolvedPath={SignaturePath}. Leaving the cell blank.",
-                        line.Role, who.Name, who.SignatureUrl, signaturePath);
+            templateRow.Remove();
+        }
+    }
 
-                ReplacePlaceholderText(target, "{{" + line.Signature + "}}", SignatureCellWhenEmpty);
-            }
+    /// <summary>Writes one person (or N/A throughout) into one row of the signature block.</summary>
+    private void FillSignatureRow(
+        OpenXmlPart ownerPart, TableRow row,
+        string[] nameStems, string designationStem, string signatureStem,
+        Signatory? who, ref uint drawingId)
+    {
+        foreach (var stem in nameStems)
+            ReplacePlaceholderText(row, "{{" + stem + "}}", OrNotApplicable(who?.Name));
+
+        ReplacePlaceholderText(row, "{{" + designationStem + "}}", OrNotApplicable(who?.Designation));
+
+        // Every line spells the date the same way, so it is written inside this row only.
+        ReplacePlaceholderText(row, "{{ApprovalDate}}",
+            who?.Date.HasValue == true ? FormatMergeDate(who.Date!.Value) : SignatureCellWhenEmpty);
+
+        byte[]? signatureData = null;
+        string? signaturePath = null;
+
+        if (!string.IsNullOrWhiteSpace(who?.SignatureUrl))
+        {
+            signaturePath = DmsPaths.WebRootCombine(
+                who!.SignatureUrl!.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(signaturePath))
+                signatureData = File.ReadAllBytes(signaturePath);
+        }
+
+        if (signatureData is { Length: > 0 })
+        {
+            if (InsertSignatureImage(ownerPart, row, "{{" + signatureStem + "}}", signatureData, who!.SignatureUrl, drawingId))
+                drawingId++;
+        }
+        else
+        {
+            if (who != null && !string.IsNullOrWhiteSpace(who.Name))
+                _logger.LogWarning(
+                    "MergeDocumentTemplateAsync: no signature image for {Name} -- SignatureURL={SignatureUrl}, ResolvedPath={SignaturePath}. Leaving the cell as N/A.",
+                    who.Name, who.SignatureUrl, signaturePath);
+
+            ReplacePlaceholderText(row, "{{" + signatureStem + "}}", SignatureCellWhenEmpty);
         }
     }
 
@@ -4157,9 +4218,10 @@ public class DocumentComponent
                 return;
             }
 
-            // BL-001: the number is issued now, on final approval -- not when the draft was
-            // started. A document that never got here (abandoned or rejected) never consumes a
-            // value from the sequence.
+            // A backstop, not the rule. Numbers are now issued when the document is created --
+            // at Request approval for a request-driven document, at draft initiation for a direct
+            // one -- so by this point there is normally one already and this does nothing. It stays
+            // for documents drafted before that change, which reached approval with no number.
             await AssignDocumentNumberOnApprovalAsync(companyId, documentId, tx);
 
             bool requiresTraining = docInfo != null && docInfo!.trainingrequired == true;
@@ -4295,6 +4357,39 @@ public class DocumentComponent
     /// sequence both come from that grouping, so a page showing twenty documents from one cabinet
     /// costs one lookup rather than twenty.
     /// </summary>
+    /// <summary>
+    /// The number each of these cabinet-and-type scopes would be issued next, one generator call
+    /// per distinct scope. For callers that know the placement but have no Document row yet -- a
+    /// Request still awaiting approval.
+    /// </summary>
+    public async Task<Dictionary<int, string>> ProposeNumbersForScopesAsync(
+        int companyId,
+        IEnumerable<(int Key, string Division, string Department, string SubDepartment, string BusinessDomain, string DocumentType)> scopes,
+        IDbTransaction tx = null)
+    {
+        var proposals = new Dictionary<int, string>();
+
+        foreach (var group in scopes.GroupBy(x => new { x.Division, x.Department, x.SubDepartment, x.BusinessDomain, x.DocumentType }))
+        {
+            var first = await GenerateDocumentNumberAsync(
+                companyId, group.Key.Division, group.Key.Department, group.Key.SubDepartment,
+                group.Key.DocumentType, parentDocumentId: null, group.Key.BusinessDomain, tx);
+
+            if (string.IsNullOrWhiteSpace(first))
+                continue;
+
+            // Consecutive from there, oldest first, so one list never shows the same number twice.
+            int offset = 0;
+            foreach (var scope in group.OrderBy(x => x.Key))
+            {
+                proposals[scope.Key] = offset == 0 ? first : AddToDocumentNumber(first, offset);
+                offset++;
+            }
+        }
+
+        return proposals;
+    }
+
     private async Task<Dictionary<int, string>> ProposeDocumentNumbersAsync(
         int companyId, IEnumerable<int> documentIds, IDbTransaction? tx = null)
     {

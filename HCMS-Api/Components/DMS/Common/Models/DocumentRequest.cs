@@ -62,6 +62,12 @@ public class DocumentRequestReadDto : AuditableEntity
     public string DocumentType { get; set; }
     public string DocumentTypeCode { get; set; }
 
+    // The document number this request will produce. Real and locked once the request has been
+    // approved and the document exists; the target document's own number for a Revision or
+    // Obsoletion; and until then a proposal, which can still move if another document in the same
+    // cabinet and type is approved first.
+    public string? DocumentNumber { get; set; }
+
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 
