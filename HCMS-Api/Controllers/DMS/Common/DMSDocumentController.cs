@@ -462,6 +462,38 @@ public class DMSDocumentController : Controller
     }
 
 
+    // For the Draft/Reverted Documents tab's Workflow Authorities preview -- an ad-hoc approver
+    // added before a document was reverted carries silently into the resubmission (see
+    // SubmitDocumentAsync's own carry-over) unless the caller replaces it. This is how the person
+    // resubmitting gets to see that before they do, rather than finding out after the fact.
+    [HttpGet("get-carried-adhoc-approver/{documentId}")]
+    public async Task<IActionResult> GetCarriedOverAdHocApprover(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<AdHocApproverPreviewDto?>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetCarriedOverAdHocApproverAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+
     [HttpPost("approve-document")]
     public async Task<IActionResult> ApproveDocument(ActionOnDocument input)
     {

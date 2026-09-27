@@ -1050,33 +1050,59 @@ public class DocumentComponent
             // built from the policy alone silently dropped them.
             //
             // A caller that names ad-hoc approvers is authoritative, including when it names none
-            // after having shown them (that is how one is removed). Only a caller that sends the
-            // field empty or not at all inherits the previous execution's.
+            // after having shown them (that is how one is removed) -- an explicit empty list, as
+            // both Create/Update Document and the Draft/Reverted Documents screen now always send
+            // when there is none, is NOT the same as omitting the field entirely. Only a caller
+            // that omits the "adhocapprovers" form field altogether (input.AdHocApprovers stays
+            // null; see the controller's IsNullOrWhiteSpace gate) inherits the previous
+            // execution's/persisted selection instead.
             var adHocApprovers = input.AdHocApprovers;
-            if (adHocApprovers == null || !adHocApprovers.Any())
+            if (adHocApprovers == null)
             {
-                // Every ad-hoc step hangs off the sentinel policy EnsureAdHocApproverStepDefinitionAsync
-                // creates, which nothing else uses -- so this finds them and nothing else.
-                var carriedOver = (await _common.QueryAsync<string>(@"
-                    SELECT DISTINCT wes.AssignedUserId
-                    FROM WorkflowExecutionSteps wes
-                    JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
-                    JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
-                    JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                    JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                    WHERE we.CompanyId = @CompanyId
-                      AND we.EntityType = 'Document'
-                      AND we.EntityId = @DocumentId
-                      AND we.Id <> @ExecutionId
-                      AND wp.Name = 'System Generated - Ad-hoc Approvers'
-                      AND wes.AssignedUserId IS NOT NULL;",
-                    new { CompanyId, input.DocumentId, ExecutionId = executionId }, transaction)).ToList();
+                // DocumentAdHocApprovers is the durable store a prior Draft save (or a prior
+                // Submit) already wrote to -- see PersistAdHocApproversAsync. Checked first
+                // because it also covers a document that is being submitted for the very first
+                // time, which the WorkflowExecutionSteps scan below never could (there is no
+                // earlier execution to scan).
+                var persisted = await GetPersistedAdHocApproversAsync(input.DocumentId, CompanyId, transaction);
 
-                if (carriedOver.Any())
-                    adHocApprovers = carriedOver
+                if (persisted.Any())
+                {
+                    adHocApprovers = persisted
                         .Select(code => new AdHocApproverDto { EmployeeCode = code })
                         .ToList();
+                }
+                else
+                {
+                    // Every ad-hoc step hangs off the sentinel policy EnsureAdHocApproverStepDefinitionAsync
+                    // creates, which nothing else uses -- so this finds them and nothing else.
+                    // Kept only for documents reverted before DocumentAdHocApprovers existed.
+                    var carriedOver = (await _common.QueryAsync<string>(@"
+                        SELECT DISTINCT wes.AssignedUserId
+                        FROM WorkflowExecutionSteps wes
+                        JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+                        JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+                        JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+                        JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+                        WHERE we.CompanyId = @CompanyId
+                          AND we.EntityType = 'Document'
+                          AND we.EntityId = @DocumentId
+                          AND we.Id <> @ExecutionId
+                          AND wp.Name = 'System Generated - Ad-hoc Approvers'
+                          AND wes.AssignedUserId IS NOT NULL;",
+                        new { CompanyId, input.DocumentId, ExecutionId = executionId }, transaction)).ToList();
+
+                    if (carriedOver.Any())
+                        adHocApprovers = carriedOver
+                            .Select(code => new AdHocApproverDto { EmployeeCode = code })
+                            .ToList();
+                }
             }
+
+            // Keep DocumentAdHocApprovers in sync with whatever set this execution actually
+            // ends up using, regardless of which of the sources above it came from -- so the
+            // next revert/resubmit (and the Workflow Authorities preview) can read it directly.
+            await PersistAdHocApproversAsync(adHocApprovers, input.DocumentId, CompanyId, empCode, transaction);
 
             if (adHocApprovers != null && adHocApprovers.Any())
             {
@@ -1301,6 +1327,7 @@ public class DocumentComponent
             await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction, enforceRequired: false);
             await ValidateAndSaveAttributesAsync(input, doc, transaction, enforceRequired: false);
             await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction, enforceRequired: false);
+            await PersistAdHocApproversAsync(input.AdHocApprovers, input.DocumentId, CompanyId, empCode, transaction);
 
             var snapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
             await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Draft Saved", "Document",
@@ -1980,6 +2007,104 @@ public class DocumentComponent
     // A fresh WorkflowStepDefinitions row is inserted every call (never reused/looked-up) --
     // simplest correct option given this app's document volume makes the extra rows negligible,
     // and avoids any lookup/race complexity for what is, by definition, a one-off addition.
+    /// <summary>
+    /// The ad-hoc approver currently carried on this document, if any -- for the Draft/Reverted
+    /// Documents tab to show in its Workflow Authorities preview.
+    ///
+    /// A rework does not discharge an ad-hoc approver (see SubmitDocumentAsync's own carry-over
+    /// of this same query): they live only as a step on the execution that was sent back, and get
+    /// re-added to the next one silently unless the caller names a replacement. That silence is
+    /// exactly the gap being closed here -- the person resubmitting a reverted document could not
+    /// see, before submitting, that an ad-hoc approver was still going to be asked.
+    ///
+    /// Every ad-hoc step hangs off the sentinel policy EnsureAdHocApproverStepDefinitionAsync
+    /// creates, which nothing else uses, so this finds one and nothing else. Only the most recent
+    /// execution's ad-hoc approver is returned -- the UI caps this at one entry.
+    /// </summary>
+    public async Task<AdHocApproverPreviewDto?> GetCarriedOverAdHocApproverAsync(int documentId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        // DocumentAdHocApprovers is the durable store (see PersistAdHocApproversAsync) -- checked
+        // first so a plain Draft that was never submitted previews correctly too, not just a
+        // reverted document that already has a real WorkflowExecutionSteps row.
+        var persistedRow = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT daa.EmployeeCode,
+                   LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS EmployeeName
+            FROM DocumentAdHocApprovers daa
+            LEFT JOIN tblEmployee e ON TRIM(e.empCode) = TRIM(daa.EmployeeCode) AND e.CompanyId = @CompanyId
+            WHERE daa.CompanyId = @CompanyId AND daa.DocumentId = @DocumentId AND daa.IsDeleted = FALSE
+            ORDER BY daa.Id DESC
+            LIMIT 1;",
+            new { CompanyId = companyId, DocumentId = documentId });
+
+        if (persistedRow != null)
+        {
+            var persistedCode = Convert.ToString(persistedRow.employeecode);
+            if (!string.IsNullOrWhiteSpace(persistedCode))
+            {
+                var persistedName = Convert.ToString(persistedRow.employeename);
+                // The person's actual job Role in the company (e.g. "Manager", "Director") --
+                // same lookup, same tables, the picker on Create/Update Document itself uses
+                // (PeoplePartnersComponent.GetEmployeeRoleByCodeAsync) -- not the workflow-step
+                // "Review" placeholder EnsureAdHocApproverStepDefinitionAsync's StepType carries,
+                // which is a different, deliberately generic value for a different purpose.
+                var persistedRole = await _peoplePartnersComponent.GetEmployeeRoleByCodeAsync(persistedCode);
+                return new AdHocApproverPreviewDto
+                {
+                    EmployeeCode = persistedCode,
+                    EmployeeName = string.IsNullOrWhiteSpace(persistedName) ? persistedCode : persistedName,
+                    Role = string.IsNullOrWhiteSpace(persistedRole) ? "Review" : persistedRole,
+                };
+            }
+        }
+
+        // Falls back to the previous execution's own WorkflowExecutionSteps row -- only reached
+        // for documents reverted before DocumentAdHocApprovers existed.
+        var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT wes.AssignedUserId AS EmployeeCode,
+                   LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS EmployeeName
+            FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+            JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
+            JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
+            JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
+            LEFT JOIN tblEmployee e ON TRIM(e.empCode) = TRIM(wes.AssignedUserId) AND e.CompanyId = @CompanyId
+            WHERE we.CompanyId = @CompanyId
+              AND we.EntityType = 'Document'
+              AND we.EntityId = @DocumentId
+              AND wp.Name = 'System Generated - Ad-hoc Approvers'
+              AND wes.AssignedUserId IS NOT NULL
+            ORDER BY we.Id DESC, wes.Id DESC
+            LIMIT 1;",
+            new { CompanyId = companyId, DocumentId = documentId });
+
+        if (row == null)
+            return null;
+
+        var employeeCode = Convert.ToString(row.employeecode);
+        if (string.IsNullOrWhiteSpace(employeeCode))
+            return null;
+
+        var name = Convert.ToString(row.employeename);
+
+        // Same actual-job-Role lookup as the persisted-table branch above -- wsd.StepType (the
+        // "role" this row was originally selected on) is always the workflow-step placeholder
+        // "Review" (see EnsureAdHocApproverStepDefinitionAsync), never the person's real Role, so
+        // it was never the right value to show here in the first place.
+        var role = await _peoplePartnersComponent.GetEmployeeRoleByCodeAsync(employeeCode);
+
+        return new AdHocApproverPreviewDto
+        {
+            EmployeeCode = employeeCode,
+            // Falls back to the code itself if the employee record can't be resolved, rather than
+            // showing a blank name for a real, already-approved step.
+            EmployeeName = string.IsNullOrWhiteSpace(name) ? employeeCode : name,
+            Role = string.IsNullOrWhiteSpace(role) ? "Review" : role,
+        };
+    }
+
     private async Task<int> EnsureAdHocApproverStepDefinitionAsync(int companyId, string empCode, string employeeCode, IDbTransaction transaction)
     {
         const string sentinelPolicyName = "System Generated - Ad-hoc Approvers";
@@ -3596,6 +3721,60 @@ public class DocumentComponent
                 new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = uid.EmployeeCode, TrainingMode = uid.TrainingMode, UserId = empCode }, transaction);
             }
         }
+    }
+
+    // The durable store for a this-document-only ad-hoc approver -- same role DocumentUserTraining
+    // plays for Training Users. Needed because the approver can be picked on the Create/Update
+    // Document screen and then only "Save as Draft"d: there is no WorkflowExecution yet at that
+    // point for a WorkflowExecutionSteps row to attach to, so without this table the pick was lost
+    // the moment Save as Draft ran (confirmed on IT-II-SOP-012 -- picked at creation, gone by the
+    // time the document was later actually submitted).
+    //
+    // Same null-vs-empty distinction as the ad-hoc block in SubmitDocumentAsync: null means the
+    // caller omitted the field entirely and has nothing new to say, so whatever is already
+    // persisted is left untouched. A non-null list, even empty, is authoritative -- an empty one
+    // clears it outright, which is how Create/Update Document's and the Draft/Reverted Documents
+    // screen's own Remove button take effect (both always send the field, so this only stays null
+    // for a caller that omits it altogether).
+    private async Task PersistAdHocApproversAsync(List<AdHocApproverDto>? adHocApprovers, int documentId, int companyId, string empCode, IDbTransaction transaction)
+    {
+        if (adHocApprovers == null)
+            return;
+
+        foreach (var adHoc in adHocApprovers)
+        {
+            var employeeActive = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1)
+                FROM tblEmployee e
+                INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
+                WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
+                  AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE;",
+                new { CompanyId = companyId, EmployeeCode = adHoc.EmployeeCode }, transaction);
+
+            if (employeeActive < 1)
+                throw new CustomException($"Selected ad-hoc approver ({adHoc.EmployeeCode}) was not found or is not active.", 404);
+        }
+
+        await _common.ExecuteAsync(@"
+            DELETE FROM DocumentAdHocApprovers WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+
+        foreach (var adHoc in adHocApprovers)
+        {
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentAdHocApprovers (CompanyId, DocumentId, EmployeeCode, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                VALUES (@CompanyId, @DocumentId, @EmployeeCode, FALSE, NOW(), @UserId, NOW(), @UserId);",
+                new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = adHoc.EmployeeCode, UserId = empCode }, transaction);
+        }
+    }
+
+    private async Task<List<string>> GetPersistedAdHocApproversAsync(int documentId, int companyId, IDbTransaction transaction)
+    {
+        var codes = await _common.QueryAsync<string>(@"
+            SELECT EmployeeCode FROM DocumentAdHocApprovers
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+        return codes.ToList();
     }
 
     public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
@@ -7103,6 +7282,20 @@ public class DocumentComponent
                         (CompanyId, DocumentId, Version, VersionType, IsActive, CreatedBy, CreatedAt, LastModifiedBy, LastModifiedAt)
                         VALUES (@CompanyId, @DocumentId, @Version, 2, TRUE, @UserId, NOW(), @UserId, NOW());",
                         new { CompanyId, DocumentId = newId, Version = version, UserId = empCode }, tx);
+
+                    // A bulk-imported document skips the Request/approval workflow entirely --
+                    // per policy it is Effective immediately, the same way DocumentVersions above
+                    // is inserted straight as VersionType 2 (Effective), not 1 (Draft/pending).
+                    // Without this, the document had no DocumentStateHistory row at all, so every
+                    // "current state" lookup (GetApprovedEffectiveDocumentsAsync included, whose
+                    // WHERE clause requires the latest state to be 'EFFECTIVE') found nothing and
+                    // silently excluded it forever -- it was neither Draft nor Effective anywhere.
+                    await _common.ExecuteAsync(@"
+                        INSERT INTO DocumentStateHistory
+                        (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
+                        VALUES
+                        (@CompanyId, @DocumentId, NULL, (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), @UserId, 'Bulk imported -- Effective per policy', NOW());",
+                        new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
 
                     await tx.CommitAsync();
                     //LogToFile($"[BULK IMPORT] Row {row}: Transaction committed successfully (INSERT).");

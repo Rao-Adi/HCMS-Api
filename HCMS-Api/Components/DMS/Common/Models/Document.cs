@@ -213,6 +213,17 @@ public class AdHocApproverDto
     public string EmployeeCode { get; set; } = null!;
 }
 
+// What the Draft/Reverted Documents tab shows for a document's carried-over ad-hoc approver, so
+// resubmitting a reverted document doesn't silently keep an approver the person can't see. Shaped
+// to match the fields the Workflow Authorities table already reads off a policy step
+// (EmployeeCode/EmployeeName/Role), so both can be rendered by the same row template.
+public class AdHocApproverPreviewDto
+{
+    public string EmployeeCode { get; set; } = null!;
+    public string EmployeeName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+}
+
 // Read-only projection of an existing document's current DocumentUserTraining assignments --
 // used to prefill the Training Users table when starting a direct Revision/Obsoletion from that
 // document (see DocumentComponent.GetDocumentTrainingAssignmentsByDocumentIdAsync).
