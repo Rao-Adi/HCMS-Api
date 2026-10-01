@@ -314,6 +314,13 @@ public  class AllDocumentDto
     public string? PreviousVersionCreatedOn { get; set; }
     public string? PreviousVersionCreatedBy { get; set; }
 
+    // From WorkflowExecutions.ActivityTypeCode (fn_get_my_inbox_documents) -- lets the frontend
+    // (My Approvals - Documents) tell an Obsoletion row apart from Revision/Creation. Only
+    // Obsoletion's Distribution List carries any meaning for IsRetrieved/RetrievedAt/RetrievedBy;
+    // showing those columns against a Revision's/Creation's distribution (which nothing ever
+    // "retrieves") read as a stuck checklist that wasn't actually there.
+    public string? ActivityTypeCode { get; set; }
+
 
     // 🟩 UC-22
     public List<DistributionListReadDto>? DistributionList { get; set; }
@@ -339,6 +346,13 @@ public class GetDocumentDto : TableFiltersDto
     /// is already overdue belongs under "Over Due" and nowhere else.
     /// </summary>
     public int? ReviewDateFilter { get; set; }
+
+    /// <summary>
+    /// Only read by GetApprovedRevisionObsoletionRequestsAsync -- "DRT-0002" or "DRT-0003", which
+    /// Document Request this picker is for. Distinct from DocumentTypeCode above (that's the
+    /// Document's own type, e.g. "SOP"; this is the Request's type, e.g. Revision vs Obsoletion).
+    /// </summary>
+    public string? DocumentRequestTypeCode { get; set; }
 }
 
 

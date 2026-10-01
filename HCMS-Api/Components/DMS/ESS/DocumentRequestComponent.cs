@@ -2200,7 +2200,8 @@ public class DocumentRequestComponent
                     LastModifiedAt = GetValue<DateTime?>(dict, "lastmodifiedat")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
                     LastModifiedBy = GetValue<string>(dict, "lastmodifiedby"),
                     PreviousVersionCreatedOn = GetValue<DateTime?>(dict, "previousversioncreatedon")?.ToString("yyyy-MM-dd HH:mm:ss") ?? string.Empty,
-                    PreviousVersionCreatedBy = GetValue<string>(dict, "previousversioncreatedby")
+                    PreviousVersionCreatedBy = GetValue<string>(dict, "previousversioncreatedby"),
+                    TargetDocumentNumber = GetValue<string>(dict, "targetdocumentnumber")
                 });
             }
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -2301,6 +2302,7 @@ public class DocumentRequestComponent
                     documenttype AS ""Document Type"",
                     requestnumber AS ""Request ID"",
                     documentname AS ""Document Name"",
+                    targetdocumentnumber AS ""Document Number"",
                     justification AS ""Justification"",
                     rowversion AS ""Proposed Version Number""
                     {cabinetColumnsSql},
@@ -4408,13 +4410,22 @@ public class DocumentRequestComponent
                 nextReviewDate = DateTime.Now.AddYears(reviewYears.Value);
             }
 
-            // A Revision request revises the document it names -- it does not produce a second
-            // document. Same rule as the direct Revision path (SubmitDocumentAsync): BL-004/005/006
-            // make a revision a VERSION change, BL-001 issues the number once, and BL-003 keeps the
-            // "-A" suffix for Annexures. Creating a child here is what produced SOP-016-A for a
-            // revision of SOP-016.
+            // A Revision or Obsoletion request acts on the document it names -- neither produces a
+            // second document. Same rule as the direct path (SubmitDocumentAsync's
+            // isRevisionSubmission/isObsoletionSubmission): BL-004/005/006 make a revision a
+            // VERSION change (not a new document), BL-001 issues a document number once, and
+            // BL-003 keeps the "-A" suffix for Annexures. Creating a child here for a Revision is
+            // what produced SOP-016-A for a revision of SOP-016; Obsoletion previously created a
+            // child too (a second row for one document being retired, per BL-012), which is what
+            // this branch now also avoids -- client requirement confirmed both stay same-document,
+            // with the previous/current content told apart via the existing DocumentVersions
+            // archive-on-promotion history (Revision History modal), not a second Documents row.
             bool isRevisionRequest =
                 string.Equals((string?)request.documentrequesttypecode, "DRT-0002", StringComparison.OrdinalIgnoreCase)
+                && (int?)request.parentdocumentid is > 0;
+
+            bool isObsoletionRequest =
+                string.Equals((string?)request.documentrequesttypecode, "DRT-0003", StringComparison.OrdinalIgnoreCase)
                 && (int?)request.parentdocumentid is > 0;
 
             int documentId;
@@ -4427,6 +4438,39 @@ public class DocumentRequestComponent
                 // re-processed after a failure does not open a second draft row.
                 await _documentComponent.OpenRevisionDraftVersionAsync(companyId, documentId, empCode, transaction);
 
+                // OpenRevisionDraftVersionAsync seeds the new Draft row by copying the OLD
+                // Effective version's content -- a reasonable starting point when nothing else is
+                // available, but wrong once the Revision Request actually proposed new content or
+                // a new file: without this, whatever the user typed/uploaded at request time was
+                // silently discarded, and Create/Update Document kept showing the pre-revision
+                // content. Confirmed live on IT-II-SOP-001. COALESCE keeps the copied content for
+                // whichever of the two the request didn't provide, mirroring
+                // AttachOrUpdateTemplateAsync's own independent file/content handling.
+                string? proposedContent = BlankToNull((string?)request.proposedcontent);
+                string? proposedFileUrl = BlankToNull((string?)request.draftfileurl);
+
+                if (proposedContent != null || proposedFileUrl != null)
+                {
+                    // BlankToNull (not just the C# null-check above) matters here specifically:
+                    // COALESCE only leaves the copied-old content alone for a genuine SQL NULL --
+                    // passing an empty string through would overwrite it with "" when the request
+                    // provided a file but no typed content, or vice versa.
+                    await _common.ExecuteAsync(@"
+                        UPDATE DocumentVersions
+                        SET Content = COALESCE(@Content, Content),
+                            DocumentURL = COALESCE(@DocumentUrl, DocumentURL),
+                            LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                        WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId AND VersionType = 1;",
+                        new
+                        {
+                            CompanyId = companyId,
+                            DocumentId = documentId,
+                            Content = proposedContent,
+                            DocumentUrl = proposedFileUrl,
+                            UserId = empCode
+                        }, transaction);
+                }
+
                 // The document already carries the distribution it was issued with. The promotion
                 // steps below are pure inserts, so clear first -- otherwise every revision doubles
                 // the distribution list. A revision is allowed to change who receives the document,
@@ -4435,6 +4479,18 @@ public class DocumentRequestComponent
                     DELETE FROM DocumentRoleDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;
                     DELETE FROM DocumentUserDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;",
                     new { CompanyId = companyId, DocumentId = documentId }, transaction);
+            }
+            else if (isObsoletionRequest)
+            {
+                documentId = (int)request.parentdocumentid;
+
+                // Deliberately nothing else here: retiring a document must never alter its
+                // content, attributes, training assignments or distribution (FSD 4.1.3 -- the
+                // content viewer is read-only and Document Users disabled, "as no new users are
+                // assigned"). No new DocumentVersions row, no distribution clear/reinsert -- the
+                // document stays exactly as it is, still Effective and in force, until final
+                // approval retires it (BL-012). Matches SubmitDocumentAsync's own
+                // isObsoletionSubmission branch exactly.
             }
             else
             {
@@ -4503,11 +4559,11 @@ public class DocumentRequestComponent
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
             (
-                CompanyId, DocumentId, Version, VersionType, Content, CreatedBy, LastModifiedBy
+                CompanyId, DocumentId, Version, VersionType, Content, DocumentURL, CreatedBy, LastModifiedBy
             )
             VALUES
             (
-                @CompanyId, @DocumentId, @Version, 1, @Content, @CreatedBy, @LastModifiedBy
+                @CompanyId, @DocumentId, @Version, 1, @Content, @DocumentUrl, @CreatedBy, @LastModifiedBy
             )
             ", new
             {
@@ -4515,6 +4571,11 @@ public class DocumentRequestComponent
                 documentId,
                 Version = documentVersion,
                 Content = request.proposedcontent,
+                // Same file as Documents.DocumentURL just above (both seeded from the Request's
+                // own draftfileurl) -- from here on this per-version copy is what
+                // Vw_Documents.documenturl actually reads, since Documents.DocumentURL gets
+                // overwritten by every later submit regardless of approval.
+                DocumentUrl = request.draftfileurl,
                 CreatedBy = request.createdby,
                 LastModifiedBy = request.createdby
             }, transaction);
@@ -4537,9 +4598,17 @@ public class DocumentRequestComponent
             //-----------------------------------------
             // 5️⃣ Link Back To Request
             //-----------------------------------------
+            // LastModifiedAt is the anchor GetApprovedRevisionObsoletionRequestsAsync uses to tell
+            // "approved, not yet resubmitted on Create/Update Document" apart from "resubmitted,
+            // now awaiting its own Document-level approval" -- neither Revision's DocumentStateHistory
+            // (REVISED covers both phases, set right here at approval) nor the document's state
+            // even changes at all for Obsoletion (stays Effective throughout both phases), so
+            // there is no state-based signal for either. Whether a Document-level WorkflowExecution
+            // exists that started at/after this moment is the only thing that actually
+            // distinguishes them.
             await _common.ExecuteAsync(@"
                 UPDATE DocumentRequests
-                SET DocumentId = @DocumentId
+                SET DocumentId = @DocumentId, LastModifiedAt = NOW()
                 WHERE Id = @RequestId AND CompanyId = @CompanyId
                 ", new { documentId, requestId, CompanyId = companyId }, transaction);
 
@@ -4559,58 +4628,74 @@ public class DocumentRequestComponent
                     companyId, parentDocumentId.Value, (string)request.documentrequesttypecode, empCode, transaction);
             }
 
-            //-----------------------------------------
-            // 6️⃣ Promote Role Distribution
-            //-----------------------------------------
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentRoleDistributions
-                (
-                    CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
-                    BusinessDomainCode, RoleId, DistributionType, CreatedBy
-                )
-                SELECT
-                    CompanyId, @DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
-                    BusinessDomainCode, RoleId, DistributionTypeId, @UserId
-                FROM DocumentRequestRoleDistributions
-                WHERE DocumentRequestId = @RequestId;",
-            new
+            // Steps 6-7 promote the REQUEST's own DistributionList/UserIds rows onto the
+            // Document. Skipped entirely for Obsoletion: the document being retired already
+            // carries its own, real DocumentRoleDistributions/DocumentUserDistributions rows
+            // (it's the same document, not a new one), and the Obsoletion form's grid only ever
+            // showed that same existing list back to the user for review (FSD 4.1.3 -- Document
+            // Users is disabled on that screen, "as no new users are assigned"). Promoting it
+            // again here duplicated every row -- one retrieval checklist entry per recipient
+            // became two, and marking one "Retrieved" could never satisfy the other, so
+            // SubmitDocumentAsync's unretrievedCount check (isObsoletionSubmission branch) would
+            // block the Obsoletion from ever reaching the approver. The isObsoletionRequest
+            // branch above already documents this same "never touch distribution" rule for its
+            // own content/attributes/training skip; this closes the gap that still let it happen
+            // here.
+            if (!isObsoletionRequest)
             {
-                DocumentId = documentId,
-                RequestId = requestId,
-                UserId = request.createdby
-            }, transaction);
+                //-----------------------------------------
+                // 6️⃣ Promote Role Distribution
+                //-----------------------------------------
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentRoleDistributions
+                    (
+                        CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
+                        BusinessDomainCode, RoleId, DistributionType, CreatedBy
+                    )
+                    SELECT
+                        CompanyId, @DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
+                        BusinessDomainCode, RoleId, DistributionTypeId, @UserId
+                    FROM DocumentRequestRoleDistributions
+                    WHERE DocumentRequestId = @RequestId;",
+                new
+                {
+                    DocumentId = documentId,
+                    RequestId = requestId,
+                    UserId = request.createdby
+                }, transaction);
 
-            //-----------------------------------------
-            // 7️⃣ Promote User Distribution
-            //-----------------------------------------
-            // Role and cabinet come across with the employee. Without them the Document Users
-            // grid cannot tell a person who was deliberately chosen from one auto-expanded out
-            // of the Distribution List -- it keys on RoleId -- so every promoted user silently
-            // disappeared from the screen.
-            //
-            // NULLIF keeps an unset cabinet level as NULL rather than an empty string, which is
-            // what the composite foreign keys onto the cabinet tables require.
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentUserDistributions
-                (
-                    CompanyId, DocumentId, EmployeeCode, RoleId,
-                    DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy
-                )
-                SELECT
-                    CompanyId, @DocumentId, EmployeeCode, RoleId,
-                    NULLIF(TRIM(COALESCE(DivisionCode, '')), ''),
-                    NULLIF(TRIM(COALESCE(DepartmentCode, '')), ''),
-                    NULLIF(TRIM(COALESCE(SubDepartmentCode, '')), ''),
-                    NULLIF(TRIM(COALESCE(BusinessDomainCode, '')), ''),
-                    @CreatedBy
-                FROM DocumentRequestUserDistributions
-                WHERE DocumentRequestId = @RequestId;",
-            new
-            {
-                DocumentId = documentId,
-                RequestId = requestId,
-                CreatedBy = request.createdby
-            }, transaction);
+                //-----------------------------------------
+                // 7️⃣ Promote User Distribution
+                //-----------------------------------------
+                // Role and cabinet come across with the employee. Without them the Document Users
+                // grid cannot tell a person who was deliberately chosen from one auto-expanded out
+                // of the Distribution List -- it keys on RoleId -- so every promoted user silently
+                // disappeared from the screen.
+                //
+                // NULLIF keeps an unset cabinet level as NULL rather than an empty string, which is
+                // what the composite foreign keys onto the cabinet tables require.
+                await _common.ExecuteAsync(@"
+                    INSERT INTO DocumentUserDistributions
+                    (
+                        CompanyId, DocumentId, EmployeeCode, RoleId,
+                        DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy
+                    )
+                    SELECT
+                        CompanyId, @DocumentId, EmployeeCode, RoleId,
+                        NULLIF(TRIM(COALESCE(DivisionCode, '')), ''),
+                        NULLIF(TRIM(COALESCE(DepartmentCode, '')), ''),
+                        NULLIF(TRIM(COALESCE(SubDepartmentCode, '')), ''),
+                        NULLIF(TRIM(COALESCE(BusinessDomainCode, '')), ''),
+                        @CreatedBy
+                    FROM DocumentRequestUserDistributions
+                    WHERE DocumentRequestId = @RequestId;",
+                new
+                {
+                    DocumentId = documentId,
+                    RequestId = requestId,
+                    CreatedBy = request.createdby
+                }, transaction);
+            }
 
             //await transaction.CommitAsync();
             return documentId;

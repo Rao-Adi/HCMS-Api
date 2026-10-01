@@ -68,6 +68,11 @@ public class DocumentRequestReadDto : AuditableEntity
     // cabinet and type is approved first.
     public string? DocumentNumber { get; set; }
 
+    // The document actually being revised/obsoleted, so the approver can tell which document
+    // this request is against -- distinct from DocumentNumber above, which shows a PROPOSED
+    // number even for a plain Creation request. Blank for Creation (no ParentDocumentId).
+    public string? TargetDocumentNumber { get; set; }
+
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 
@@ -580,7 +585,13 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
     // properties Dapper discarded them even once the queries selected them.
     public DateTime? PreviousVersionCreatedOn { get; set; }
     public string? PreviousVersionCreatedBy { get; set; }
-     
+
+    // Only populated by GetApprovedRevisionObsoletionRequestsAsync -- the ORIGINAL Document
+    // Request's own Justification (not this Document's, which onCellClicked otherwise blanks for
+    // a fresh reason). For Obsoletion, the client wants the request-phase justification shown
+    // here rather than re-typed.
+    public string? RequestJustification { get; set; }
+
 
     // Lists to populate on the FrontEnd
     public List<DistributionListReadDto> DistributionList { get; set; } = new List<DistributionListReadDto>();

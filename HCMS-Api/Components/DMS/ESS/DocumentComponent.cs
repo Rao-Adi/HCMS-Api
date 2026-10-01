@@ -684,6 +684,20 @@ public class DocumentComponent
                         "Select the document to be obsoleted before submitting.", 400);
 
                 input.DocumentId = input.ParentDocumentId.Value;
+
+                // Client requirement: the user must go through the Distribution List and confirm
+                // every entry's copy has actually been retrieved (digitally disabled, or the
+                // physical copy collected) before an Obsoletion can go to the approver. A
+                // document with no distribution rows at all has nothing to retrieve, so that
+                // case is not blocked here.
+                var unretrievedCount = await _common.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(1) FROM DocumentRoleDistributions
+                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsRetrieved = FALSE;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                if (unretrievedCount > 0)
+                    throw new CustomException(
+                        "Confirm every Distribution List entry has been retrieved (digitally disabled or physical copy collected) before submitting this Obsoletion.", 400);
             }
             else if (isRevisionSubmission)
             {
@@ -2239,6 +2253,20 @@ public class DocumentComponent
                 UPDATE Documents
                 SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
                 WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
+
+            // Also on the pending (VersionType 1) DocumentVersions row itself -- Documents.DocumentURL
+            // above is a single, shared pointer that this same statement overwrites on every
+            // submit, approved or not, so "the authorized document" (View Approved Documents, the
+            // Request form's download, the Revision/Obsoletion picker) can never safely read it
+            // once a document has been through more than one revision. Vw_Documents.documenturl
+            // now prefers this per-version column (Effective over Draft) over the legacy
+            // Documents.DocumentURL above, which stays only as a fallback for rows from before
+            // this column was populated.
+            await _common.ExecuteAsync(@"
+                UPDATE DocumentVersions
+                SET DocumentURL = @DocumentUrl, LastModifiedAt = NOW(), LastModifiedBy = @UserId
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1;",
                 new { DocumentUrl = documentUrl, UserId = empCode, input.DocumentId, CompanyId = companyId }, transaction);
         }
 
@@ -5439,6 +5467,16 @@ public class DocumentComponent
                 SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
                        dl.DistributionType AS DistributionTypeId,
                        dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                       dl.IsRetrieved, dl.RetrievedAt,
+                       -- RetrievedBy is an employee CODE (DocumentComponent.MarkDistributionRetrievedAsync
+                       -- writes it from GetEmpCodeForHCMS, same as every other *By column in this
+                       -- file) -- resolved to a display name here the same way CreatedBy/
+                       -- LastModifiedBy already are everywhere else, instead of leaving the raw
+                       -- code for the Distribution List grid/modal to show as-is.
+                       COALESCE(
+                           NULLIF(LTRIM(RTRIM(COALESCE(rbemp.firstname, '') || ' ' || COALESCE(rbemp.midname, '') || ' ' || COALESCE(rbemp.lastname, ''))), ''),
+                           dl.RetrievedBy
+                       ) AS RetrievedBy,
                        div.Name AS Division,
                        dep.Name AS Department,
                        subd.Name AS SubDepartment,
@@ -5452,6 +5490,7 @@ public class DocumentComponent
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r ON dl.RoleId = r.Id
 		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
+                        LEFT JOIN public.tblEmployee rbemp ON LTRIM(RTRIM(rbemp.empcode::text), '0') = LTRIM(RTRIM(dl.RetrievedBy::text), '0')
                 WHERE dl.CompanyId = @CompanyId
                 AND dl.DocumentId = ANY(@RequestIds);",
                 new
@@ -5522,6 +5561,9 @@ public class DocumentComponent
                         SubDepartmentCode = x.SubDepartmentCode,
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
+                        IsRetrieved = x.IsRetrieved,
+                        RetrievedAt = x.RetrievedAt,
+                        RetrievedBy = x.RetrievedBy,
                     }).ToList();
                 request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
@@ -5637,7 +5679,19 @@ public class DocumentComponent
                 SELECT sub.*, COUNT(*) OVER() AS TotalCount
                 FROM (
                     SELECT DISTINCT
-                        doc.*,
+                        doc.* ,
+                        -- Vw_Documents.Version/VersionContent prefer the still-Effective version
+                        -- over a pending Draft (correct for View Approved Documents, wrong here):
+                        -- a document sitting in APPROVED/AUTHORIZATION_PENDING is about to have
+                        -- ITS pending Draft version authorised and promoted -- that's the version
+                        -- number this screen must show, not the one about to be superseded.
+                        -- Reported live: this screen showed 1.0 for IT-II-SOP-011's revision
+                        -- (document 253), which was already sitting at pending version 2.1. Same
+                        -- fix as GetApprovedRevisionObsoletionRequestsAsync. Falls back to
+                        -- Vw_Documents' own resolution when there is no pending Draft row (a
+                        -- document that has never been revised only ever had one version).
+                        COALESCE(pendingdv.Version, doc.Version) AS PendingVersion,
+                        COALESCE(pendingdv.Content, doc.VersionContent) AS PendingVersionContent,
                         dut.TrainingMode,
                         tr.TrainingProofURL,
                         LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
@@ -5651,6 +5705,16 @@ public class DocumentComponent
                         )::character varying AS PreviousVersionCreatedBy
 
                     FROM VW_Documents doc
+                    LEFT JOIN LATERAL (
+                        SELECT v.Version, v.Content
+                        FROM DocumentVersions v
+                        WHERE v.DocumentId = doc.Id
+                          AND v.CompanyId = doc.CompanyId
+                          AND v.VersionType = 1
+                          AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                        ORDER BY v.Id DESC
+                        LIMIT 1
+                    ) pendingdv ON TRUE
                     LEFT JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                     LEFT JOIN (
                             SELECT
@@ -6554,7 +6618,13 @@ public class DocumentComponent
                         prevver.CreatedBy
                     )::character varying AS PreviousVersionCreatedBy
                 FROM Vw_Documents doc
-                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE
+                -- VersionType = 1 (pending), not just IsActive -- while a document sits in
+                -- TRAINING_PENDING, the version it's actually being trained on (1) and the
+                -- still-Effective one it will replace (2) are BOTH active simultaneously (the old
+                -- one isn't archived until final authorization promotes the new one). Joining on
+                -- IsActive alone matched both, fanning this document out into two rows -- one per
+                -- version -- which is why it showed twice (1.0 and 2.1) on this screen.
+                LEFT JOIN DocumentVersions dv ON dv.DocumentId = doc.Id AND dv.IsActive = TRUE AND dv.VersionType = 1
                 INNER JOIN DocumentTraining tr ON tr.DocumentId = doc.Id AND tr.IsActive = TRUE
                 LEFT JOIN DocumentUserTraining dut ON dut.DocumentId = doc.Id
                 -- Raw document row, needed for ParentDocumentId (Vw_Documents may not expose it)
@@ -6770,17 +6840,51 @@ public class DocumentComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
-            // Base condition: Document is not deleted and its current state is 'EFFECTIVE'
+            // Base condition: Document is not deleted, and either:
+            //  - its current state is 'EFFECTIVE', or
+            //  - it is mid-Revision (REVISED, then APPROVED/TRAINING_PENDING/AUTHORIZATION_PENDING
+            //    on its OWN resubmission's approval -- the same transitional states a brand-new
+            //    document also passes through) AND it has been EFFECTIVE at least once before.
+            // REVISED alone was the original fix: TransitionParentDocumentStateAsync sets it the
+            // moment a Revision Request is approved, well before the user has even resubmitted a
+            // new draft (reported live: SOP-004/015/027/040/051 all currently REVISED and invisible
+            // here). But once that resubmission is itself approved, SubmitDocumentAsync/
+            // HandlePostApprovalAsync move the document on to APPROVED -> TRAINING_PENDING ->
+            // AUTHORIZATION_PENDING -- the identical codes a first-time submission sits in -- so
+            // REVISED-only dropped the document right back out the moment anyone approved it.
+            // Reported live: IT-II-SOP-001, mid-revision and in TRAINING_PENDING, showed "No
+            // records to show" here even though its old v1.0 is still the controlled, in-force
+            // copy and still ought to be visible as the thing a reader would call "approved" right
+            // now. The "ever been EFFECTIVE" check is what keeps a brand-new document (also
+            // sitting in APPROVED/TRAINING_PENDING/AUTHORIZATION_PENDING, but never yet issued)
+            // correctly excluded -- it has nothing approved to show yet.
             var whereClause = @"
-                WHERE doc.CompanyId = @CompanyId 
+                WHERE doc.CompanyId = @CompanyId
                   AND doc.IsDeleted = FALSE
                   AND (
-                      SELECT ds.Code 
-                      FROM DocumentStateHistory dsh 
-                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                      WHERE dsh.DocumentId = doc.Id 
-                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                  ) = 'EFFECTIVE'";
+                      (
+                          SELECT ds.Code
+                          FROM DocumentStateHistory dsh
+                          JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                          WHERE dsh.DocumentId = doc.Id
+                          ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                      ) = 'EFFECTIVE'
+                      OR (
+                          (
+                              SELECT ds.Code
+                              FROM DocumentStateHistory dsh
+                              JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                              WHERE dsh.DocumentId = doc.Id
+                              ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                          ) IN ('REVISED', 'APPROVED', 'TRAINING_PENDING', 'AUTHORIZATION_PENDING')
+                          AND EXISTS (
+                              SELECT 1
+                              FROM DocumentStateHistory dsh2
+                              JOIN DocumentStates ds2 ON ds2.Id = dsh2.ToStateId
+                              WHERE dsh2.DocumentId = doc.Id AND ds2.Code = 'EFFECTIVE'
+                          )
+                      )
+                  )";
 
             if (!string.IsNullOrWhiteSpace(input.DivisionCode))
                 whereClause += " AND doc.DivisionCode = @DivisionCode";
@@ -7408,12 +7512,23 @@ public class DocumentComponent
                         var documentUrl = $"/uploads/documents/{newFileName}";
 
                         await _common.ExecuteAsync(@"
-                            UPDATE Documents 
+                            UPDATE Documents
                             SET DocumentURL = @DocumentUrl,
                                 LastModifiedAt = NOW(),
                                 LastModifiedBy = @UserId
                             WHERE Id = @DocumentId;",
                             new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = docId });
+
+                        // Also on the Effective (VersionType 2) version row BulkImportDocumentMetadataAsync
+                        // created -- Vw_Documents.documenturl reads that per-version copy first, since
+                        // Documents.DocumentURL above is a shared pointer every later submit overwrites.
+                        await _common.ExecuteAsync(@"
+                            UPDATE DocumentVersions
+                            SET DocumentURL = @DocumentUrl,
+                                LastModifiedAt = NOW(),
+                                LastModifiedBy = @UserId
+                            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 2;",
+                            new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = docId, CompanyId });
 
                         results.Add($"Zip Entry {entry.Name}: Successfully attached to Document ID {docId}.");
                     }
@@ -7450,13 +7565,22 @@ public class DocumentComponent
                     var documentUrl = $"/uploads/documents/{newFileName}";
 
                     await _common.ExecuteAsync(@"
-                        UPDATE Documents 
+                        UPDATE Documents
                         SET DocumentURL = @DocumentUrl,
                             LastModifiedAt = NOW(),
                             LastModifiedBy = @UserId
                         WHERE Id = @DocumentId;",
                         new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = documentId });
 
+                    // Also on the Effective (VersionType 2) version row -- see the matching
+                    // comment in the Zip Entry branch above.
+                    await _common.ExecuteAsync(@"
+                        UPDATE DocumentVersions
+                        SET DocumentURL = @DocumentUrl,
+                            LastModifiedAt = NOW(),
+                            LastModifiedBy = @UserId
+                        WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 2;",
+                        new { DocumentUrl = documentUrl, UserId = empCode, DocumentId = documentId, CompanyId });
 
                     results.Add($"File {safeFileName}: Successfully attached to Document ID {documentId}.");
                 }
@@ -7626,6 +7750,15 @@ public class DocumentComponent
                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                      WHERE dsh.DocumentId = doc.Id
                      ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) AS CurrentStatus,
+                    -- The client asked for this specifically on the Obsoletion workflow --
+                    -- CompleteObsoletionAsync's own DocumentStateHistory insert into 'OBSOLETE'
+                    -- is the only record of when that happened, so that row's own ChangedAt is
+                    -- the obsoletion date. NULL for a document never obsoleted.
+                    (SELECT dsh3.ChangedAt
+                     FROM DocumentStateHistory dsh3
+                     JOIN DocumentStates ds3 ON ds3.Id = dsh3.ToStateId
+                     WHERE dsh3.DocumentId = doc.Id AND ds3.Code = 'OBSOLETE'
+                     ORDER BY dsh3.ChangedAt DESC, dsh3.Id DESC LIMIT 1) AS ObsoletionDate,
                     COALESCE(cn.EmployeeName, doc.CreatedBy) AS CreatedByName,
                     COALESCE(mn.EmployeeName, doc.LastModifiedBy) AS LastModifiedByName,
                     pend.CurrentAssignedUser,
@@ -8567,8 +8700,192 @@ public class DocumentComponent
                 CompanyId
             };
 
+            return await HydrateEffectiveDocumentDetailsResultAsync(dataSql, countSql, queryParams, CompanyId);
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
+    // Client requirement: a Revision or Obsoletion of an already-Effective document must only be
+    // raised through DocumentRequestForm (which already supports it -- CreateAndSubmitRevisionDocumentRequestAsync),
+    // go through that Request's own approval workflow, and only THEN be picked up here for the
+    // user to complete and submit. Before this, Create/Update Document's Revision/Obsoletion grids
+    // called GetEffectiveDocumentsForRevisionAsync directly -- the exact same "any Effective
+    // document" list DocumentRequestForm uses to pick a target for a NEW request -- which let a
+    // user revise/obsolete any Effective document straight from this screen with no Request or
+    // approval step at all. This is the same "approved request, still Draft" case
+    // GetRequestsPendingFinalizationAsync already covers for DRT-0001 (plain Creation), just
+    // scoped to DRT-0002/DRT-0003 and returning the full document-detail shape (Version, Document
+    // Type, Cabinet, content, distributions) the Revision/Obsoletion grids need -- that endpoint
+    // only returns the bare id/number for a dropdown.
+    public async Task<PaginationResult<EffectiveDocumentDetailsDto>> GetApprovedRevisionObsoletionRequestsAsync(GetDocumentDto input)
+    {
+        try
+        {
+            string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+            int CompanyId = int.Parse(_CompanyId);
+
+            if (string.IsNullOrWhiteSpace(input.DocumentRequestTypeCode))
+                throw new ArgumentException("DocumentRequestTypeCode is required", nameof(input.DocumentRequestTypeCode));
+
+            var whereClause = @"
+                WHERE dr.CompanyId = @CompanyId
+                  AND dr.Status = 3 -- Approved
+                  AND dr.DocumentId IS NOT NULL
+                  AND dr.DocumentRequestTypeCode = @DocumentRequestTypeCode
+                  -- Unlike a plain Creation request (GetRequestsPendingFinalizationAsync, which
+                  -- can just check the document is still in Draft state), a Revision/Obsoletion
+                  -- target document's own state is no help here: Revision moves it straight to
+                  -- REVISED the moment the Request is approved (covering both ""not yet
+                  -- resubmitted"" AND ""resubmitted, awaiting approval""), and Obsoletion never
+                  -- changes the document's state at all until final approval. The only thing that
+                  -- actually distinguishes ""not yet resubmitted"" is whether a Document-level
+                  -- WorkflowExecution exists that started at/after this Request was linked
+                  -- (CreateDocumentFromApprovedRequestAsync's own LastModifiedAt stamp) -- if one
+                  -- does, the user already resubmitted and it belongs to their inbox/history now,
+                  -- not this picker.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM WorkflowExecutions we
+                      WHERE we.CompanyId = dr.CompanyId
+                        AND we.EntityType = 'Document'
+                        AND we.EntityId = dr.DocumentId
+                        AND we.StartedAt >= dr.LastModifiedAt
+                  )";
+
+            if (!string.IsNullOrWhiteSpace(input.SearchText))
+            {
+                var search = input.SearchText.Replace("'", "''").ToUpper();
+                whereClause += $@"
+                AND (
+                    UPPER(d.Title) LIKE '%{search}%'
+                    OR UPPER(d.DocumentNumber) LIKE '%{search}%'
+                )";
+            }
+
+            if (input.ReviewDateFilter == 1)
+            {
+                whereClause += " AND d.NextReviewDate IS NOT NULL AND d.NextReviewDate < CURRENT_DATE";
+            }
+            else if (input.ReviewDateFilter == 2)
+            {
+                whereClause += @" AND d.NextReviewDate IS NOT NULL
+                                  AND d.NextReviewDate >= CURRENT_DATE
+                                  AND d.NextReviewDate <= CURRENT_DATE + 30";
+            }
+
+            string sortColumn = input.SortColumn?.ToUpper() switch
+            {
+                "DOCUMENTNUMBER" => "d.DocumentNumber",
+                "DOCUMENTNAME" => "d.Title",
+                "TITLE" => "d.Title",
+                "CREATEDAT" => "d.CreatedAt",
+                "CREATEDBY" => "d.CreatedBy",
+                "LASTMODIFIEDAT" => "d.LastModifiedAt",
+                "LASTMODIFIEDBY" => "d.LastModifiedBy",
+                _ => "d.Id"
+            };
+
+            string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+            int offset = (input.PageNumber - 1) * input.PageSize;
+
+            // Explicit column list (not d.*) so dr.Id can be aliased to RequestId without a
+            // duplicate "requestid" column colliding with Vw_Documents' own -- that column holds
+            // the ORIGINAL creation request, not the Revision/Obsoletion one this screen needs to
+            // finalize.
+            var dataSql = $@"
+                SELECT
+                    d.Id, d.CompanyId, d.DocumentNumber, dr.Id AS RequestId, d.DocumentTypeCode,
+                    d.ParentDocumentId, d.Title, d.Justification, dr.Justification AS RequestJustification,
+                    d.DivisionCode, d.DepartmentCode,
+                    d.SubDepartmentCode, d.BusinessDomainCode, d.NextReviewDate, d.IsActive, d.IsDeleted,
+                    d.CreatedAt, d.CreatedBy, d.CreatedByName, d.LastModifiedByName, d.LastModifiedAt,
+                    d.LastModifiedBy, d.DocumentURL,
+                    -- Vw_Documents.Version/VersionContent resolve to whichever version the view
+                    -- itself prefers -- the still-Effective one over a pending Draft, which is
+                    -- correct for View Approved Documents but wrong here: this screen is about
+                    -- to have the user finish and submit the Draft OpenRevisionDraftVersionAsync
+                    -- already opened when the Request was approved, so it must show THAT version
+                    -- number, not the one still in force. Reported live: My Approvals showed
+                    -- Proposed Version Number 2.0/2.1 for this same request while this grid
+                    -- showed 1.0 (document 254's own still-Effective version). Falls back to
+                    -- Vw_Documents' own resolution for Obsoletion, which never opens a new Draft
+                    -- version at all -- showing the current Effective version there is correct.
+                    COALESCE(pendingdv.Version, d.Version) AS Version,
+                    COALESCE(pendingdv.Content, d.VersionContent) AS VersionContent,
+                    d.VersionType,
+                    d.ChangeDescription, d.Company, d.Division, d.Department, d.BusinessDomain,
+                    d.SubDepartment, d.DocumentType,
+                    prevver.CreatedAt AS PreviousVersionCreatedOn,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
+                        prevver.CreatedBy
+                    )::character varying AS PreviousVersionCreatedBy
+                FROM DocumentRequests dr
+                INNER JOIN Vw_Documents d ON d.Id = dr.DocumentId AND d.CompanyId = dr.CompanyId
+                LEFT JOIN LATERAL (
+                    SELECT v.Version, v.Content
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = d.Id
+                      AND v.CompanyId = d.CompanyId
+                      AND v.VersionType = 1
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                    ORDER BY v.Id DESC
+                    LIMIT 1
+                ) pendingdv ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT v.CreatedAt, v.CreatedBy
+                    FROM DocumentVersions v
+                    WHERE v.DocumentId = d.Id
+                      AND v.CompanyId = d.CompanyId
+                      AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                      AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                    ORDER BY
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 1)::int ELSE -1 END DESC,
+                        CASE WHEN v.Version ~ '^[0-9]+\.[0-9]+$'
+                             THEN split_part(v.Version, '.', 2)::int ELSE -1 END DESC,
+                        v.Id DESC
+                    OFFSET 1 LIMIT 1
+                ) prevver ON TRUE
+                LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
+                {whereClause}
+                ORDER BY {sortColumn} {sortDirection}
+                OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
+
+            var countSql = $@"
+                SELECT COUNT(DISTINCT d.Id)
+                FROM DocumentRequests dr
+                INNER JOIN Vw_Documents d ON d.Id = dr.DocumentId AND d.CompanyId = dr.CompanyId
+                {whereClause};";
+
+            var queryParams = new
+            {
+                CompanyId,
+                DocumentRequestTypeCode = input.DocumentRequestTypeCode
+            };
+
+            return await HydrateEffectiveDocumentDetailsResultAsync(dataSql, countSql, queryParams, CompanyId);
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+    }
+
+    // Shared by GetEffectiveDocumentsForRevisionAsync and GetApprovedRevisionObsoletionRequestsAsync
+    // -- both build their own dataSql/countSql/queryParams (their WHERE/FROM genuinely differ),
+    // then hand off here for the identical rest: run the two queries, map every row by hand into
+    // EffectiveDocumentDetailsDto (Dapper's own typed materialization was never used for this --
+    // see GetValue below), and hydrate each row's Distribution List / Document Users.
+    private async Task<PaginationResult<EffectiveDocumentDetailsDto>> HydrateEffectiveDocumentDetailsResultAsync(
+        string dataSql, string countSql, object queryParams, int CompanyId)
+    {
+        try
+        {
             var dynamicRequests = await _common.QueryAsync<dynamic>(dataSql, queryParams);
-            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, new { CompanyId });
+            var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
 
             var requests = new List<EffectiveDocumentDetailsDto>();
@@ -8589,6 +8906,7 @@ public class DocumentComponent
                     NextReviewDate = GetValue<string>(dict, "nextreviewdate"),
                     ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
                     DocumentId = GetValue<int>(dict, "documentid"),
+                    RequestJustification = GetValue<string>(dict, "requestjustification"),
                     DocumentType = GetValue<string>(dict, "documenttype"),
                     DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
                     Division = GetValue<string>(dict, "division"),
@@ -8650,6 +8968,16 @@ public class DocumentComponent
                 SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
                        dl.DistributionType AS DistributionTypeId,
                        dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                       dl.IsRetrieved, dl.RetrievedAt,
+                       -- RetrievedBy is an employee CODE (DocumentComponent.MarkDistributionRetrievedAsync
+                       -- writes it from GetEmpCodeForHCMS, same as every other *By column in this
+                       -- file) -- resolved to a display name here the same way CreatedBy/
+                       -- LastModifiedBy already are everywhere else, instead of leaving the raw
+                       -- code for the Distribution List grid/modal to show as-is.
+                       COALESCE(
+                           NULLIF(LTRIM(RTRIM(COALESCE(rbemp.firstname, '') || ' ' || COALESCE(rbemp.midname, '') || ' ' || COALESCE(rbemp.lastname, ''))), ''),
+                           dl.RetrievedBy
+                       ) AS RetrievedBy,
                        div.Name AS Division,
                        dep.Name AS Department,
                        subd.Name AS SubDepartment,
@@ -8663,6 +8991,7 @@ public class DocumentComponent
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r ON dl.RoleId = r.Id
 		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
+                        LEFT JOIN public.tblEmployee rbemp ON LTRIM(RTRIM(rbemp.empcode::text), '0') = LTRIM(RTRIM(dl.RetrievedBy::text), '0')
                 WHERE dl.CompanyId = @CompanyId
                 AND dl.DocumentId = ANY(@RequestIds);",
                 new
@@ -8730,6 +9059,9 @@ public class DocumentComponent
                         SubDepartmentCode = x.SubDepartmentCode,
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
+                        IsRetrieved = x.IsRetrieved,
+                        RetrievedAt = x.RetrievedAt,
+                        RetrievedBy = x.RetrievedBy,
                     }).ToList();
                 request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
 
@@ -8751,7 +9083,45 @@ public class DocumentComponent
         }
     }
 
+    // Obsoletion distribution retrieval tracking (client requirement, Ayesha Naz): before an
+    // Obsoletion can be submitted for approval, the user must confirm each Distribution List
+    // entry's copy has actually been retrieved -- the physical copy collected, or the document
+    // disabled digitally. Toggled from the Create/Update Document screen's Obsoletion tab; the
+    // approver later reads the same IsRetrieved/RetrievedAt/RetrievedBy columns (via the
+    // DistributionList already hydrated onto EffectiveDocumentDetailsDto) to verify it before
+    // approving. DocumentRoleDistributions is "the Distribution List" -- see the migration
+    // comment (db-changes-2026-09-30-obsoletion-retrieval.sql) for why this landed there and not
+    // DocumentUserDistributions.
+    // Returns who/when so the caller (DMSDocumentController.MarkDistributionRetrieved) can hand
+    // it straight back to the browser. The click handler previously only had a bare success
+    // boolean to go on, so it could flip the row's own "Retrieved" button green but had nothing
+    // to put in the "Retrieved By" column -- it stayed blank until the whole grid was reloaded
+    // from scratch (e.g. by reopening the document), which read as "nothing happened" on click.
+    public async Task<(string? RetrievedByName, DateTime? RetrievedAt)> MarkDistributionRetrievedAsync(int distributionId, bool retrieved)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empId = _utilities.GetEmpid(clientIp);
+        var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
+        var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            UPDATE DocumentRoleDistributions
+            SET IsRetrieved = @Retrieved,
+                RetrievedAt = CASE WHEN @Retrieved THEN NOW() ELSE NULL END,
+                RetrievedBy = CASE WHEN @Retrieved THEN @EmpCode ELSE NULL END
+            WHERE Id = @DistributionId AND CompanyId = @CompanyId
+            RETURNING
+                (CASE WHEN @Retrieved THEN
+                    (SELECT COALESCE(
+                        NULLIF(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))), ''),
+                        @EmpCode)
+                     FROM tblEmployee e WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0'))
+                 ELSE NULL END) AS RetrievedByName,
+                RetrievedAt;");
+
+        return (row?.retrievedbyname, row?.retrievedat);
+    }
 
     // Helper method to safely get values from the dynamic row
     private static T GetValue<T>(IDictionary<string, object> row, string columnName)

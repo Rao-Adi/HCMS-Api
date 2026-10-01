@@ -63,6 +63,15 @@ public class DistributionListReadDto : AuditableEntity
     public int DistributionTypeId { get; set; }
     public string DistributionType { get; set; }
 
+    // Obsoletion retrieval tracking (documentroledistributions.isretrieved/retrievedat/retrievedby)
+    // -- whether this distribution entry's copy has actually been retrieved (digitally disabled,
+    // or the physical copy collected) before the Obsoletion can be submitted for approval. Blank/
+    // false for every other Distribution List consumer (Creation, Revision), which never set
+    // these columns.
+    public bool IsRetrieved { get; set; }
+    public string? RetrievedAt { get; set; }
+    public string? RetrievedBy { get; set; }
+
 }
 
 

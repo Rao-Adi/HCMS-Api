@@ -1256,6 +1256,66 @@ public class DMSDocumentController : Controller
         }
     }
 
+    // Create/Update Document's Revision/Obsoletion grids -- input.DocumentRequestTypeCode is
+    // "DRT-0002" or "DRT-0003". See GetApprovedRevisionObsoletionRequestsAsync for why this is a
+    // separate endpoint from get-effective-documents-for-revision above (that one is still used,
+    // correctly, by DocumentRequestForm to pick the target document for a NEW request).
+    [HttpPost("get-approved-revision-obsoletion-requests")]
+    public async Task<IActionResult> GetApprovedRevisionObsoletionRequests(GetDocumentDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<EffectiveDocumentDetailsDto>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetApprovedRevisionObsoletionRequestsAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    // Obsoletion distribution retrieval tracking -- see DocumentComponent.MarkDistributionRetrievedAsync.
+    [HttpPost("mark-distribution-retrieved/{distributionId}")]
+    public async Task<IActionResult> MarkDistributionRetrieved(int distributionId, [FromQuery] bool retrieved = true)
+    {
+        try
+        {
+            var (retrievedByName, retrievedAt) = await _documentComponent.MarkDistributionRetrievedAsync(distributionId, retrieved);
+            return Ok(new HttpApiResponse<object>()
+            {
+                Success = true,
+                Data = new { RetrievedByName = retrievedByName, RetrievedAt = retrievedAt },
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     //[HttpPut("update-document")]
     //public async Task<IActionResult> Update([FromForm] DocumentUpdateDto input)
     //{
