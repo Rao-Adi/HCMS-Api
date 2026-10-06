@@ -667,7 +667,8 @@ public class DMSDocumentController : Controller
     {
         try
         {
-            var request = await _documentComponent.GetByIdAsync(id);
+            // includeObsolete: a retired document is still downloadable from My Documents.
+            var request = await _documentComponent.GetByIdAsync(id, includeObsolete: true);
 
             string? filePath = null;
             string? extension = null;
@@ -721,11 +722,21 @@ public class DMSDocumentController : Controller
                     _logger.LogWarning(mergeEx, "Template merge failed for Document {DocumentId}; falling back to the raw uploaded file.", id);
                     if (filePath == null)
                     {
+                        // Say what is actually wrong. A bulk-imported document whose Excel row was
+                        // imported but whose file was never uploaded has a file name on record and
+                        // nothing on disk -- the old wording ("No content available...") read as a
+                        // system fault rather than a missing upload.
+                        var missingFileName = string.IsNullOrWhiteSpace(request.DocumentURL)
+                            ? null
+                            : Path.GetFileName(request.DocumentURL.Replace('\\', '/'));
+
                         return NotFound(new HttpApiResponse<object>()
                         {
                             Success = false,
                             Data = new { },
-                            Message = "No content available for this document to download.",
+                            Message = missingFileName != null
+                                ? $"Document file not found. The file '{missingFileName}' has not been uploaded for this document yet. Please upload it through Bulk Upload (Documents) and try again."
+                                : "Document not found. No file or content has been uploaded for this document.",
                             Code = 404
                         });
                     }

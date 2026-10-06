@@ -59,6 +59,12 @@ public sealed class AiDocumentContext
     /// <summary>True when documents were left out to fit the budget.</summary>
     public bool Truncated => TotalMatched > Documents.Count;
 
+    /// <summary>
+    /// When the question named a state and/or a document type ("pending SOP documents"), what it
+    /// asked for, in words. Null when it named neither.
+    /// </summary>
+    public string? FilterDescription { get; set; }
+
     /// <summary>Whether document text was permitted in this context at all.</summary>
     public bool ContentIncluded { get; set; }
 }

@@ -39,6 +39,26 @@ public sealed class AiDocumentContextBuilder
         "any", "all", "not", "but", "its", "kya", "hai", "ka", "ki", "ke", "batao", "dikhao",
     };
 
+    // Words in a question that name a document state, and the pattern each matches against the
+    // state's display name. "pending" is deliberately broad -- Pending Approval, Training Pending
+    // and Authorization Pending all read as pending to a person asking. "approved" is exact so it
+    // does not pull in "Pending Approval".
+    private static readonly Dictionary<string, string> StatusKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pending"] = "%pending%",
+        ["draft"] = "%draft%",
+        ["drafts"] = "%draft%",
+        ["effective"] = "effective",
+        ["approved"] = "approved",
+        ["rejected"] = "%rejected%",
+        ["obsolete"] = "%obsolete%",
+        ["obsoleted"] = "%obsolete%",
+        ["revised"] = "%revised%",
+        ["training"] = "%training%",
+        ["authorization"] = "%authoriz%",
+        ["authorisation"] = "%authoris%",
+    };
+
     private static readonly Regex TokenPattern =
         new(@"[A-Za-z0-9][A-Za-z0-9\-_/]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -98,6 +118,25 @@ public sealed class AiDocumentContextBuilder
 
         var tokens = ExtractTokens(question);
 
+        // What the question explicitly asks for, applied as filters rather than left to ranking.
+        // "Pending SOP documents" names a state and a document type; ranking alone only favoured
+        // matching documents, it did not exclude the rest, so unrelated ones (an Effective policy)
+        // were still handed to the model -- and a small model lists whatever it is handed.
+        var statusPatterns = tokens
+            .Where(t => StatusKeywords.ContainsKey(t))
+            .Select(t => StatusKeywords[t])
+            .Distinct()
+            .ToArray();
+
+        var typeNames = (await _common.QueryAsync<string>(
+                "SELECT Name FROM DocumentTypes WHERE CompanyId = @CompanyId AND IsDeleted = FALSE;",
+                new { CompanyId = companyId }))
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n.Trim().ToLowerInvariant())
+            .Where(n => tokens.Any(t => MatchesTypeName(t, n)))
+            .Distinct()
+            .ToArray();
+
         // Ranking happens in SQL so the budget is spent on the documents most likely to be the
         // subject of the question rather than on whatever happened to be created last. A document
         // number is the strongest signal a user can give ("SOP-001"), the title next, type weakest.
@@ -138,7 +177,11 @@ public sealed class AiDocumentContextBuilder
                           AND COALESCE(NULLIF(TRIM(pend.Decision), ''), NULL) IS NULL
                           AND LTRIM(RTRIM(COALESCE(pend.AssignedUserId, '')), '0') = LTRIM(RTRIM(@EmpCode), '0')
                     ) AS AwaitingYourApproval
-                FROM VW_Documents v
+                -- Vw_Documents_All, not VW_Documents: obsoleting a document sets IsActive = FALSE, which
+                -- VW_Documents hides, so the assistant answered 'could not find' for a document the
+                -- same user can open from My Documents. This scope is meant to match what they can
+                -- open (see the class summary), and My Documents now lists obsoleted documents.
+                FROM Vw_Documents_All v
                 JOIN LATERAL (
                     SELECT dsh.ToStateId
                     FROM DocumentStateHistory dsh
@@ -149,6 +192,10 @@ public sealed class AiDocumentContextBuilder
                 JOIN DocumentStates ds ON ds.Id = latest.ToStateId
                 WHERE v.CompanyId = @CompanyId
                   AND v.IsDeleted = FALSE
+                  -- Explicit asks in the question. Empty arrays mean the question named no state /
+                  -- no type, and nothing is filtered.
+                  AND (cardinality(@StatusPatterns::text[]) = 0 OR ds.Name ILIKE ANY(@StatusPatterns::text[]))
+                  AND (cardinality(@TypeNames::text[]) = 0 OR LOWER(v.DocumentType) = ANY(@TypeNames::text[]))
                   AND (
                         -- Published documents: the same set the approved-documents report shows.
                         ds.Code = 'EFFECTIVE'
@@ -200,6 +247,8 @@ public sealed class AiDocumentContextBuilder
             CompanyId = companyId,
             EmpCode = empCode,
             Tokens = tokens,
+            StatusPatterns = statusPatterns,
+            TypeNames = typeNames,
             Limit = maxDocuments + 1,
         })).ToList();
 
@@ -207,6 +256,11 @@ public sealed class AiDocumentContextBuilder
         {
             ContentIncluded = _options.AllowDocumentContent,
             TotalMatched = rows.Count,
+            // Said back to the user if nothing matched, so "no pending SOP documents" is not
+            // reported as a failure to find anything at all.
+            FilterDescription = statusPatterns.Length + typeNames.Length == 0
+                ? null
+                : string.Join(" ", tokens.Where(t => StatusKeywords.ContainsKey(t)).Concat(typeNames)) + " documents",
         };
 
         var budget = Math.Max(1_000, _options.MaxContextCharacters);
@@ -271,6 +325,18 @@ public sealed class AiDocumentContextBuilder
             _options.AllowDocumentContent ? "included" : "withheld");
 
         return context;
+    }
+
+    /// <summary>
+    /// Whether a word from the question names a document type: the type itself ("sop"), or its
+    /// plural ("sops", "policies"). Both arguments are already lower-case.
+    /// </summary>
+    private static bool MatchesTypeName(string token, string typeName)
+    {
+        if (token == typeName || token == typeName + "s" || token == typeName + "es")
+            return true;
+
+        return typeName.EndsWith('y') && token == typeName[..^1] + "ies";
     }
 
     /// <summary>

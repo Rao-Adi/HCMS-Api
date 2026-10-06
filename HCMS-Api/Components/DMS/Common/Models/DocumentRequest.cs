@@ -544,6 +544,15 @@ public class UpdateDraftRequestDto
     public string Justification { get; set; }
     public string? ProposedContent { get; set; }
 
+    // Cabinet (Division / Department / Sub-Department / Business Domain) as edited on the draft.
+    // ApplyCabinet says the caller really sent them: an empty value is a legitimate "Any" and
+    // model binding turns "" into null, so null alone cannot tell "cleared" from "not sent".
+    // Ignored for a Revision draft -- a revision stays in the cabinet of the document it revises.
+    public bool ApplyCabinet { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }
@@ -620,6 +629,16 @@ public class SubmitDocumentRequestDto
     // leave both blank to submit the draft's existing content/file unchanged.
     public string? ProposedContent { get; set; }
     public IFormFile? DraftFile { get; set; }
+
+    // Cabinet (Division / Department / Sub-Department / Business Domain) as edited on the draft.
+    // ApplyCabinet says the caller really sent them: an empty value is a legitimate "Any" and
+    // model binding turns "" into null, so null alone cannot tell "cleared" from "not sent".
+    // Ignored for a Revision draft -- a revision stays in the cabinet of the document it revises.
+    public bool ApplyCabinet { get; set; }
+    public string? DivisionCode { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? SubDepartmentCode { get; set; }
+    public string? BusinessDomainCode { get; set; }
 
     // UC-22 User Modification Allowed
     public List<DistributionListCreateDto>? DistributionList { get; set; }

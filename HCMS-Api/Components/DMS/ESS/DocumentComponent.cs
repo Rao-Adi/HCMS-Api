@@ -185,7 +185,10 @@ public class DocumentComponent
                 UserId = empCode
             }, tx);
 
-            // UC-32: Active Archival - Insert initial effective version
+            // UC-32: Active Archival - Insert initial effective version.
+            // VersionType 2 = Effective (1 is a pending draft). A legacy document is already in force,
+            // so it is issued as effective -- the same way the bulk import does it. Written as 1 it sat
+            // as an unissued draft and showed up under Draft/Reverted Documents.
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
             (
@@ -193,7 +196,7 @@ public class DocumentComponent
             )
             VALUES
             (
-                @CompanyId, @DocumentId, @Version, 1, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
+                @CompanyId, @DocumentId, @Version, 2, TRUE, FALSE, NOW(), @UserId, NOW(), @UserId
             )
             ", new
             {
@@ -204,16 +207,21 @@ public class DocumentComponent
             }, tx);
 
             //-----------------------------------------
-            // 4️⃣ Insert Draft State
+            // 4️⃣ Insert Effective State
             //-----------------------------------------
+            // A legacy upload skips the request/approval workflow: per policy it is Effective
+            // immediately (same as BulkImportDocumentMetadataAsync). It was written as DRAFT, which
+            // is why it appeared under Draft/Reverted Documents. The comment is the marker
+            // GetAllAsync (the Uploaded Documents tab) uses to still recognise it as an import.
             await _common.ExecuteAsync(@"
             INSERT INTO DocumentStateHistory
             (
-                CompanyId, DocumentId, ToStateId, ChangedBy
+                CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt
             )
             VALUES
             (
-                @CompanyId, @DocumentId, 1, @UserId
+                @CompanyId, @DocumentId, NULL, (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'),
+                @UserId, 'Legacy upload -- Effective per policy', NOW()
             )
             ", new { CompanyId, DocumentId = newId, UserId = empCode }, tx);
 
@@ -290,13 +298,20 @@ public class DocumentComponent
             // here alongside the imports.
             //
             // An imported record is inserted straight into Documents with its number and file
-            // already decided and never enters the workflow, so it has no DocumentStateHistory at
-            // all. Anything authored in the system gets a DRAFT row the moment it is created.
+            // already decided and never enters the workflow. Anything authored in the system gets a
+            // DRAFT row the moment it is created.
+            //
+            // Imports used to have no DocumentStateHistory at all; they are now written straight to
+            // EFFECTIVE (legacy upload and bulk import both), with a marker comment on that one row.
+            // So "imported" now means: no history other than that marker -- the moment a revision or
+            // obsoletion adds a real transition, it is no longer listed here, as before.
             var whereClause = @"
-                WHERE doc.IsDeleted = False 
+                WHERE doc.IsDeleted = False
                   AND NOT EXISTS (
                       SELECT 1 FROM DocumentStateHistory dsh
                       WHERE dsh.DocumentId = doc.Id AND dsh.CompanyId = doc.CompanyId
+                        AND NOT (dsh.FromStateId IS NULL
+                                 AND (dsh.Comments LIKE 'Legacy upload%' OR dsh.Comments LIKE 'Bulk imported%'))
                   )
                   AND doc.IsActive = " + (input.IsActive ? "True" : "False");
 
@@ -511,11 +526,20 @@ public class DocumentComponent
         }
     }
 
-    public async Task<DocumentReadDto> GetByIdAsync(int id)
+    // includeObsolete is opt-in: an obsoleted document is inactive (IsActive = FALSE, BL-012), so the
+    // normal lookup reports it as "Documents not found". Only callers that must still reach a
+    // retired document -- downloading it from My Documents -- pass true; everything else keeps
+    // treating it as gone. Reads Vw_Documents_All in that case (see
+    // db-changes-2026-10-06-my-documents-obsolete.sql).
+    public async Task<DocumentReadDto> GetByIdAsync(int id, bool includeObsolete = false)
     {
         try
         {
-            string query = $@"SELECT doc.* from vw_documents doc
+            string query = includeObsolete
+                ? $@"SELECT doc.* from vw_documents_all doc
+                WHERE doc.Id = {id}
+                  AND doc.IsDeleted = False"
+                : $@"SELECT doc.* from vw_documents doc
                 WHERE doc.Id = {id}
                   AND doc.IsActive = True
                   AND doc.IsDeleted = False";
@@ -2550,8 +2574,13 @@ public class DocumentComponent
             // if it was ever saved (see HtmlToOpenXmlConverter's use below).
             var currentVersion = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT Version, Content FROM DocumentVersions
-            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
-            ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+              AND ((VersionType IN (1, 2) AND IsActive = TRUE)
+                   -- An obsoleted document has no active version left: obsoletion archives its issued
+                   -- one (VersionType 3, 'Obsoleted'). Without this its download had a blank version
+                   -- and fell back to the raw file instead of the content last in force.
+                   OR ArchiveReason = 'Obsoleted')
+            ORDER BY CASE WHEN VersionType IN (1, 2) THEN 0 ELSE 1 END, VersionType DESC, CreatedAt DESC LIMIT 1;",
                 new { DocumentId = documentId, CompanyId = companyId }, transaction);
             string version = (string?)currentVersion?.version ?? "";
             string? versionHtmlContent = (string?)currentVersion?.content;
@@ -4269,7 +4298,7 @@ public class DocumentComponent
 
             if (initiatorId != string.Empty)
             {
-                var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("yyyy-MM-dd") } };
+                var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" }, { "Date", DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture) } };
                 await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentAuthorizedEffective, companyId, documentId, initiatorId, notifyPlaceholders, transaction);
             }
 
@@ -6257,6 +6286,16 @@ public class DocumentComponent
                 if (!readyForFinalAuthorization)
                     throw new CustomException($"Document cannot be authorized from its current state ('{currentStateCode}'). Training must be acknowledged (or not required) first.", 409);
 
+                // Who put this version forward, and which version it is -- read BEFORE it is promoted
+                // below, while it is still the pending draft (VersionType 1). The version's own
+                // CreatedBy is the initiator of THIS submission: for a revision that is whoever
+                // raised the revision, not the document's original author (Documents.CreatedBy).
+                var pendingVersion = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT Version, CreatedBy FROM DocumentVersions
+                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 1 AND IsActive = TRUE
+                    ORDER BY Id DESC LIMIT 1;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
                 // 1. Archive previous effective versions
                 await _common.ExecuteAsync(@"
                     UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE, ArchiveReason = 'Revised'
@@ -6291,6 +6330,36 @@ public class DocumentComponent
                 foreach (var dcaUser in dcaUsers)
                 {
                     pendingNotifications.Add((NotificationScenario.PhysicalCopyRetrievalTask, input.DocumentId, dcaUser, placeholders));
+                }
+
+                // 5. Tell the initiator their document is authorized and effective, and confirm it
+                // to the person who authorized it. Nothing sent this before: the notification
+                // existed (MakeDocumentEffectiveAsync raises it) but this endpoint -- the one the
+                // Authorization screen actually calls -- never went through that method, so neither
+                // party was told. Queued, not sent, for the same reason as the DCA task above.
+                var authorizedPlaceholders = new Dictionary<string, string>
+                {
+                    { "Doc Name", (string)docInfo?.title ?? "Document" },
+                    { "V#", Convert.ToString((object?)pendingVersion?.version) ?? "Latest" },
+                    { "Date", DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture) },
+                };
+
+                var initiatorCode = (Convert.ToString((object?)pendingVersion?.createdby)
+                                     ?? (string?)obsoletionInfo?.createdby ?? "").Trim();
+                var authorizerCode = (empCode ?? "").Trim();
+
+                var recipients = new List<string>();
+                foreach (var code in new[] { initiatorCode, authorizerCode })
+                {
+                    // Same person under different zero-padding (000100012 / 100012) is still one person.
+                    if (!string.IsNullOrWhiteSpace(code)
+                        && !recipients.Any(r => r.TrimStart('0') == code.TrimStart('0')))
+                        recipients.Add(code);
+                }
+
+                foreach (var recipient in recipients)
+                {
+                    pendingNotifications.Add((NotificationScenario.DocumentAuthorizedEffective, input.DocumentId, recipient, authorizedPlaceholders));
                 }
             }
             else if (input.Action.Equals("REJECTED", StringComparison.OrdinalIgnoreCase))
@@ -6944,6 +7013,29 @@ public class DocumentComponent
             if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
                 whereClause += " AND doc.DocumentTypeCode = @DocumentTypeCode";
 
+            // Upload Old Documents -> "Uploaded Documents": only documents that came in by legacy
+            // upload or bulk import. Those carry a marker row in DocumentStateHistory (written with
+            // no FromStateId and a 'Legacy upload' / 'Bulk imported' comment); documents imported
+            // before the marker existed have no history at all. Anything authored in the system has
+            // neither, so it stays out -- this tab used to list those too, which is what the client
+            // wanted segregated. A legacy document later revised keeps its marker, so it stays listed.
+            if (input.ImportedOnly)
+            {
+                whereClause += @"
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM DocumentStateHistory dshImp
+                          WHERE dshImp.DocumentId = doc.Id AND dshImp.CompanyId = doc.CompanyId
+                            AND dshImp.FromStateId IS NULL
+                            AND (dshImp.Comments LIKE 'Legacy upload%' OR dshImp.Comments LIKE 'Bulk imported%')
+                      )
+                      OR NOT EXISTS (
+                          SELECT 1 FROM DocumentStateHistory dshAny
+                          WHERE dshAny.DocumentId = doc.Id AND dshAny.CompanyId = doc.CompanyId
+                      )
+                  )";
+            }
+
             // 1. Keyword Search
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
@@ -7147,6 +7239,25 @@ public class DocumentComponent
         public string[] Columns { get; set; } = Array.Empty<string>();
     }
 
+    // Every cell of the import file goes through this as it is read, before anything is parsed,
+    // looked up or compared -- Excel and CSV alike. string.Trim() alone is not enough for pasted
+    // spreadsheet data: it leaves a byte-order mark and zero-width spaces (invisible, and not
+    // "whitespace" to .NET) on the ends of a value, so "Information Technology" and
+    // "Information Technology<U+200B>" looked identical on screen but failed the Division lookup.
+    // Whitespace here includes tabs, line breaks and non-breaking spaces.
+    private static string NormalizeCell(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+
+        static bool IsTrimmable(char c) =>
+            char.IsWhiteSpace(c) || c is '﻿' or '​' or '‌' or '‍' or '⁠';
+
+        int start = 0, end = value.Length;
+        while (start < end && IsTrimmable(value[start])) start++;
+        while (end > start && IsTrimmable(value[end - 1])) end--;
+        return value.Substring(start, end - start);
+    }
+
     public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile excelFile)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
@@ -7203,7 +7314,11 @@ public class DocumentComponent
                     var cols = new string[maxCol];
                     for (int col = 1; col <= maxCol; col++)
                     {
-                        var cellValue = worksheet.Cells[row, col].Text?.Trim() ?? worksheet.Cells[row, col].Value?.ToString()?.Trim() ?? "";
+                        // Text is "" (not null) for a cell whose display format hides its value, so the
+                        // old `Text?.Trim() ?? Value` never reached Value -- fall back explicitly.
+                        var cellValue = NormalizeCell(worksheet.Cells[row, col].Text);
+                        if (cellValue.Length == 0)
+                            cellValue = NormalizeCell(worksheet.Cells[row, col].Value?.ToString());
                         cols[col - 1] = cellValue;
                         if (!string.IsNullOrWhiteSpace(cellValue))
                         {
@@ -7248,7 +7363,7 @@ public class DocumentComponent
                     if (string.IsNullOrWhiteSpace(line)) continue;
 
                     var cols = System.Text.RegularExpressions.Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
-                                                                   .Select(x => x.Trim('"', ' ')).ToArray();
+                                                                   .Select(x => NormalizeCell(NormalizeCell(x).Trim('"'))).ToArray();
                     parsedRows.Add(new ParsedRow { RowNumber = rowCount, Columns = cols });
                 }
                 //LogToFile($"[BULK IMPORT] CSV parsing complete. Found {parsedRows.Count} non-empty rows.");
@@ -7306,6 +7421,27 @@ public class DocumentComponent
                 }
 
                 // --- Data Validation and Lookups ---
+
+                // The File Name column is what the separately uploaded files are matched back to a
+                // document by (BulkUploadDocumentFilesAsync compares it to the uploaded file's name),
+                // so it has to name the same document as the Document Name column. Compared with and
+                // without an extension, since the sheet may or may not include one, and a name such as
+                // "Policy v1.1" has a dot that is not an extension. A blank File Name is left alone:
+                // that is a metadata-only row, to be linked to a file later.
+                if (!string.IsNullOrWhiteSpace(expectedFileName))
+                {
+                    var fileNameBase = Path.GetFileNameWithoutExtension(expectedFileName);
+                    bool fileNameMatchesTitle =
+                        string.Equals(expectedFileName, title, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(fileNameBase, title, StringComparison.OrdinalIgnoreCase);
+
+                    if (!fileNameMatchesTitle)
+                    {
+                        results.Add($"Row {row}: Skipped. File Name '{expectedFileName}' does not match Document Name '{title}'. The file name (without its extension) must be the same as the document name.");
+                        await tx.RollbackAsync();
+                        continue;
+                    }
+                }
 
                 if (!DateTime.TryParse(nextReviewDateStr, out DateTime nextReviewDate) || nextReviewDate.Year < 2000)
                 {
@@ -9305,6 +9441,13 @@ public class GetApprovedDocumentsFilterDto : TableFiltersDto
     public string? RequestCreatedFromDate { get; set; }
     public string? RequestCreatedToDate { get; set; }
     public string? RequestCreatedBy { get; set; }
+
+    /// <summary>
+    /// True for the Upload Old Documents screen's "Uploaded Documents" tab: only documents that
+    /// came in through legacy upload / bulk import, not ones authored and approved in the system.
+    /// Everything else (View Approved Documents) leaves it false and sees both.
+    /// </summary>
+    public bool ImportedOnly { get; set; }
 }
 
 public class PendingAuthorizationCountsDto

@@ -316,6 +316,12 @@ public class DocumentRequestComponent
                     Justification = @Justification,
                     ProposedContent = @ProposedContent,  
                     DraftFileUrl = COALESCE(@DraftFileUrl, DraftFileUrl),
+                    -- The cabinet the author changed on the draft. Only when the caller sent it, and never
+                    -- for a Revision draft (ParentDocumentId set), which stays where its document is.
+                    DivisionCode = CASE WHEN @ApplyCabinet AND ParentDocumentId IS NULL THEN @DivisionCode ELSE DivisionCode END,
+                    DepartmentCode = CASE WHEN @ApplyCabinet AND ParentDocumentId IS NULL THEN @DepartmentCode ELSE DepartmentCode END,
+                    SubDepartmentCode = CASE WHEN @ApplyCabinet AND ParentDocumentId IS NULL THEN @SubDepartmentCode ELSE SubDepartmentCode END,
+                    BusinessDomainCode = CASE WHEN @ApplyCabinet AND ParentDocumentId IS NULL THEN @BusinessDomainCode ELSE BusinessDomainCode END,
                     LastModifiedAt = NOW(),
                     LastModifiedBy = @LastModifiedBy
                 WHERE Id = @RequestId
@@ -330,6 +336,11 @@ public class DocumentRequestComponent
                 dto.Justification,
                 dto.ProposedContent,
                 DraftFileUrl = draftFileUrl,
+                dto.ApplyCabinet,
+                DivisionCode = string.IsNullOrWhiteSpace(dto.DivisionCode) ? null : dto.DivisionCode.Trim(),
+                DepartmentCode = string.IsNullOrWhiteSpace(dto.DepartmentCode) ? null : dto.DepartmentCode.Trim(),
+                SubDepartmentCode = string.IsNullOrWhiteSpace(dto.SubDepartmentCode) ? null : dto.SubDepartmentCode.Trim(),
+                BusinessDomainCode = string.IsNullOrWhiteSpace(dto.BusinessDomainCode) ? null : dto.BusinessDomainCode.Trim(),
                 LastModifiedBy = empCode,
                 DraftStatus = DocumentRequestStatus.Draft
             },
@@ -1027,16 +1038,39 @@ public class DocumentRequestComponent
             // into the new resubmission row, destroying the audit trail of what was reverted.
 
             // UC-22 Validation: Ensure content has been altered for a Revision
-            // Assuming 'Revision' or 'REV' is the code for revision requests. Adjust as per your actual codes.
-            if (request.documentrequesttypecode == "Revision" && request.documentid != null)
+            // A Revision draft (saved with the Draft button on the Revision form) arrives here when it
+            // is submitted from the Draft/Reverted list. It is recognised by its request type and the
+            // document it revises (ParentDocumentId) -- the old test compared the type against the
+            // literal "Revision" and looked at DocumentId, neither of which a revision draft has (the
+            // type is a lookup code, DRT-0002, and DocumentId is only set once the request is approved),
+            // so the check below never ran for one.
+            bool isRevisionDraft =
+                string.Equals((string?)request.documentrequesttypecode, "DRT-0002", StringComparison.OrdinalIgnoreCase)
+                && request.parentdocumentid != null;
+
+            if (isRevisionDraft)
             {
+                // A draft can sit for days. If the document it revises was obsoleted (or removed) in the
+                // meantime there is nothing left to revise, and submitting would send approvers a request
+                // against a retired document.
+                var parentStillActive = await _common.ExecuteScalarAsync<bool>(@"
+                    SELECT EXISTS (
+                        SELECT 1 FROM Documents
+                        WHERE Id = @DocumentId AND CompanyId = @CompanyId
+                          AND IsActive = TRUE AND IsDeleted = FALSE);",
+                    new { DocumentId = request.parentdocumentid, CompanyId }, tx);
+
+                if (!parentStillActive)
+                    throw new CustomException(
+                        "The document this revision is for is no longer active, so the draft cannot be submitted.", 409);
+
                 var originalDoc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                     SELECT d.DocumentURL, dv.Content
                     FROM Documents d
                     LEFT JOIN DocumentVersions dv ON d.Id = dv.DocumentId AND dv.IsActive = TRUE
                     WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
                     ORDER BY dv.CreatedAt DESC LIMIT 1;",
-                    new { DocumentId = request.documentid, CompanyId }, tx);
+                    new { DocumentId = request.parentdocumentid, CompanyId }, tx);
 
                 if (originalDoc != null)
                 {
@@ -1065,6 +1099,38 @@ public class DocumentRequestComponent
             // on RequestId, so the request carries its full chronological history, and each
             // attempt still gets its own WorkflowExecutions row with its own steps and decisions.
             //-------------------------------------------------
+
+            // The cabinet the author chose on the draft, when submitting without a separate Update
+            // first. Applied before the approval policy is resolved below, because the policy is
+            // chosen by cabinet. Never for a Revision draft, which stays in its document's cabinet.
+            string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+            string? cabDivision = Convert.ToString(request.divisioncode);
+            string? cabDepartment = Convert.ToString(request.departmentcode);
+            string? cabSubDepartment = Convert.ToString(request.subdepartmentcode);
+            string? cabBusinessDomain = Convert.ToString(request.businessdomaincode);
+
+            if (input.ApplyCabinet && !isRevisionDraft)
+            {
+                cabDivision = Clean(input.DivisionCode);
+                cabDepartment = Clean(input.DepartmentCode);
+                cabSubDepartment = Clean(input.SubDepartmentCode);
+                cabBusinessDomain = Clean(input.BusinessDomainCode);
+
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentRequests
+                    SET DivisionCode = @DivisionCode, DepartmentCode = @DepartmentCode,
+                        SubDepartmentCode = @SubDepartmentCode, BusinessDomainCode = @BusinessDomainCode
+                    WHERE Id = @RequestId AND CompanyId = @CompanyId;",
+                    new
+                    {
+                        input.RequestId,
+                        CompanyId,
+                        DivisionCode = cabDivision,
+                        DepartmentCode = cabDepartment,
+                        SubDepartmentCode = cabSubDepartment,
+                        BusinessDomainCode = cabBusinessDomain
+                    }, tx);
+            }
 
             bool wasReworked = await _common.ExecuteScalarAsync<bool>(@"
                 SELECT EXISTS(
@@ -1162,11 +1228,11 @@ public class DocumentRequestComponent
 
             string Normalize(string? v) => string.IsNullOrWhiteSpace(v) || v == "0" || v.ToLower() == "null" ? "" : v.Trim();
 
-            var policyId = await _common.ExecuteScalarAsync<long?>(@"
+            async Task<long?> ResolvePolicyIdAsync(string entityType) => await _common.ExecuteScalarAsync<long?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
-                AND EntityType = 'Request'
+                AND EntityType = @EntityType
                 AND DocumentTypeCode = @DocType
                 -- A level either matches the document exactly, or is left unscoped on the
                 -- policy, which reads as 'applies to everything under this'. That is what lets
@@ -1187,12 +1253,21 @@ public class DocumentRequestComponent
             new
             {
                 CompanyId,
+                EntityType = entityType,
                 DocType = request.documenttypecode,
-                DivisionCode = Normalize(Convert.ToString(request.divisioncode)),
-                DepartmentCode = Normalize(Convert.ToString(request.departmentcode)),
-                SubDepartmentCode = Normalize(Convert.ToString(request.subdepartmentcode)),
-                BusinessDomainCode = Normalize(Convert.ToString(request.businessdomaincode))
+                DivisionCode = Normalize(cabDivision),
+                DepartmentCode = Normalize(cabDepartment),
+                SubDepartmentCode = Normalize(cabSubDepartment),
+                BusinessDomainCode = Normalize(cabBusinessDomain)
             }, tx);
+
+            // A Revision draft prefers a Revision-specific policy and falls back to the standard
+            // Request one -- the same order the one-shot revision path
+            // (CreateAndSubmitRevisionDocumentRequestAsync) uses, so a revision routes to the same
+            // approvers whether it was submitted directly or saved as a draft first.
+            var policyId = isRevisionDraft
+                ? (await ResolvePolicyIdAsync("Revision") ?? await ResolvePolicyIdAsync("Request"))
+                : await ResolvePolicyIdAsync("Request");
 
             if (policyId == null)
                 throw new Exception("No workflow policy defined for selected Cabinet Scope.");
@@ -2747,9 +2822,16 @@ public class DocumentRequestComponent
             // 1️⃣ Get Draft Requests
             //-------------------------------------------------
 
+            // The document a Revision draft is against, so the list can say "Revision of IT-II-SOP-002"
+            // instead of showing it as indistinguishable from a new-document draft. Aliased, and joined
+            // from the raw table, rather than assuming the view carries ParentDocumentId.
             var dataSql = $@"SELECT dr.*,
-                CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN TRUE ELSE FALSE END AS isreworked
+                CASE WHEN EXISTS(SELECT 1 FROM WorkflowExecutions we WHERE we.EntityId = dr.Id AND we.EntityType = 'Request') THEN TRUE ELSE FALSE END AS isreworked,
+                rawdr.ParentDocumentId AS draftparentdocumentid,
+                pdoc.DocumentNumber AS targetdocumentnumber
                 FROM Vw_DocumentRequests dr
+                LEFT JOIN DocumentRequests rawdr ON rawdr.Id = dr.Id AND rawdr.CompanyId = dr.CompanyId
+                LEFT JOIN Documents pdoc ON pdoc.Id = rawdr.ParentDocumentId AND pdoc.CompanyId = rawdr.CompanyId
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
@@ -2793,6 +2875,8 @@ public class DocumentRequestComponent
                     Status = GetValue<int>(dict, "status"),
                     IsReworked = GetValue<bool>(dict, "isreworked"),
                     RowVersion = GetValue<string>(dict, "rowversion"),
+                    ParentDocumentId = GetValue<int?>(dict, "draftparentdocumentid"),
+                    TargetDocumentNumber = GetValue<string>(dict, "targetdocumentnumber"),
                     ProposedContent = GetValue<string>(dict, "proposedcontent"),
                     DraftFileUrl = GetValue<string>(dict, "draftfileurl"),
                     IsContentFinalized = GetValue<bool>(dict, "iscontentfinalized"),

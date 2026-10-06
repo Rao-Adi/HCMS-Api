@@ -92,8 +92,10 @@ public sealed class AiAssistantService
             // Not a failure. The user asked about something that is not in the set of documents
             // they can see, and saying so plainly is the correct answer.
             return new AssistantAnswer(
-                "I could not find any document you have access to that matches that question. "
-                + "Try the document number, or part of its title.",
+                context.FilterDescription is null
+                    ? "I could not find any document you have access to that matches that question. "
+                      + "Try the document number, or part of its title."
+                    : $"There are no {context.FilterDescription} among the documents you have access to.",
                 Array.Empty<AnswerSource>(),
                 null);
         }
@@ -145,7 +147,7 @@ public sealed class AiAssistantService
             sources.Count, context.Documents.Count, completion.PromptTokens,
             completion.CompletionTokens, completion.ReasoningTokens);
 
-        return new AssistantAnswer(answer, sources, BuildNotice(context));
+        return new AssistantAnswer(answer, sources, BuildNotice(context, text));
     }
 
     /// <summary>
@@ -182,6 +184,11 @@ public sealed class AiAssistantService
             // question about the asker's own inbox gets answered from everyone else's queue too.
             if (d.AwaitingYourApproval)
                 sb.Append("  Awaiting THIS user's approval: yes (it is in their approvals inbox now)\n");
+            else if (d.Status.Contains("Pending", StringComparison.OrdinalIgnoreCase))
+                // The other half of the line above. Without it a pending document carries nothing
+                // to say it is NOT the asker's, and a small model reads "pending" as "yours" -- the
+                // reply called documents "awaiting your approval" that sat in someone else's queue.
+                sb.Append("  Awaiting THIS user's approval: no (it is pending with someone else, or at another stage)\n");
 
             sb.Append("  Created by ").Append(Or(d.CreatedBy))
               .Append(" on ").Append(d.CreatedAt?.ToString("yyyy-MM-dd") ?? "unknown")
@@ -244,18 +251,27 @@ public sealed class AiAssistantService
         }
     }
 
+    private static readonly System.Text.RegularExpressions.Regex ContentQuestion = new(
+        @"(content|contents|text|says?|said|states?|mentionw*|contains?|containing|describw*|summarw*|procedure|steps?|section|clause|paragraph|wording|written|explainw*)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static bool AsksAboutContent(string question) => ContentQuestion.IsMatch(question ?? "");
+
     /// <summary>
     /// What the answer could not take into account. Shown beside the answer rather than folded
     /// into it, so a limit of the system is never phrased as a fact about the documents.
     /// </summary>
-    private string? BuildNotice(AiDocumentContext context)
+    private string? BuildNotice(AiDocumentContext context, string question)
     {
         var parts = new List<string>();
 
         if (context.Truncated)
             parts.Add($"Only the {context.Documents.Count} most relevant documents were considered.");
 
-        if (!context.ContentIncluded)
+        // Only when the question is about what a document SAYS. Shown under every answer it was
+        // noise on a plain "when is this due for review?", which is answered from document details
+        // and is not affected by content being withheld at all.
+        if (!context.ContentIncluded && AsksAboutContent(question))
             parts.Add("Document content is not available to the assistant; answers use document details only.");
 
         return parts.Count == 0 ? null : string.Join(" ", parts);

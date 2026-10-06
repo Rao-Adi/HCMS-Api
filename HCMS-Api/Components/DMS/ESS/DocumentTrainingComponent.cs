@@ -5,6 +5,7 @@ using HCMS_Api.Components.DMS.Common;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
+using HCMS_Api.Components.DMS.Common.Models.Enums;
 using System.Data;
 
 namespace HCMS_Api.Components.DMS.ESS;
@@ -20,6 +21,8 @@ public class DocumentTrainingComponent
     //private readonly ILogger<UtilitiesController> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly ILogger<DocumentTrainingComponent> _logger;
     public DocumentTrainingComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -28,9 +31,13 @@ public class DocumentTrainingComponent
         , IDMSDapperDataService dapper
         //, ILogger<UtilitiesController> logger
         , IHttpContextAccessor http,
-        DMSCommon common
+        DMSCommon common,
+        IServiceScopeFactory serviceScopeFactory,
+        ILogger<DocumentTrainingComponent> logger
         )
     {
+        _serviceScopeFactory = serviceScopeFactory;
+        _logger = logger;
         _http = http;
         //_logger = logger;
         _utilities = utilities;
@@ -532,6 +539,27 @@ public class DocumentTrainingComponent
         }
     }
 
+    /// <summary>
+    /// Fire-and-forget, in its own DI scope: this request's scoped services are disposed once the
+    /// response is sent, and an SMTP send can take far longer than the user should wait. A failure
+    /// here is logged and never surfaces -- the document has already moved on.
+    /// </summary>
+    private async Task NotifySentForAuthorizationAsync(int companyId, int documentId, string initiator, string docName, string version)
+    {
+        try
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var notifications = scope.ServiceProvider.GetRequiredService<NotificationComponent>();
+            await notifications.TriggerNotificationAsync(
+                NotificationScenario.TrainingProofSubmitted, companyId, documentId, initiator,
+                new Dictionary<string, string> { { "Doc Name", docName }, { "V#", version } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not notify {Initiator} that document {DocumentId} was sent for authorization.", initiator, documentId);
+        }
+    }
+
     public async Task<bool> AcknowledgeAndSendForAuthorizationAsync(int documentId)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
@@ -606,9 +634,37 @@ public class DocumentTrainingComponent
 
             await _common.ExecuteAsync(stateQuery, new { DocumentId = documentId, CompanyId = CompanyId, UserId = empCode }, tx);
 
+            // Read inside the transaction (a cheap SELECT), sent after it commits -- a notification is
+            // a SignalR push plus an SMTP send, and must never hold this transaction's locks open.
+            // The initiator of THIS submission is the pending version's creator (for a revision that
+            // is whoever raised it, not the document's original author).
+            var submission = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT d.Title,
+                       COALESCE(NULLIF(TRIM(pv.CreatedBy), ''), d.CreatedBy) AS Initiator,
+                       pv.Version
+                FROM Documents d
+                LEFT JOIN LATERAL (
+                    SELECT Version, CreatedBy FROM DocumentVersions
+                    WHERE DocumentId = d.Id AND CompanyId = d.CompanyId AND VersionType = 1 AND IsActive = TRUE
+                    ORDER BY Id DESC LIMIT 1
+                ) pv ON TRUE
+                WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId;",
+                new { DocumentId = documentId, CompanyId }, tx);
+
             // TODO: Add notification logic here to inform the final authorizer(s) that a document is ready for their action.
 
             await tx.CommitAsync();
+
+            // Tell the initiator their document has been sent for authorization.
+            var initiator = ((string?)submission?.initiator)?.Trim();
+            if (!string.IsNullOrWhiteSpace(initiator))
+            {
+                _ = NotifySentForAuthorizationAsync(
+                    CompanyId, documentId, initiator!,
+                    (string?)submission?.title ?? "Document",
+                    (string?)submission?.version ?? "Latest");
+            }
+
             return true;
         }
         catch
