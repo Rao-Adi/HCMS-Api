@@ -149,6 +149,14 @@ public class NotificationComponent
                 "Request",
                 "/documents/my-approvals-request?tab=Pending"
             ),
+            // Sent to the initiator only when the last approver has approved -- unlike
+            // RequestApprovedForwarded above, which tells the next approver it is their turn.
+            NotificationScenario.RequestApproved => (
+                "DMS – Request Approved",
+                $"Your request (Request ID: {Get("ID")}) has been approved by {Get("Approver")}.",
+                "Request",
+                "/documents/my-approvals-request?tab=Approved"
+            ),
             NotificationScenario.RequestRejected => (
                 "DMS – Request Rejected",
                 $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
@@ -178,6 +186,14 @@ public class NotificationComponent
                 $"Document {Get("Doc Name")} has been approved and requires your action/authorization.",
                 "Document",
                 "/documents/my-approvals-documents?tab=Pending"
+            ),
+            // Sent to the initiator only when the last approver has approved -- unlike
+            // DocumentApprovedForwarded above, which tells the next approver it is their turn.
+            NotificationScenario.DocumentApproved => (
+                "DMS – Document Approved",
+                $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been approved by {Get("Approver")}.",
+                "Document",
+                "/documents/my-approvals-documents?tab=Approved"
             ),
             NotificationScenario.DocumentRejected => (
                 "DMS – Document Rejected",

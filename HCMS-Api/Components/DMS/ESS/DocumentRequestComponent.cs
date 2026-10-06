@@ -3138,6 +3138,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
 
             List<string> nextStepApprovers = new List<string>();
+            bool workflowCompleted = false;
             if (pending == 1) // YOU were the final approver
             {
                 //-------------------------------------------------
@@ -3244,6 +3245,7 @@ public class DocumentRequestComponent
                         empCode,
                         tx);
 
+                    workflowCompleted = true;
                 }
             }
 
@@ -3254,9 +3256,12 @@ public class DocumentRequestComponent
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, approver, notifyPlaceholders, tx);
                 }
             }
-            else if (requestInfo != null && !string.IsNullOrEmpty(initiatorId))
+            else if (workflowCompleted && requestInfo != null && !string.IsNullOrEmpty(initiatorId))
             {
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApprovedForwarded, CompanyId, (int)requestInfo.id, initiatorId, notifyPlaceholders, tx);
+                // Last approver has approved -- tell the initiator. This branch used to fire for any
+                // approval with no next-step approvers (including a non-final approver in a parallel
+                // step) and reused the "requires your action" wording meant for the next approver.
+                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestApproved, CompanyId, (int)requestInfo.id, initiatorId, notifyPlaceholders, tx);
             }
 
             if (requestInfo != null)
@@ -3323,7 +3328,7 @@ public class DocumentRequestComponent
                 LEFT JOIN SubDepartments subd ON drd.SubDepartmentCode = subd.Code
                 LEFT JOIN BusinessDomains bd ON drd.BusinessDomainCode = bd.Code
                 LEFT JOIN Companies c ON drd.CompanyId = c.Id
-                LEFT JOIN Roles r ON drd.RoleId = r.Id 
+                LEFT JOIN tblsetupsdetail r ON drd.RoleId = r.sdlid AND r.CompanyId = drd.CompanyId
                 LEFT JOIN DistributionTypes dt ON drd.DistributionType = dt.Id
                 WHERE drd.DocumentId = @DocumentId AND drd.CompanyId = @CompanyId;";
 

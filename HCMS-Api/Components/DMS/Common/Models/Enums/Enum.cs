@@ -150,6 +150,8 @@ public enum NotificationScenario
     DocumentObsoleted = 14,
     PhysicalCopyRetrievalTask = 15,
     NewUserAccountCreated = 16,
-    TransferRequestApproval = 17
+    TransferRequestApproval = 17,
+    RequestApproved = 18,
+    DocumentApproved = 19
 }
 #endregion Notifications

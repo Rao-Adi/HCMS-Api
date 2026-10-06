@@ -2618,7 +2618,7 @@ public class DocumentComponent
             // which one, so it prints the proposal until the real number exists.
             { "DocumentNumber", documentNumberForDisplay },
             { "Version", version },
-            { "EffectiveDate", effectiveDate.HasValue ? FormatMergeDate(effectiveDate.Value) : "N/A" },
+            { "EffectiveDate", effectiveDate.HasValue ? DateOnly.FromDateTime(effectiveDate.Value).ToString(MergeDateFormat, CultureInfo.InvariantCulture) : "N/A" },
             { "ReviewDate", reviewDate },
             { "Supersede", string.IsNullOrWhiteSpace(supersede) ? "N/A" : supersede }
         };
@@ -4006,12 +4006,15 @@ public class DocumentComponent
 
             // Fetch document info for notifications
             var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-                SELECT d.Title, dv.Version
+                SELECT d.Title, dv.Version, d.CreatedBy
                 FROM Documents d
                 LEFT JOIN DocumentVersions dv ON dv.DocumentId = d.Id
                 WHERE d.Id = @DocumentId
                 ORDER BY dv.CreatedAt DESC LIMIT 1;", new { DocumentId = input.DocumentId }, transaction);
             var notifyPlaceholders = new Dictionary<string, string> { { "Doc Name", Convert.ToString(docInfo?.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo?.version) ?? "1.0" } };
+
+            var approverDetail = await _peoplePartnersComponent.GetEmployeeByEmpIdAsync(input.EmpId);
+            string approverName = (approverDetail?.firstname + " " + approverDetail?.midname + " " + approverDetail?.lastname).Replace("  ", " ").Trim();
 
             //-------------------------------------------------
             // 2️⃣ Approve Current Step
@@ -4107,6 +4110,21 @@ public class DocumentComponent
                 foreach (var approver in nextStepApprovers)
                 {
                     await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApprovedForwarded, CompanyId, input.DocumentId, approver, notifyPlaceholders, transaction);
+                }
+            }
+            else if (nextStep == null && docInfo?.createdby != null)
+            {
+                // Last approver has approved -- tell the initiator. An Obsoletion already sends its
+                // own DocumentObsoleted notification to the initiator (CompleteObsoletionAsync).
+                var executionActivity = await _common.ExecuteScalarAsync<string>(@"
+                    SELECT ActivityTypeCode FROM WorkflowExecutions
+                    WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+                    new { input.ExecutionId, CompanyId }, transaction);
+
+                if (!string.Equals(executionActivity, "DRT-0003", StringComparison.OrdinalIgnoreCase))
+                {
+                    notifyPlaceholders["Approver"] = approverName;
+                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentApproved, CompanyId, input.DocumentId, (string)docInfo.createdby, notifyPlaceholders, transaction);
                 }
             }
 
@@ -5201,6 +5219,7 @@ public class DocumentComponent
             SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
                    dl.DistributionType AS DistributionTypeId,
                    dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                   r.Name AS Role,
                    div.Name AS Division,
                    dep.Name AS Department,
                    subd.Name AS SubDepartment,
@@ -5212,7 +5231,7 @@ public class DocumentComponent
                     LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
                     LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                     LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                    LEFT JOIN Roles r ON dl.RoleId = r.Id
+                    LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
 		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
             WHERE dl.CompanyId = @CompanyId
             AND dl.DocumentId = ANY(@DocumentIds);",
@@ -5467,6 +5486,7 @@ public class DocumentComponent
                 SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
                        dl.DistributionType AS DistributionTypeId,
                        dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                       r.Name AS Role,
                        dl.IsRetrieved, dl.RetrievedAt,
                        -- RetrievedBy is an employee CODE (DocumentComponent.MarkDistributionRetrievedAsync
                        -- writes it from GetEmpCodeForHCMS, same as every other *By column in this
@@ -5488,7 +5508,7 @@ public class DocumentComponent
                         LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                        LEFT JOIN Roles r ON dl.RoleId = r.Id
+                        LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
 		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
                         LEFT JOIN public.tblEmployee rbemp ON LTRIM(RTRIM(rbemp.empcode::text), '0') = LTRIM(RTRIM(dl.RetrievedBy::text), '0')
                 WHERE dl.CompanyId = @CompanyId
@@ -6884,6 +6904,33 @@ public class DocumentComponent
                               WHERE dsh2.DocumentId = doc.Id AND ds2.Code = 'EFFECTIVE'
                           )
                       )
+                      -- A Revision runs on this same document (OpenRevisionDraftVersionAsync), so while
+                      -- it is out for approval, rejected, or sent back for rework its latest state is
+                      -- PENDING_APPROVAL / REJECTED / DRAFT -- none of which matched above, and the
+                      -- document vanished from this report mid-revision. Its previous effective version
+                      -- stays in force until MakeDocumentEffectiveAsync swaps it, so it stays listed:
+                      -- anything that has been EFFECTIVE and still has an active effective version,
+                      -- until it is actually obsoleted.
+                      OR (
+                          (
+                              SELECT ds.Code
+                              FROM DocumentStateHistory dsh
+                              JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                              WHERE dsh.DocumentId = doc.Id
+                              ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                          ) NOT IN ('OBSOLETE', 'OBSOLETED')
+                          AND EXISTS (
+                              SELECT 1
+                              FROM DocumentStateHistory dsh3
+                              JOIN DocumentStates ds3 ON ds3.Id = dsh3.ToStateId
+                              WHERE dsh3.DocumentId = doc.Id AND ds3.Code = 'EFFECTIVE'
+                          )
+                          AND EXISTS (
+                              SELECT 1 FROM DocumentVersions dvEff
+                              WHERE dvEff.DocumentId = doc.Id AND dvEff.CompanyId = doc.CompanyId
+                                AND dvEff.VersionType = 2 AND dvEff.IsActive = TRUE
+                          )
+                      )
                   )";
 
             if (!string.IsNullOrWhiteSpace(input.DivisionCode))
@@ -7769,7 +7816,10 @@ public class DocumentComponent
                         NULLIF(LTRIM(RTRIM(COALESCE(prevemp.firstname, '') || ' ' || COALESCE(prevemp.midname, '') || ' ' || COALESCE(prevemp.lastname, ''))), ''),
                         prevver.CreatedBy
                     )::character varying AS PreviousVersionCreatedBy
-                FROM Vw_Documents doc
+                -- Vw_Documents_All, not Vw_Documents: obsoleting a document sets IsActive = FALSE, which
+                -- Vw_Documents hides, so an obsoleted document used to vanish from this tab. The client
+                -- wants it listed here (see db-changes-2026-10-06-my-documents-obsolete.sql).
+                FROM Vw_Documents_All doc
                 -- The version before this one -- what this record supersedes. Same rule as every other
                 -- grid that shows these two columns: order the document's versions by number and take
                 -- the second, so it reads the same before and after the successor is authorised.
@@ -7829,7 +7879,7 @@ public class DocumentComponent
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";
 
-            var countSql = $@"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents doc {whereClause};";
+            var countSql = $@"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents_All doc {whereClause};";
 
             var queryParams = new
             {
@@ -7870,7 +7920,7 @@ public class DocumentComponent
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-            var countSql = @"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents doc
+            var countSql = @"SELECT COUNT(DISTINCT doc.Id) FROM Vw_Documents_All doc
                 WHERE doc.CompanyId = @CompanyId
                 AND doc.CreatedBy = @CreatedBy
                 AND doc.IsDeleted = FALSE
@@ -8754,6 +8804,19 @@ public class DocumentComponent
                         AND we.StartedAt >= dr.LastModifiedAt
                   )";
 
+            // The Document Type / cabinet filters on Create or Update Document. This query ignored
+            // them, so picking a type left the grid listing every approved request.
+            if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+                whereClause += " AND d.DocumentTypeCode = @DocumentTypeCode";
+            if (!string.IsNullOrWhiteSpace(input.DivisionCode))
+                whereClause += " AND d.DivisionCode = @DivisionCode";
+            if (!string.IsNullOrWhiteSpace(input.DepartmentCode))
+                whereClause += " AND d.DepartmentCode = @DepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode))
+                whereClause += " AND d.SubDepartmentCode = @SubDepartmentCode";
+            if (!string.IsNullOrWhiteSpace(input.BusinessDomainCode))
+                whereClause += " AND d.BusinessDomainCode = @BusinessDomainCode";
+
             if (!string.IsNullOrWhiteSpace(input.SearchText))
             {
                 var search = input.SearchText.Replace("'", "''").ToUpper();
@@ -8863,7 +8926,12 @@ public class DocumentComponent
             var queryParams = new
             {
                 CompanyId,
-                DocumentRequestTypeCode = input.DocumentRequestTypeCode
+                DocumentRequestTypeCode = input.DocumentRequestTypeCode,
+                input.DocumentTypeCode,
+                input.DivisionCode,
+                input.DepartmentCode,
+                input.SubDepartmentCode,
+                input.BusinessDomainCode
             };
 
             return await HydrateEffectiveDocumentDetailsResultAsync(dataSql, countSql, queryParams, CompanyId);
@@ -8968,6 +9036,7 @@ public class DocumentComponent
                 SELECT dl.Id, dl.CompanyId, dl.DocumentId AS DocumentRequestId, dl.RoleId,
                        dl.DistributionType AS DistributionTypeId,
                        dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                       r.Name AS Role,
                        dl.IsRetrieved, dl.RetrievedAt,
                        -- RetrievedBy is an employee CODE (DocumentComponent.MarkDistributionRetrievedAsync
                        -- writes it from GetEmpCodeForHCMS, same as every other *By column in this
@@ -8989,7 +9058,7 @@ public class DocumentComponent
                         LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
-                        LEFT JOIN Roles r ON dl.RoleId = r.Id
+                        LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
 		                LEFT JOIN DistributionTypes dt ON dl.DistributionType = dt.Id
                         LEFT JOIN public.tblEmployee rbemp ON LTRIM(RTRIM(rbemp.empcode::text), '0') = LTRIM(RTRIM(dl.RetrievedBy::text), '0')
                 WHERE dl.CompanyId = @CompanyId
@@ -9118,7 +9187,8 @@ public class DocumentComponent
                         @EmpCode)
                      FROM tblEmployee e WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0'))
                  ELSE NULL END) AS RetrievedByName,
-                RetrievedAt;");
+                RetrievedAt;",
+            new { DistributionId = distributionId, Retrieved = retrieved, EmpCode = empCode, CompanyId });
 
         return (row?.retrievedbyname, row?.retrievedat);
     }
