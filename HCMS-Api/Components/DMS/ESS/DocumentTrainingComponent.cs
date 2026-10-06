@@ -636,13 +636,22 @@ public class DocumentTrainingComponent
 
             // Read inside the transaction (a cheap SELECT), sent after it commits -- a notification is
             // a SignalR push plus an SMTP send, and must never hold this transaction's locks open.
-            // The initiator of THIS submission is the pending version's creator (for a revision that
-            // is whoever raised it, not the document's original author).
+            // The initiator of THIS submission is whoever raised the Request behind it. The pending
+            // version's CreatedBy is NOT reliable for that: a revision's draft version is opened when
+            // the Request is approved, so it carries the APPROVER's code -- the "sent for
+            // authorization" notice then went to the approver instead of the initiator.
             var submission = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT d.Title,
-                       COALESCE(NULLIF(TRIM(pv.CreatedBy), ''), d.CreatedBy) AS Initiator,
+                       COALESCE(NULLIF(TRIM(rq.CreatedBy), ''), NULLIF(TRIM(pv.CreatedBy), ''), d.CreatedBy) AS Initiator,
                        pv.Version
                 FROM Documents d
+                LEFT JOIN LATERAL (
+                    SELECT r.CreatedBy FROM DocumentRequests r
+                    WHERE r.CompanyId = d.CompanyId
+                      AND (r.ParentDocumentId = d.Id OR r.Id = d.RequestId)
+                    ORDER BY CASE WHEN r.ParentDocumentId = d.Id THEN 0 ELSE 1 END, r.Id DESC
+                    LIMIT 1
+                ) rq ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT Version, CreatedBy FROM DocumentVersions
                     WHERE DocumentId = d.Id AND CompanyId = d.CompanyId AND VersionType = 1 AND IsActive = TRUE

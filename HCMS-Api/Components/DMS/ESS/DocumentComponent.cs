@@ -6344,7 +6344,20 @@ public class DocumentComponent
                     { "Date", DateTime.Now.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture) },
                 };
 
-                var initiatorCode = (Convert.ToString((object?)pendingVersion?.createdby)
+                // The initiator is whoever raised the Request behind this submission. The pending
+                // version's CreatedBy is the APPROVER for a revision (its draft version is opened when
+                // the Request is approved), which is how the initiator was missed.
+                var requestInitiator = await _common.ExecuteScalarAsync<string>(@"
+                    SELECT r.CreatedBy FROM DocumentRequests r
+                    JOIN Documents d ON d.Id = @DocumentId AND d.CompanyId = r.CompanyId
+                    WHERE r.CompanyId = @CompanyId
+                      AND (r.ParentDocumentId = d.Id OR r.Id = d.RequestId)
+                    ORDER BY CASE WHEN r.ParentDocumentId = d.Id THEN 0 ELSE 1 END, r.Id DESC
+                    LIMIT 1;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                var initiatorCode = (requestInitiator
+                                     ?? Convert.ToString((object?)pendingVersion?.createdby)
                                      ?? (string?)obsoletionInfo?.createdby ?? "").Trim();
                 var authorizerCode = (empCode ?? "").Trim();
 
@@ -8168,6 +8181,10 @@ public class DocumentComponent
 
             var dataSql = $@"
                 SELECT doc.*,
+                    -- DRT-0001/0002/0003: lets the draft screen word its success toast
+                    -- (Created / Revised / Obsoleted). Not exposed by Vw_Documents.
+                    (SELECT rawd.ActivityTypeCode FROM Documents rawd
+                     WHERE rawd.Id = doc.Id AND rawd.CompanyId = doc.CompanyId) AS ActivityTypeCode,
                     (SELECT ds.Name
                      FROM DocumentStateHistory dsh
                      JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
@@ -8245,6 +8262,7 @@ public class DocumentComponent
                     DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
                     DocumentName = GetValue<string>(dict, "title"),
                     Justification = GetValue<string>(dict, "justification"),
+                    ActivityTypeCode = GetValue<string>(dict, "activitytypecode"),
                     Division = GetValue<string>(dict, "division"),
                     DivisionCode = GetValue<string>(dict, "divisioncode"),
                     Department = GetValue<string>(dict, "department"),

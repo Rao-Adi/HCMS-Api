@@ -617,6 +617,7 @@ public class DraftDocumentDto : EffectiveDocumentDetailsDto
     public string? Justification { get; set; }
     public string? CurrentStatus { get; set; }
     public bool IsReworked { get; set; }
+    public string? ActivityTypeCode { get; set; }
 }
 
 public class SubmitDocumentRequestDto
