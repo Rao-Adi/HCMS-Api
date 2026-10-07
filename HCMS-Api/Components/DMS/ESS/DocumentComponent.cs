@@ -2553,7 +2553,14 @@ public class DocumentComponent
     // the user last reviewed/edited there -- the uploaded file might no longer match if they
     // edited the preview. contentStream is the fallback, for documents saved before this HTML
     // content existed, or if HTML conversion ever comes back empty.
-    public async Task<byte[]> MergeDocumentTemplateAsync(int documentId, Stream? contentStream, IDbTransaction transaction = null)
+    // useWorkingVersion: the caller is an approver / authorizer / author working on the version
+    // that is still being prepared (a Draft, VersionType 1) rather than someone reading what is in
+    // force. For a document under revision that is the difference between v2.0 and the Effective
+    // v1.0 -- without it the download showed the OLD version number, content and approval history
+    // to the very person being asked to approve the new one. Everything else (My Documents, View
+    // Documents, reports) keeps showing the version in force.
+    public async Task<byte[]> MergeDocumentTemplateAsync(
+        int documentId, Stream? contentStream, IDbTransaction transaction = null, bool useWorkingVersion = false)
     {
         try
         {
@@ -2580,8 +2587,19 @@ public class DocumentComponent
             // version for a document that hasn't gone Effective yet instead of a blank field.
             // Content comes from the same row -- the rich-text editor's HTML for this version,
             // if it was ever saved (see HtmlToOpenXmlConverter's use below).
-            var currentVersion = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
-            SELECT Version, Content FROM DocumentVersions
+            dynamic? currentVersion = null;
+            if (useWorkingVersion)
+            {
+                currentVersion = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT Id, Version, Content, CreatedAt FROM DocumentVersions
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+                  AND VersionType = 1 AND IsActive = TRUE AND COALESCE(IsDeleted, FALSE) = FALSE
+                ORDER BY Id DESC LIMIT 1;",
+                    new { DocumentId = documentId, CompanyId = companyId }, transaction);
+            }
+
+            currentVersion ??= await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT Id, Version, Content, CreatedAt FROM DocumentVersions
             WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
               AND ((VersionType IN (1, 2) AND IsActive = TRUE)
                    -- An obsoleted document has no active version left: obsoletion archives its issued
@@ -2592,6 +2610,30 @@ public class DocumentComponent
                 new { DocumentId = documentId, CompanyId = companyId }, transaction);
             string version = (string?)currentVersion?.version ?? "";
             string? versionHtmlContent = (string?)currentVersion?.content;
+
+            // The window of time that belongs to the version being shown: from when it was opened
+            // until the next version was. A document is revised through the SAME Documents row, so
+            // every approval it has ever had hangs off the one document id -- reading them all put
+            // v1.0's approvers (and its authorizer) onto the v2.0 template. The workflow execution
+            // that actually decided THIS version is the latest one started inside that window.
+            DateTime? versionFrom = currentVersion?.createdat as DateTime?;
+            DateTime? versionTo = null;
+            int? executionId = null;
+            if (versionFrom.HasValue)
+            {
+                versionTo = await _common.ExecuteScalarAsync<DateTime?>(@"
+                SELECT MIN(CreatedAt) FROM DocumentVersions
+                WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+                  AND Id > @VersionId AND COALESCE(IsDeleted, FALSE) = FALSE;",
+                    new { DocumentId = documentId, CompanyId = companyId, VersionId = (int)currentVersion!.id }, transaction);
+
+                executionId = await _common.ExecuteScalarAsync<int?>(@"
+                SELECT we.Id FROM WorkflowExecutions we
+                WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
+                  AND we.StartedAt >= @From::timestamp AND (@To::timestamp IS NULL OR we.StartedAt < @To::timestamp)
+                ORDER BY we.StartedAt DESC, we.Id DESC LIMIT 1;",
+                    new { DocumentId = documentId, CompanyId = companyId, From = versionFrom.Value, To = versionTo }, transaction);
+            }
 
             string supersede = "";
             if (doc.parentdocumentid != null)
@@ -2687,8 +2729,11 @@ public class DocumentComponent
             LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid AND desig.CompanyId = @CompanyId
             LEFT JOIN ESignatures es ON TRIM(es.UserId) = TRIM(e.empCode) AND es.CompanyId = @CompanyId AND es.IsActive = TRUE AND es.IsDeleted = FALSE
             WHERE wes.CompanyId = @CompanyId AND we.EntityId = @DocumentId AND we.EntityType = 'Document'
+              -- Only the workflow that decided the version being shown (see executionId above); no
+              -- execution yet means nobody has acted on this version, so the block stays blank.
+              AND we.Id = COALESCE(@ExecutionId::int, -1)
             ORDER BY wes.StepOrder;",
-                new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
+                new { CompanyId = companyId, DocumentId = documentId, ExecutionId = executionId }, transaction)).ToList();
 
             // Steps 3-5 (template resolution, content, and the actual OpenXML merge) are shared
             // with DocumentRequestComponent.MergeDocumentRequestTemplateAsync -- a pending request
@@ -2698,7 +2743,8 @@ public class DocumentComponent
             // Who signs each line of the newer block. Resolved here rather than inside the shared
             // merge because only a real Document has a workflow behind it -- a pending Request
             // does not, and passes none.
-            var signatories = await ResolveDocumentSignatoriesAsync(companyId, documentId, transaction);
+            var signatories = await ResolveDocumentSignatoriesAsync(
+                companyId, documentId, executionId, versionFrom, versionTo, transaction);
 
             return await MergeContentIntoTemplateAsync(
                 (string)doc.documenttypecode,
@@ -2711,6 +2757,22 @@ public class DocumentComponent
         {
             throw ex;
         }
+    }
+
+    // The uploaded file of the version still being prepared (the Draft), or null when there is none
+    // or it has no file of its own. Used when a download is for that working version: the
+    // document's own DocumentURL can still point at the version in force.
+    public async Task<string?> GetWorkingVersionDocumentUrlAsync(int documentId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        return await _common.ExecuteScalarAsync<string?>(@"
+            SELECT NULLIF(TRIM(DocumentURL), '') FROM DocumentVersions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+              AND VersionType = 1 AND IsActive = TRUE AND COALESCE(IsDeleted, FALSE) = FALSE
+            ORDER BY Id DESC LIMIT 1;",
+            new { DocumentId = documentId, CompanyId = companyId });
     }
 
     // Shared core of the template merge: resolves the DocumentType's Word template for the given
@@ -3158,49 +3220,9 @@ public class DocumentComponent
     /// intermediate approvers. A role whose step has not happened yet comes back empty and its row
     /// reads N/A rather than borrowing somebody else's name.
     /// </summary>
-    private async Task<Dictionary<string, List<Signatory>>> ResolveDocumentSignatoriesAsync(
-        int companyId, int documentId, IDbTransaction? transaction = null)
-    {
-        // Pick the parties first, then look up only those people. Building the employee
-        // projection first and filtering afterwards meant touching every employee in the company
-        // for one document, which timed out and sent the caller the unmerged file instead.
-        var rows = (await _common.QueryAsync<dynamic>(@"
-            WITH Steps AS (
-                SELECT wes.AssignedUserId, wes.ActionAt,
-                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
-                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
-                FROM WorkflowExecutionSteps wes
-                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
-                WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
-                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
-            ),
-            Parties AS (
-                SELECT 'Writer' AS Role, 1 AS Position, TRIM(d.CreatedBy) AS EmpCode,
-                       (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
-                         WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId) AS ActedAt
-                FROM Documents d
-                WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
-
-                UNION ALL
-                -- Everyone except the last to act: the intermediate approvers.
-                SELECT 'Reviewer', s.Position::int, TRIM(s.AssignedUserId), s.ActionAt
-                FROM Steps s WHERE s.FromLast > 1
-
-                UNION ALL
-                -- The last to act: the final approver.
-                SELECT 'Approver', 1, TRIM(s.AssignedUserId), s.ActionAt
-                FROM Steps s WHERE s.FromLast = 1
-
-                UNION ALL
-                SELECT 'Authorizer', 1, TRIM(h.ChangedBy), h.ChangedAt
-                FROM (
-                    SELECT dsh.ChangedBy, dsh.ChangedAt
-                    FROM DocumentStateHistory dsh
-                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
-                    WHERE dsh.DocumentId = @DocumentId AND dsh.CompanyId = @CompanyId AND ds.Code = 'EFFECTIVE'
-                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                ) h
-            )
+    // Turns the Parties CTE of a signatory query into rows: who each person is, their designation
+    // and their e-signature. Shared by the Document and the Request signatory lookups.
+    private const string SignatoryProjectionSql = @"
             SELECT p.Role, p.Position, emp.FullName, emp.Designation, emp.SignatureURL, p.ActedAt
             FROM Parties p
             LEFT JOIN LATERAL (
@@ -3226,8 +3248,135 @@ public class DocumentComponent
                 ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
                 LIMIT 1
             ) emp ON TRUE
-            ORDER BY p.Role, p.Position;",
-            new { CompanyId = companyId, DocumentId = documentId }, transaction)).ToList();
+            ORDER BY p.Role, p.Position;";
+
+    private async Task<Dictionary<string, List<Signatory>>> ResolveDocumentSignatoriesAsync(
+        int companyId, int documentId, int? executionId, DateTime? versionFrom, DateTime? versionTo,
+        IDbTransaction? transaction = null)
+    {
+        // Pick the parties first, then look up only those people. Building the employee
+        // projection first and filtering afterwards meant touching every employee in the company
+        // for one document, which timed out and sent the caller the unmerged file instead.
+        var rows = (await _common.QueryAsync<dynamic>(@"
+            WITH Steps AS (
+                SELECT wes.AssignedUserId, wes.ActionAt,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+                WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
+                  AND we.Id = COALESCE(@ExecutionId::int, -1)
+                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
+            ),
+            -- Whoever raised the Revision Request this version came from. Absent for the first
+            -- version of a document, where the writer is simply the document's creator.
+            RevisionRequest AS (
+                SELECT r.CreatedBy, r.CreatedAt
+                FROM DocumentRequests r
+                WHERE r.CompanyId = @CompanyId AND r.ParentDocumentId = @DocumentId
+                  AND COALESCE(r.IsDeleted, FALSE) = FALSE
+                  AND @VersionFrom::timestamp IS NOT NULL AND r.CreatedAt <= @VersionFrom::timestamp
+                ORDER BY r.Id DESC LIMIT 1
+            ),
+            Parties AS (
+                SELECT 'Writer' AS Role, 1 AS Position,
+                       TRIM(COALESCE((SELECT rr.CreatedBy FROM RevisionRequest rr), d.CreatedBy)) AS EmpCode,
+                       COALESCE((SELECT rr.CreatedAt FROM RevisionRequest rr),
+                                (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
+                                  WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId)) AS ActedAt
+                FROM Documents d
+                WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
+
+                UNION ALL
+                -- Everyone except the last to act: the intermediate approvers.
+                SELECT 'Reviewer', s.Position::int, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast > 1
+
+                UNION ALL
+                -- The last to act: the final approver.
+                SELECT 'Approver', 1, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast = 1
+
+                UNION ALL
+                SELECT 'Authorizer', 1, TRIM(h.ChangedBy), h.ChangedAt
+                FROM (
+                    SELECT dsh.ChangedBy, dsh.ChangedAt
+                    FROM DocumentStateHistory dsh
+                    JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                    WHERE dsh.DocumentId = @DocumentId AND dsh.CompanyId = @CompanyId AND ds.Code = 'EFFECTIVE'
+                      -- Only an authorization that belongs to the version being shown: a document
+                      -- under revision was authorized once already, for the PREVIOUS version.
+                      AND @VersionFrom::timestamp IS NOT NULL AND dsh.ChangedAt >= @VersionFrom::timestamp
+                      AND (@VersionTo::timestamp IS NULL OR dsh.ChangedAt < @VersionTo::timestamp)
+                    ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+                ) h
+            )
+            " + SignatoryProjectionSql,
+            new { CompanyId = companyId, DocumentId = documentId, ExecutionId = executionId, VersionFrom = versionFrom, VersionTo = versionTo },
+            transaction)).ToList();
+
+        var signatories = new Dictionary<string, List<Signatory>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var role = Convert.ToString(row.role);
+            if (string.IsNullOrWhiteSpace(role)) continue;
+
+            if (!signatories.TryGetValue(role, out List<Signatory> list))
+            {
+                list = new List<Signatory>();
+                signatories[role] = list;
+            }
+
+            list.Add(new Signatory
+            {
+                Name = Convert.ToString(row.fullname) ?? string.Empty,
+                Designation = Convert.ToString(row.designation) ?? string.Empty,
+                SignatureUrl = row.signatureurl as string,
+                Date = row.actedat as DateTime?,
+            });
+        }
+
+        return signatories;
+    }
+
+    /// <summary>
+    /// The same Written / Reviewed / Approved / Authorized lines, for a Request still under
+    /// review. Written By is whoever raised the Request; Reviewed By and Approved By come from the
+    /// latest approval round of the Request's own workflow; there is no authorization at this
+    /// stage, so that line reads N/A. Without this a downloaded Request template carried the raw
+    /// {{WritersName}} placeholders, because only a finalized Document supplied any signatories.
+    /// </summary>
+    public async Task<Dictionary<string, List<Signatory>>> ResolveRequestSignatoriesAsync(
+        int companyId, int requestId)
+    {
+        var rows = (await _common.QueryAsync<dynamic>(@"
+            WITH Steps AS (
+                SELECT wes.AssignedUserId, wes.ActionAt,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
+                       ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
+                FROM WorkflowExecutionSteps wes
+                JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
+                WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request' AND we.EntityId = @RequestId
+                  -- Latest approval round only: a request sent back for rework starts a new one.
+                  AND we.Id = (SELECT MAX(x.Id) FROM WorkflowExecutions x
+                               WHERE x.CompanyId = @CompanyId AND x.EntityType = 'Request' AND x.EntityId = @RequestId)
+                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
+            ),
+            Parties AS (
+                SELECT 'Writer' AS Role, 1 AS Position, TRIM(r.CreatedBy) AS EmpCode, r.CreatedAt AS ActedAt
+                FROM DocumentRequests r
+                WHERE r.Id = @RequestId AND r.CompanyId = @CompanyId
+
+                UNION ALL
+                SELECT 'Reviewer', s.Position::int, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast > 1
+
+                UNION ALL
+                SELECT 'Approver', 1, TRIM(s.AssignedUserId), s.ActionAt
+                FROM Steps s WHERE s.FromLast = 1
+            )
+" + SignatoryProjectionSql,
+            new { CompanyId = companyId, RequestId = requestId })).ToList();
 
         var signatories = new Dictionary<string, List<Signatory>>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
@@ -5212,6 +5361,13 @@ public class DocumentComponent
                   AND dr.DocumentTypeCode = @DocumentTypeCode
                   AND dr.DocumentId      IS NOT NULL
 
+                  -- This list feeds 'Creation of new document' only. Revision and Obsoletion
+                  -- requests also carry a DocumentId (the document they act on) and an Approved
+                  -- status, so without this they appeared here as if they were new documents to
+                  -- create; they are picked from their own grids on this screen instead.
+                  AND COALESCE(dr.DocumentRequestTypeCode, 'DRT-0001') = 'DRT-0001'
+                  AND dr.ParentDocumentId IS NULL
+
                   -- Organizational filters (only applied when value is provided)
                   AND (@DivisionCode       IS NULL OR d.DivisionCode       = @DivisionCode)
                   AND (@DepartmentCode     IS NULL OR d.DepartmentCode     = @DepartmentCode)
@@ -5749,7 +5905,19 @@ public class DocumentComponent
                         -- document that has never been revised only ever had one version).
                         COALESCE(pendingdv.Version, doc.Version) AS PendingVersion,
                         COALESCE(pendingdv.Content, doc.VersionContent) AS PendingVersionContent,
-                        dut.TrainingMode,
+                        -- A Document Type with no training policy (a Policy, say) has no trainees and
+                        -- therefore no mode -- the column read as if something were missing. Say so.
+                        -- A type that DOES require training and has no mode stays blank: that is a gap
+                        -- worth seeing, not something to label as fine.
+                        CASE
+                            WHEN dut.TrainingMode IS NOT NULL THEN dut.TrainingMode
+                            WHEN COALESCE((SELECT tp.TrainingRequired FROM TrainingPolicies tp
+                                           WHERE tp.CompanyId = doc.CompanyId
+                                             AND tp.DocumentTypeCode = doc.DocumentTypeCode
+                                             AND tp.IsActive = TRUE
+                                           LIMIT 1), FALSE) THEN NULL
+                            ELSE 'Not Required'
+                        END AS TrainingMode,
                         tr.TrainingProofURL,
                         LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Initiator,
                         (SELECT COUNT(1) FROM DocumentUserTraining dut WHERE dut.DocumentId = doc.Id AND dut.IsDeleted = FALSE) AS TotalAssigned,
@@ -8947,6 +9115,19 @@ public class DocumentComponent
                   AND dr.Status = 3 -- Approved
                   AND dr.DocumentId IS NOT NULL
                   AND dr.DocumentRequestTypeCode = @DocumentRequestTypeCode
+                  -- One row per document: the LATEST approved request of this type. A document can
+                  -- collect several approved requests (raised again, or raised while an earlier one
+                  -- was still waiting to be actioned); listing them all showed identical-looking
+                  -- rows and, depending on which was clicked, an older request's justification.
+                  -- The most recent request is the one the person means.
+                  AND dr.Id = (
+                      SELECT MAX(x.Id) FROM DocumentRequests x
+                      WHERE x.CompanyId = dr.CompanyId
+                        AND x.DocumentId = dr.DocumentId
+                        AND x.DocumentRequestTypeCode = dr.DocumentRequestTypeCode
+                        AND x.Status = 3
+                        AND COALESCE(x.IsDeleted, FALSE) = FALSE
+                  )
                   -- Unlike a plain Creation request (GetRequestsPendingFinalizationAsync, which
                   -- can just check the document is still in Draft state), a Revision/Obsoletion
                   -- target document's own state is no help here: Revision moves it straight to
@@ -9023,6 +9204,8 @@ public class DocumentComponent
                 SELECT
                     d.Id, d.CompanyId, d.DocumentNumber, dr.Id AS RequestId, d.DocumentTypeCode,
                     d.ParentDocumentId, d.Title, d.Justification, dr.Justification AS RequestJustification,
+                    dr.RequestNumber, dr.CreatedAt AS RequestCreatedAt,
+                    COALESCE(NULLIF(reqemp.FullName, ''), dr.CreatedBy)::character varying AS RequestCreatedByName,
                     d.DivisionCode, d.DepartmentCode,
                     d.SubDepartmentCode, d.BusinessDomainCode, d.NextReviewDate, d.IsActive, d.IsDeleted,
                     d.CreatedAt, d.CreatedBy, d.CreatedByName, d.LastModifiedByName, d.LastModifiedAt,
@@ -9049,6 +9232,15 @@ public class DocumentComponent
                     )::character varying AS PreviousVersionCreatedBy
                 FROM DocumentRequests dr
                 INNER JOIN Vw_Documents d ON d.Id = dr.DocumentId AND d.CompanyId = dr.CompanyId
+                -- Who raised the Request. LATERAL ... LIMIT 1 so an employee code present under more
+                -- than one company can never multiply the rows.
+                LEFT JOIN LATERAL (
+                    SELECT LTRIM(RTRIM(COALESCE(re.firstname, '') || ' ' || COALESCE(re.midname, '') || ' ' || COALESCE(re.lastname, ''))) AS FullName
+                    FROM public.tblEmployee re
+                    WHERE LTRIM(RTRIM(re.empcode::text), '0') = LTRIM(RTRIM(dr.CreatedBy::text), '0')
+                    ORDER BY (re.CompanyId = dr.CompanyId) DESC, re.empid DESC
+                    LIMIT 1
+                ) reqemp ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT v.Version, v.Content
                     FROM DocumentVersions v
@@ -9137,6 +9329,9 @@ public class DocumentComponent
                     ParentDocumentId = GetValue<int>(dict, "parentdocumentid"),
                     DocumentId = GetValue<int>(dict, "documentid"),
                     RequestJustification = GetValue<string>(dict, "requestjustification"),
+                    RequestNumber = GetValue<string>(dict, "requestnumber"),
+                    RequestCreatedAt = GetValue<DateTime?>(dict, "requestcreatedat")?.ToString("yyyy-MM-dd HH:mm:ss"),
+                    RequestCreatedByName = GetValue<string>(dict, "requestcreatedbyname"),
                     DocumentType = GetValue<string>(dict, "documenttype"),
                     DocumentTypeCode = GetValue<string>(dict, "documenttypecode"),
                     Division = GetValue<string>(dict, "division"),

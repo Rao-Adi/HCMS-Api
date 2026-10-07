@@ -703,7 +703,7 @@ public class CustomizeEmailAlertsComponent
 
     private async Task<dynamic> GetEmployeeInfoAsync(string empCode, int companyId)
     {
-        string query = "SELECT Email, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Name FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId LIMIT 1";
+        string query = "SELECT Email, LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS Name FROM tblEmployee e WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId LIMIT 1";
         return await _common.QueryFirstOrDefaultAsync<dynamic>(query, new { EmpCode = empCode, CompanyId = companyId });
     }
 }

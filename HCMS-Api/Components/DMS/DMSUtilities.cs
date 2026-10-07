@@ -1724,8 +1724,10 @@ namespace HCMS_Api.Components.DMS.Common
                 var senderEmail = _configuration.GetSection("MailSettings:Email")?.Value;
                 if (string.IsNullOrEmpty(senderEmail))
                 {
+                    // Thrown, not just printed and returned: returning made every caller believe the
+                    // mail went out, so a server missing its MailSettings sent nothing and said nothing.
                     Console.WriteLine("[SMTP ERROR] MailSettings:Email is not configured.");
-                    return;
+                    throw new InvalidOperationException("MailSettings:Email is not configured, so no email can be sent.");
                 }
 
                 var email = new MimeMessage();

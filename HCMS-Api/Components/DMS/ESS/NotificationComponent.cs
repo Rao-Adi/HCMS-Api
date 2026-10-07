@@ -19,7 +19,7 @@ public class NotificationComponent
     private readonly IConfiguration _configuration;
     private readonly ClientContextService _clientContextService;
     private readonly IDMSDapperDataService _dapperService;
-    //private readonly ILogger<UtilitiesController> _logger;
+    private readonly ILogger<NotificationComponent> _logger;
     private readonly IHttpContextAccessor _http;
     private readonly DMSCommon _common;
     private readonly IHubContext<NotificationHub> _hubContext;
@@ -30,7 +30,7 @@ public class NotificationComponent
         , IConfiguration configuration
         , ClientContextService clientContextService
         , IDMSDapperDataService dapper
-        //, ILogger<UtilitiesController> logger
+        , ILogger<NotificationComponent> logger
         , IHttpContextAccessor http,
         DMSCommon common,
         IHubContext<NotificationHub> hubContext,
@@ -38,7 +38,7 @@ public class NotificationComponent
         )
     {
         _http = http;
-        //_logger = logger;
+        _logger = logger;
         _utilities = utilities;
         _dataservice = dataservice;
         _configuration = configuration;
@@ -697,11 +697,24 @@ public class NotificationComponent
             {
                 string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
                 await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+                _logger.LogInformation("Notification email sent: '{Title}' to employee {EmpCode}.", title, recipientUserId);
+            }
+            else
+            {
+                // Previously silent. A recipient with no active employee row or no email address
+                // simply never got a mail, and nothing anywhere said so.
+                _logger.LogWarning(
+                    "Notification email NOT sent: no active email address on file for employee {EmpCode} (company {CompanyId}). Title: '{Title}'.",
+                    recipientUserId, companyId, title);
             }
         }
         catch (Exception ex)
         {
-            // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions
+            // Catching to ensure SMTP/Email failures do NOT crash the primary Workflow/DB transactions.
+            // Logged through the application log, not just the console: the console is not kept on a
+            // server, so every failure here used to vanish and "emails stopped" could not be diagnosed.
+            _logger.LogError(ex, "Notification email FAILED for employee {EmpCode} (company {CompanyId}). Title: '{Title}'.",
+                recipientUserId, companyId, title);
             Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
         }
     }

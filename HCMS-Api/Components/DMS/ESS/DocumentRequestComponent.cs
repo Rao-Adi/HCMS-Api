@@ -141,7 +141,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // Insert Draft Request
             //-------------------------------------------------
-            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction, dto.DocumentRequestTypeCode);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
@@ -447,7 +447,7 @@ public class DocumentRequestComponent
             }
 
             // 3. Insert Document Request with 'Submitted' status
-            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction, dto.DocumentRequestTypeCode);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
@@ -726,7 +726,12 @@ public class DocumentRequestComponent
                 ORDER BY dv.CreatedAt DESC LIMIT 1;",
                 new { DocumentId = dto.ParentDocumentId, CompanyId }, transaction);
 
-            if (originalDoc != null)
+            // Only a Revision has to change the content. An Obsoletion retires the document exactly as it
+            // stands -- its content is the original by definition, so it can never "differ" and this
+            // rejected every obsoletion request that was submitted.
+            bool mustAlterContent = string.Equals(dto.DocumentRequestTypeCode, "DRT-0002", StringComparison.OrdinalIgnoreCase);
+
+            if (originalDoc != null && mustAlterContent)
             {
                 bool contentUnchanged = (dto.ProposedContent == originalDoc.content) || (string.IsNullOrWhiteSpace(dto.ProposedContent) && string.IsNullOrWhiteSpace(originalDoc.content));
                 bool fileUnchanged = (draftFileUrl == originalDoc.documenturl) || (string.IsNullOrWhiteSpace(draftFileUrl) && string.IsNullOrWhiteSpace(originalDoc.documenturl));
@@ -739,7 +744,7 @@ public class DocumentRequestComponent
             // ParentDocumentId is guaranteed non-null here (validated above), so this always
             // seeds RowVersion from the target document's current version bumped to the next
             // major release (e.g. "1.0" -> "2.0") -- see ResolveInitialProposedVersionAsync.
-            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction);
+            string nextRowVersion = await ResolveInitialProposedVersionAsync(CompanyId, dto.ParentDocumentId, transaction, dto.DocumentRequestTypeCode);
             var requestId = await _common.ExecuteScalarAsync<long>(@"
                 INSERT INTO DocumentRequests
                 (
@@ -999,9 +1004,32 @@ public class DocumentRequestComponent
             if (request.status != (int)DocumentRequestStatus.Draft)
                 throw new Exception("Only draft requests can be submitted.");
 
+            // What was on the form when Submit was pressed wins over what the last Update saved.
+            string? submittedJustification = string.IsNullOrWhiteSpace(input.Justification) ? null : input.Justification.Trim();
+            string? submittedDocumentName = string.IsNullOrWhiteSpace(input.DocumentName) ? null : input.DocumentName.Trim();
+
             // UC-22 Validation: Justification is mandatory
-            if (string.IsNullOrWhiteSpace(request.justification))
+            if (submittedJustification == null && string.IsNullOrWhiteSpace((string?)request.justification))
                 throw new Exception("Justification is required to submit a document request.");
+
+            if (submittedJustification != null || submittedDocumentName != null)
+            {
+                await _common.ExecuteAsync(@"
+                    UPDATE DocumentRequests
+                    SET Justification = COALESCE(@Justification, Justification),
+                        DocumentName = COALESCE(@DocumentName, DocumentName),
+                        LastModifiedAt = NOW(),
+                        LastModifiedBy = @UserId
+                    WHERE Id = @RequestId AND CompanyId = @CompanyId;",
+                    new
+                    {
+                        Justification = submittedJustification,
+                        DocumentName = submittedDocumentName,
+                        UserId = empCode,
+                        input.RequestId,
+                        CompanyId
+                    }, tx);
+            }
 
             //-------------------------------------------------
             // Allow the Template (file) or HTML content to be updated at Submit time, instead
@@ -1047,6 +1075,14 @@ public class DocumentRequestComponent
             bool isRevisionDraft =
                 string.Equals((string?)request.documentrequesttypecode, "DRT-0002", StringComparison.OrdinalIgnoreCase)
                 && request.parentdocumentid != null;
+
+            // A Revision or an Obsoletion draft is a request ABOUT an existing document. Both stay in
+            // that document's cabinet and both route through the Revision approval policy -- the same
+            // as when they are submitted in one go. Only the Revision also has to change the content.
+            bool isTargetedDraft =
+                request.parentdocumentid != null
+                && (string.Equals((string?)request.documentrequesttypecode, "DRT-0002", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals((string?)request.documentrequesttypecode, "DRT-0003", StringComparison.OrdinalIgnoreCase));
 
             if (isRevisionDraft)
             {
@@ -1109,7 +1145,7 @@ public class DocumentRequestComponent
             string? cabSubDepartment = Convert.ToString(request.subdepartmentcode);
             string? cabBusinessDomain = Convert.ToString(request.businessdomaincode);
 
-            if (input.ApplyCabinet && !isRevisionDraft)
+            if (input.ApplyCabinet && !isTargetedDraft)
             {
                 cabDivision = Clean(input.DivisionCode);
                 cabDepartment = Clean(input.DepartmentCode);
@@ -1142,7 +1178,7 @@ public class DocumentRequestComponent
 
             if (wasReworked)
             {
-                string nextRowVersion = IncrementMinorVersion((string?)request.rowversion);
+                string nextRowVersion = NextReworkVersion((string?)request.rowversion, (string?)request.documentrequesttypecode);
 
                 submittedRequestId = input.RequestId;
 
@@ -1265,7 +1301,7 @@ public class DocumentRequestComponent
             // Request one -- the same order the one-shot revision path
             // (CreateAndSubmitRevisionDocumentRequestAsync) uses, so a revision routes to the same
             // approvers whether it was submitted directly or saved as a draft first.
-            var policyId = isRevisionDraft
+            var policyId = isTargetedDraft
                 ? (await ResolvePolicyIdAsync("Revision") ?? await ResolvePolicyIdAsync("Request"))
                 : await ResolvePolicyIdAsync("Request");
 
@@ -1549,7 +1585,7 @@ public class DocumentRequestComponent
 
             if (wasReworked)
             {
-                string nextRowVersion = IncrementMinorVersion((string?)request.rowversion);
+                string nextRowVersion = NextReworkVersion((string?)request.rowversion, (string?)request.documentrequesttypecode);
 
                 submittedRequestId = await _common.ExecuteScalarAsync<long>(@"
                     INSERT INTO DocumentRequests
@@ -2024,7 +2060,8 @@ public class DocumentRequestComponent
     // attempt continues with a minor bump instead ("2.0" -> "2.1") -- the same renumbering a
     // reverted request's own resubmission gets. Kept in step with
     // DocumentComponent.ResolveNextRevisionVersion, which does this for the direct Revision path.
-    private async Task<string> ResolveInitialProposedVersionAsync(int companyId, int? parentDocumentId, IDbTransaction transaction)
+    private async Task<string> ResolveInitialProposedVersionAsync(
+        int companyId, int? parentDocumentId, IDbTransaction transaction, string? requestTypeCode = null)
     {
         if (!parentDocumentId.HasValue)
             return IncrementMinorVersion(null);
@@ -2034,6 +2071,12 @@ public class DocumentRequestComponent
             WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType IN (1, 2) AND IsActive = TRUE
             ORDER BY VersionType DESC, CreatedAt DESC LIMIT 1;",
             new { DocumentId = parentDocumentId.Value, CompanyId = companyId }, transaction);
+
+        // An Obsoletion retires the document as it stands -- no new version is ever produced, so
+        // it proposes the version being retired, not the next major release. It was showing 2.0
+        // (1.0 + a major bump) for a document that only ever had 1.0.
+        if (IsObsoletionRequestType(requestTypeCode) && !string.IsNullOrWhiteSpace(parentVersion))
+            return parentVersion;
 
         // Highest number already claimed anywhere in this document's chain -- walk up to the root,
         // then back down through every descendant, and count both issued document versions and the
@@ -2077,6 +2120,17 @@ public class DocumentRequestComponent
 
         return ResolveNextRevisionVersion(parentVersion, chainVersion);
     }
+
+    private static bool IsObsoletionRequestType(string? requestTypeCode) =>
+        string.Equals(requestTypeCode, "DRT-0003", StringComparison.OrdinalIgnoreCase);
+
+    // The Proposed Version Number a request carries when it is sent back out after being reworked.
+    // A Revision moves to the next minor number each attempt; an Obsoletion produces no version at
+    // all, so it keeps the one it already proposed.
+    private static string NextReworkVersion(string? currentRowVersion, string? requestTypeCode) =>
+        IsObsoletionRequestType(requestTypeCode) && !string.IsNullOrWhiteSpace(currentRowVersion)
+            ? currentRowVersion!
+            : IncrementMinorVersion(currentRowVersion);
 
     // parentVersion is the version being revised, chainVersion the highest already claimed anywhere
     // in that document's chain. Normally a revision is the next major release of the parent
@@ -5178,10 +5232,16 @@ public class DocumentRequestComponent
             ORDER BY wes.StepOrder;",
             new { CompanyId = companyId, RequestId = requestId })).ToList();
 
+        // The newer templates carry a fixed Written / Reviewed / Approved / Authorized block. It is
+        // only filled when signatories are supplied -- leaving them out printed the raw
+        // {{WritersName}} placeholders on every Request template an approver downloaded.
+        var signatories = await _documentComponent.ResolveRequestSignatoriesAsync(companyId, requestId);
+
         return await _documentComponent.MergeContentIntoTemplateAsync(
             request.DocumentTypeCode,
             request.DivisionCode, request.DepartmentCode, request.SubDepartmentCode, request.BusinessDomainCode,
-            placeholders, request.ProposedContent, contentStream, approvers);
+            placeholders, request.ProposedContent, contentStream, approvers,
+            watermarkText: null, signatories: signatories);
     }
 
 

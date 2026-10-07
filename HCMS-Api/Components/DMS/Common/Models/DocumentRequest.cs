@@ -601,6 +601,14 @@ public class EffectiveDocumentDetailsDto : AuditableEntity
     // here rather than re-typed.
     public string? RequestJustification { get; set; }
 
+    // Also only populated by GetApprovedRevisionObsoletionRequestsAsync: which Request this row is
+    // fulfilling, and when / by whom it was raised. The row is the DOCUMENT, so its own CreatedAt /
+    // CreatedBy describe the document, not the Request -- every row for one document showed the same
+    // "Request Created On", and nothing said which Request it was.
+    public string? RequestNumber { get; set; }
+    public string? RequestCreatedAt { get; set; }
+    public string? RequestCreatedByName { get; set; }
+
 
     // Lists to populate on the FrontEnd
     public List<DistributionListReadDto> DistributionList { get; set; } = new List<DistributionListReadDto>();
@@ -624,6 +632,12 @@ public class SubmitDocumentRequestDto
 {
     public int RequestId { get; set; }
     public string DocumentRequestType { get; set; }
+
+    // The name and justification as they stand on the draft form at the moment of Submit. Optional:
+    // left blank, the saved ones are used. Without these, whatever was typed after the last Update
+    // was thrown away and the request went out with the old text.
+    public string? DocumentName { get; set; }
+    public string? Justification { get; set; }
 
     // Allows the Template (file) or HTML content to be updated at Submit time, without
     // requiring a separate UpdateDraftDocumentRequestAsync call beforehand. Optional --

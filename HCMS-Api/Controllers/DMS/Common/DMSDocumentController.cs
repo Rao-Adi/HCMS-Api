@@ -663,18 +663,27 @@ public class DMSDocumentController : Controller
 
 
     [HttpGet("download-submitted-document-template/{id}")]
-    public async Task<IActionResult> DownloadDraftDocument(int id)
+    public async Task<IActionResult> DownloadDraftDocument(int id, [FromQuery] bool pending = false)
     {
         try
         {
             // includeObsolete: a retired document is still downloadable from My Documents.
             var request = await _documentComponent.GetByIdAsync(id, includeObsolete: true);
 
+            // pending=true: the caller works on the version still being prepared (approver,
+            // authorizer, author), so the version being revised is served, not the one in force.
+            var documentUrl = request.DocumentURL;
+            if (pending)
+            {
+                var workingUrl = await _documentComponent.GetWorkingVersionDocumentUrlAsync(id);
+                if (!string.IsNullOrWhiteSpace(workingUrl)) documentUrl = workingUrl;
+            }
+
             string? filePath = null;
             string? extension = null;
-            if (!string.IsNullOrEmpty(request.DocumentURL))
+            if (!string.IsNullOrEmpty(documentUrl))
             {
-                var relativePath = request.DocumentURL.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                var relativePath = documentUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
                 var candidatePath = DmsPaths.WebRootCombine(relativePath);
                 if (System.IO.File.Exists(candidatePath))
                 {
@@ -705,7 +714,7 @@ public class DMSDocumentController : Controller
                         : null;
                     await using (contentFileStream)
                     {
-                        fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream);
+                        fileBytes = await _documentComponent.MergeDocumentTemplateAsync(id, contentFileStream, useWorkingVersion: pending);
                     }
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
                     // A document with no uploaded file (content saved purely via the rich text
