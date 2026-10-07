@@ -4525,7 +4525,8 @@ public class DocumentRequestComponent
 
                 // Opens the next version on the document being revised. Idempotent, so a request
                 // re-processed after a failure does not open a second draft row.
-                await _documentComponent.OpenRevisionDraftVersionAsync(companyId, documentId, empCode, transaction);
+                await _documentComponent.OpenRevisionDraftVersionAsync(
+                    companyId, documentId, empCode, transaction, (string?)request.rowversion);
 
                 // OpenRevisionDraftVersionAsync seeds the new Draft row by copying the OLD
                 // Effective version's content -- a reasonable starting point when nothing else is

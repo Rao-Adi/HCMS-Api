@@ -233,8 +233,11 @@ public class NotificationComponent
                 "/documents/trainingauthorization"
             ),
             NotificationScenario.DocumentAuthorizedEffective => (
-                "DMS – Document Authorized & Effective",
-                $"Document {Get("Doc Name")} (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
+                // Title kept short enough for one line in the popup -- "Document Authorized &
+                // Effective" wrapped onto a second line. The document name is quoted so a name
+                // reads as a name ("Document Doc Ad hoc (V:1.1)" ran together).
+                "DMS – Document Authorized",
+                $"Document \"{Get("Doc Name")}\" (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
                 "/documents/trainingauthorization"
             ),

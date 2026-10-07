@@ -1728,7 +1728,8 @@ public class DocumentComponent
     /// Idempotent. A document sent back for rework already has its draft row, and resubmitting
     /// must continue on that row rather than open a second one.
     /// </summary>
-    public async Task<string> OpenRevisionDraftVersionAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
+    public async Task<string> OpenRevisionDraftVersionAsync(
+        int companyId, int documentId, string empCode, IDbTransaction transaction, string? proposedVersion = null)
     {
         var existing = await _common.ExecuteScalarAsync<string>(@"
             SELECT Version FROM DocumentVersions
@@ -1739,7 +1740,14 @@ public class DocumentComponent
         if (!string.IsNullOrWhiteSpace(existing))
             return existing;
 
-        var newVersion = await ResolveNextVersionForDocumentAsync(companyId, documentId, transaction);
+        // A revision opened because its Request was approved takes the version that Request
+        // proposed. Resolving it again here counted the Request's own proposal (2.0) as "already
+        // claimed" and bumped to 2.1 -- the draft then disagreed with the version the initiator
+        // had been shown and the approvers had signed off on. Only the direct path, which has no
+        // Request, still resolves it from the chain.
+        var newVersion = System.Text.RegularExpressions.Regex.IsMatch(proposedVersion ?? "", @"^\d+\.\d+$")
+            ? proposedVersion!
+            : await ResolveNextVersionForDocumentAsync(companyId, documentId, transaction);
 
         await _common.ExecuteAsync(@"
             INSERT INTO DocumentVersions
