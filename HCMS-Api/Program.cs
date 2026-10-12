@@ -302,6 +302,7 @@ builder.Services.AddScoped<CompanyComponent>();
 builder.Services.AddScoped<DocumentRequestTypeComponent>();  
 builder.Services.AddScoped<ControlTypeComponent>();  
 builder.Services.AddScoped<UserAccessLevelComponent>();
+builder.Services.AddScoped<RoleCabinetMappingComponent>();
 builder.Services.AddScoped<DashboardComponent>();
 builder.Services.AddScoped<DocumentTrainingAuthorizationComponent>();
 builder.Services.AddScoped<DocumentReviewPolicyComponent>();

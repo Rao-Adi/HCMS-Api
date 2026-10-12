@@ -1797,17 +1797,6 @@ public class DocumentComponent
         return rows.ToList();
     }
 
-    private async Task<List<int>> GetAllActiveRoleIdsAsync(int companyId, IDbTransaction transaction)
-    {
-        var roleIds = await _common.QueryAsync<int>(@"
-            SELECT DISTINCT a.roleid
-            FROM tblempjobprofile a
-            INNER JOIN tblsetupsdetail b ON a.roleid = b.sdlid
-            WHERE b.smsid = 189 AND a.roleid IS NOT NULL AND a.CompanyId = @CompanyId AND a.Active = TRUE;",
-            new { CompanyId = companyId }, transaction);
-        return roleIds.ToList();
-    }
-
     // Document-scoped equivalent of DocumentRequestComponent.InsertDistributionsAsync -- targets
     // DocumentRoleDistributions/DocumentUserDistributions (keyed by DocumentId) instead of the
     // DocumentRequest* tables. These are the SAME tables CreateDocumentFromApprovedRequestAsync's
@@ -1826,15 +1815,13 @@ public class DocumentComponent
     {
         if (roles?.Any() == true)
         {
-            // Cached across the loop so multiple "Any role" rows in one submission only hit the
-            // DB once.
-            List<int>? allRoleIds = null;
-
             foreach (var d in roles)
             {
                 var targetRoleIds = d.RoleId.HasValue
                     ? new List<int?> { d.RoleId }
-                    : (allRoleIds ??= await GetAllActiveRoleIdsAsync(companyId, transaction))
+                    // "Any role" = every role mapped to this row's cabinet (Role Cabinet Mapping).
+                    : (await RoleCabinetMappingQueries.GetMappedActiveRoleIdsAsync(
+                            _common, companyId, d.DivisionCode, d.DepartmentCode, d.SubDepartmentCode, d.BusinessDomainCode, transaction))
                         .Select(r => (int?)r).ToList();
 
                 foreach (var roleId in targetRoleIds)
@@ -5569,8 +5556,6 @@ public class DocumentComponent
             // Submitting a document expands an "Any role" pick into one row per role; collapsing
             // them back makes the grid show the single "Any" row the person actually chose --
             // the same treatment GetMyDraftDocumentsAsync gives it.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(int.Parse(CompanyId), null);
-
             var hydrated = new List<dynamic>();
             foreach (var row in rows)
             {
@@ -5583,9 +5568,9 @@ public class DocumentComponent
                 foreach (var pair in source)
                     hydratedRow[pair.Key] = pair.Value;
 
-                hydratedRow["DistributionList"] = DMSUtilities.CollapseAnyRoleGroups(
-                    roleDistributions.Where(x => x.DocumentRequestId == documentId).ToList(),
-                    allActiveRoleIds);
+                hydratedRow["DistributionList"] = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(
+                    _common, int.Parse(CompanyId),
+                    roleDistributions.Where(x => x.DocumentRequestId == documentId).ToList());
                 hydratedRow["UserList"] = userDistributions
                     .Where(x => x.DocumentRequestId == documentId).ToList();
 
@@ -5799,8 +5784,6 @@ public class DocumentComponent
             // See DMSUtilities.CollapseAnyRoleGroups -- a document whose originating Request was
             // already submitted (and possibly Reverted/reworked since) has its "Any role" picks
             // already expanded into concrete rows; this restores that intent for display.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
-
             foreach (var request in requests)
             {
                 var rawDistributionList = roleDistributions
@@ -5827,7 +5810,7 @@ public class DocumentComponent
                         RetrievedAt = x.RetrievedAt,
                         RetrievedBy = x.RetrievedBy,
                     }).ToList();
-                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+                request.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDistributionList);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
@@ -8535,14 +8518,12 @@ public class DocumentComponent
             // See DMSUtilities.CollapseAnyRoleGroups -- a Reverted document was already submitted
             // once, which expanded any "Any role" picks into concrete per-role rows; collapsing
             // them back for display makes a resumed Reverted draft look like a never-submitted one.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
-
             foreach (var document in documents)
             {
                 var rawDistributionList = roleDistributions
                     .Where(x => x.DocumentRequestId == document.Id)
                     .ToList();
-                document.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+                document.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDistributionList);
 
                 document.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == document.Id)
@@ -9510,8 +9491,6 @@ public class DocumentComponent
 
             // See DMSUtilities.CollapseAnyRoleGroups -- restores "Any role" for display when the
             // originating Request's picks were already expanded into concrete rows at submission.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
-
             foreach (var request in requests)
             {
                 var rawDistributionList = roleDistributions
@@ -9538,7 +9517,7 @@ public class DocumentComponent
                         RetrievedAt = x.RetrievedAt,
                         RetrievedBy = x.RetrievedBy,
                     }).ToList();
-                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+                request.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDistributionList);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)

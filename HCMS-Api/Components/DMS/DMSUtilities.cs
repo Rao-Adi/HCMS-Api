@@ -2149,13 +2149,15 @@ namespace HCMS_Api.Components.DMS.Common
         // at approval time (see CreateDocumentFromApprovedRequestAsync's "Promote Role
         // Distribution" step) and carries the same already-expanded rows forward.
         public static List<DistributionListReadDto> CollapseAnyRoleGroups(List<DistributionListReadDto> rows, IEnumerable<int> allActiveRoleIds)
+            => CollapseAnyRoleGroups(rows, _ => allActiveRoleIds);
+
+        // Same collapse, but the roles that make up "Any" can differ per cabinet scope -- "Any role" on a
+        // Distribution List row now means every role MAPPED to that cabinet (Role Cabinet Mapping), not every
+        // active role. rolesForGroup gives the roles one group (one cabinet + distribution type) stands for.
+        public static List<DistributionListReadDto> CollapseAnyRoleGroups(List<DistributionListReadDto> rows, Func<DistributionListReadDto, IEnumerable<int>> rolesForGroup)
         {
             if (rows == null || rows.Count == 0)
                 return rows ?? new List<DistributionListReadDto>();
-
-            var activeSet = new HashSet<int>(allActiveRoleIds ?? Enumerable.Empty<int>());
-            if (activeSet.Count == 0)
-                return rows;
 
             var result = new List<DistributionListReadDto>();
             var groups = rows.GroupBy(r => new { r.DivisionCode, r.DepartmentCode, r.SubDepartmentCode, r.BusinessDomainCode, r.DistributionTypeId });
@@ -2163,6 +2165,13 @@ namespace HCMS_Api.Components.DMS.Common
             foreach (var group in groups)
             {
                 var groupList = group.ToList();
+                var activeSet = new HashSet<int>(rolesForGroup(groupList[0]) ?? Enumerable.Empty<int>());
+                if (activeSet.Count == 0)
+                {
+                    result.AddRange(groupList);
+                    continue;
+                }
+
                 var alreadyAny = groupList.Any(g => !g.RoleId.HasValue);
                 var groupRoleIds = groupList.Where(g => g.RoleId.HasValue).Select(g => g.RoleId!.Value).ToHashSet();
 

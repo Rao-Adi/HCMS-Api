@@ -1876,21 +1876,6 @@ public class DocumentRequestComponent
     }
 
 
-    // All role ids currently assigned to at least one active employee, scoped to the company --
-    // the exact same set PeoplePartnersComponent.GetRoleListAsync returns (the Role dropdown's
-    // data source), so a null RoleId ("Any role") expands into precisely what the dropdown
-    // itself would let someone pick one-by-one.
-    private async Task<List<int>> GetAllActiveRoleIdsAsync(int companyId, IDbTransaction tx)
-    {
-        var roleIds = await _common.QueryAsync<int>(@"
-            SELECT DISTINCT a.roleid
-            FROM tblempjobprofile a
-            INNER JOIN tblsetupsdetail b ON a.roleid = b.sdlid
-            WHERE b.smsid = 189 AND a.roleid IS NOT NULL AND a.CompanyId = @CompanyId AND a.Active = TRUE;",
-            new { CompanyId = companyId }, tx);
-        return roleIds.ToList();
-    }
-
     private async Task InsertDistributionsAsync(
             int companyId,
             long requestId,
@@ -1910,15 +1895,13 @@ public class DocumentRequestComponent
 
             if (roles?.Any() == true)
             {
-                // Cached across the loop so multiple "Any role" rows in one submission only hit
-                // the DB once.
-                List<int>? allRoleIds = null;
-
                 foreach (var d in roles)
                 {
                     var targetRoleIds = (!expandAnyRole || d.RoleId.HasValue)
                         ? new List<int?> { d.RoleId }
-                        : (allRoleIds ??= await GetAllActiveRoleIdsAsync(companyId, tx))
+                        // "Any role" = every role mapped to this row's cabinet (Role Cabinet Mapping).
+                        : (await RoleCabinetMappingQueries.GetMappedActiveRoleIdsAsync(
+                                _common, companyId, d.DivisionCode, d.DepartmentCode, d.SubDepartmentCode, d.BusinessDomainCode, tx))
                             .Select(r => (int?)r).ToList();
 
                     foreach (var roleId in targetRoleIds)
@@ -3016,8 +2999,6 @@ public class DocumentRequestComponent
             // that submission and never revert back on their own. Collapsing them back to
             // "Any" for display here matches what a never-submitted Draft already shows. See
             // DMSUtilities.CollapseAnyRoleGroups.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
-
             foreach (var request in requests)
             {
                 var rawDistributionList = roleDistributions
@@ -3041,7 +3022,7 @@ public class DocumentRequestComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
-                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+                request.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDistributionList);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
@@ -3476,7 +3457,7 @@ public class DocumentRequestComponent
             // already expanded into one row per then-active role before being copied here, so
             // this collapses it back to "Any" for display the same way the Request-side reads do.
             var rawDocDistributionList = (await _common.QueryAsync<DistributionListReadDto>(roleDistSql, new { DocumentId = documentId, CompanyId })).ToList();
-            document.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDocDistributionList, await GetAllActiveRoleIdsAsync(CompanyId, null));
+            document.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDocDistributionList);
 
             // 3. Fetch User Distributions (Mapping DocumentUserDistributions -> DocumentRequestUserDistribution)
             var userDistSql = @"
@@ -3673,8 +3654,6 @@ public class DocumentRequestComponent
             // that submission and never revert back on their own. Collapsing them back to
             // "Any" for display here matches what a never-submitted Draft already shows. See
             // DMSUtilities.CollapseAnyRoleGroups.
-            var allActiveRoleIds = await GetAllActiveRoleIdsAsync(CompanyId, null);
-
             foreach (var request in requests)
             {
                 var rawDistributionList = roleDistributions
@@ -3698,7 +3677,7 @@ public class DocumentRequestComponent
                         BusinessDomain = x.BusinessDomain,
                         BusinessDomainCode = x.BusinessDomainCode,
                     }).ToList();
-                request.DistributionList = DMSUtilities.CollapseAnyRoleGroups(rawDistributionList, allActiveRoleIds);
+                request.DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, CompanyId, rawDistributionList);
 
                 request.UserList = userDistributions
                     .Where(x => x.DocumentRequestId == request.Id)
