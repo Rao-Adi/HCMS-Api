@@ -149,6 +149,10 @@ public class WorkFlowStepsFilterDto
     public bool CanEdit { get; set; }
     public bool RequireCrossFunctionalHead { get; set; }
     public bool IsParallelApproval { get; set; }
+
+    // Steps created by this call may add an ad-hoc approver while approving (see
+    // DocumentComponent.ApproveDocumentAsync).
+    public bool CanAddAdHocApprover { get; set; }
 }
 
 
@@ -207,4 +211,7 @@ public class WorkflowStepDefiniationReadDto : AuditableEntity
     public bool IsParallelApproval { get; set; }
 
     public bool RequiresAllApprovals { get; set; }
+
+    // This step's approver may add an ad-hoc approver to the remaining sequence when approving.
+    public bool CanAddAdHocApprover { get; set; }
 }

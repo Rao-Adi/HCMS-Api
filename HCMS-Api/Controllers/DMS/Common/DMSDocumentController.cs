@@ -494,6 +494,35 @@ public class DMSDocumentController : Controller
     }
 
 
+    // For the approval dialog: may the caller add an ad-hoc approver on this workflow right now, and what
+    // does the remaining sequence look like (so they can pick a position).
+    [HttpGet("get-adhoc-options/{executionId}")]
+    public async Task<IActionResult> GetAdHocOptions(int executionId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<AdHocOptionsDto>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetAdHocOptionsAsync(executionId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("approve-document")]
     public async Task<IActionResult> ApproveDocument(ActionOnDocument input)
     {

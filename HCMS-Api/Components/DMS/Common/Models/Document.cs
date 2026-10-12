@@ -267,7 +267,45 @@ public class ActionOnDocument
     public int EmpId { get; set; } 
     public int DocumentId { get; set; } 
     public int ExecutionId { get; set; }
-    public string Observation { get; set; } 
+    public string Observation { get; set; }
+
+    // Approve only. Extra approvers the person approving wants added to the REMAINING sequence. Allowed
+    // only when their own step in the workflow policy carries "Can add ad-hoc approver".
+    public List<AdHocPlacementDto>? AdHocApprovers { get; set; }
+}
+
+// What the approval dialog needs to offer "add an ad-hoc approver".
+public class AdHocOptionsDto
+{
+    // The caller may add one right now: the workflow is with them AND their step carries the permission.
+    public bool CanAddAdHocApprover { get; set; }
+    public long? CurrentStepId { get; set; }
+
+    // The undecided part of the sequence, in order, starting with the caller's own step. Positions are
+    // "after one of these".
+    public List<AdHocSequenceStepDto> Steps { get; set; } = new();
+}
+
+public class AdHocSequenceStepDto
+{
+    public long StepId { get; set; }
+    public int StepOrder { get; set; }
+    public string EmployeeCode { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public string Designation { get; set; } = string.Empty;
+    public bool IsCurrent { get; set; }
+    public bool IsAdHoc { get; set; }
+}
+
+// One ad-hoc approver and where to put them.
+public class AdHocPlacementDto
+{
+    public string EmployeeCode { get; set; } = null!;
+
+    // The step the new approver goes IMMEDIATELY AFTER. The approver's own current step means "next
+    // after me"; null means "at the very end". Must be the current step or a later step that has not
+    // been actioned yet -- an approver cannot jump ahead of, or rewrite, steps already decided.
+    public long? InsertAfterStepId { get; set; }
 }
 
 public  class AllDocumentDto

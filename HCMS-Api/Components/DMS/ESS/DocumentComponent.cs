@@ -1000,7 +1000,7 @@ public class DocumentComponent
             //-------------------------------------------------
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, CanAddAdHocApprover
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId
                 ORDER BY StepOrder;", new { VersionId = versionId }, transaction);
@@ -1025,9 +1025,9 @@ public class DocumentComponent
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
                     await _common.ExecuteAsync(@"
-                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
-                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
+                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive, CanAddAdHocApprover)
+                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, @CanAddAdHoc);",
+                        new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder, CanAddAdHoc = (stepDef.canaddadhocapprover == true) }, transaction);
                     runningStepOrder++;
                     inserted++;
                 }
@@ -1062,9 +1062,9 @@ public class DocumentComponent
                         if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
                         await _common.ExecuteAsync(@"
-                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
-                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
+                            INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive, CanAddAdHocApprover)
+                            VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, @CanAddAdHoc);",
+                            new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder, CanAddAdHoc = (stepDef.canaddadhocapprover == true) }, transaction);
                         runningStepOrder++;
                         inserted++;
                     }
@@ -1075,109 +1075,15 @@ public class DocumentComponent
                 throw new CustomException("Workflow misconfigured — no steps copied.", 404);
 
             //-------------------------------------------------
-            // 6.5️⃣ Ad-hoc Approver(s) -- this-document-only, appended after every policy-defined
-            // step. Deliberately placed after the "no steps copied" check above: an ad-hoc
-            // approver is additive only, never a substitute for a genuinely configured policy, so
-            // a document type with zero configured steps still fails exactly as it does today
-            // even if one was supplied.
-            //-------------------------------------------------
-
-            // A rework does not discharge an ad-hoc approver. They were added because this
-            // document needed their review, and the corrected version needs it just as much --
-            // but they live only as steps on the execution that was sent back, so a resubmission
-            // built from the policy alone silently dropped them.
+            // Ad-hoc approvers are NOT chosen here any more.
             //
-            // A caller that names ad-hoc approvers is authoritative, including when it names none
-            // after having shown them (that is how one is removed) -- an explicit empty list, as
-            // both Create/Update Document and the Draft/Reverted Documents screen now always send
-            // when there is none, is NOT the same as omitting the field entirely. Only a caller
-            // that omits the "adhocapprovers" form field altogether (input.AdHocApprovers stays
-            // null; see the controller's IsNullOrWhiteSpace gate) inherits the previous
-            // execution's/persisted selection instead.
-            var adHocApprovers = input.AdHocApprovers;
-            if (adHocApprovers == null)
-            {
-                // DocumentAdHocApprovers is the durable store a prior Draft save (or a prior
-                // Submit) already wrote to -- see PersistAdHocApproversAsync. Checked first
-                // because it also covers a document that is being submitted for the very first
-                // time, which the WorkflowExecutionSteps scan below never could (there is no
-                // earlier execution to scan).
-                var persisted = await GetPersistedAdHocApproversAsync(input.DocumentId, CompanyId, transaction);
-
-                if (persisted.Any())
-                {
-                    adHocApprovers = persisted
-                        .Select(code => new AdHocApproverDto { EmployeeCode = code })
-                        .ToList();
-                }
-                else
-                {
-                    // Every ad-hoc step hangs off the sentinel policy EnsureAdHocApproverStepDefinitionAsync
-                    // creates, which nothing else uses -- so this finds them and nothing else.
-                    // Kept only for documents reverted before DocumentAdHocApprovers existed.
-                    var carriedOver = (await _common.QueryAsync<string>(@"
-                        SELECT DISTINCT wes.AssignedUserId
-                        FROM WorkflowExecutionSteps wes
-                        JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
-                        JOIN WorkflowStepDefinitions wsd ON wsd.Id = wes.StepDefinitionId
-                        JOIN WorkflowPolicyVersions wpv ON wpv.Id = wsd.WorkflowPolicyVersionId
-                        JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
-                        WHERE we.CompanyId = @CompanyId
-                          AND we.EntityType = 'Document'
-                          AND we.EntityId = @DocumentId
-                          AND we.Id <> @ExecutionId
-                          AND wp.Name = 'System Generated - Ad-hoc Approvers'
-                          AND wes.AssignedUserId IS NOT NULL;",
-                        new { CompanyId, input.DocumentId, ExecutionId = executionId }, transaction)).ToList();
-
-                    if (carriedOver.Any())
-                        adHocApprovers = carriedOver
-                            .Select(code => new AdHocApproverDto { EmployeeCode = code })
-                            .ToList();
-                }
-            }
-
-            // Keep DocumentAdHocApprovers in sync with whatever set this execution actually
-            // ends up using, regardless of which of the sources above it came from -- so the
-            // next revert/resubmit (and the Workflow Authorities preview) can read it directly.
-            await PersistAdHocApproversAsync(adHocApprovers, input.DocumentId, CompanyId, empCode, transaction);
-
-            if (adHocApprovers != null && adHocApprovers.Any())
-            {
-                foreach (var adHoc in adHocApprovers)
-                {
-                    var employeeActive = await _common.ExecuteScalarAsync<int>(@"
-                        SELECT COUNT(1)
-                        FROM tblEmployee e
-                        INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
-                        WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
-                          AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE;",
-                        new { CompanyId, EmployeeCode = adHoc.EmployeeCode }, transaction);
-
-                    if (employeeActive < 1)
-                        throw new CustomException($"Selected ad-hoc approver ({adHoc.EmployeeCode}) was not found or is not active.", 404);
-
-                    string actualUserId = adHoc.EmployeeCode;
-                    var transferTo = await _common.ExecuteScalarAsync<string>(@"
-                        SELECT EmployeeTo FROM ResponsibilityTransfers
-                        WHERE EmployeeFrom = @EmpFrom
-                        AND CompanyId = @CompanyId AND Status = 2
-                        AND EffectiveDateFrom <= CURRENT_DATE
-                        AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
-                        ORDER BY Id DESC LIMIT 1;",
-                        new { EmpFrom = actualUserId, CompanyId }, transaction);
-
-                    if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
-
-                    var adHocStepDefId = await EnsureAdHocApproverStepDefinitionAsync(CompanyId, empCode, actualUserId, transaction);
-
-                    await _common.ExecuteAsync(@"
-                        INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
-                        VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
-                        new { CompanyId, ExecutionId = executionId, StepDefId = adHocStepDefId, UserId = actualUserId, StepOrder = runningStepOrder }, transaction);
-                    runningStepOrder++;
-                }
-            }
+            // They used to be picked by whoever submitted the document and appended after the last
+            // step. The client moved that decision to the APPROVER: a step in the workflow policy can
+            // carry "Can add ad-hoc approver", and the person on that step adds one (or more) while
+            // approving, choosing where they sit in the remaining sequence -- see ApproveDocumentAsync
+            // / AddAdHocApproversAsync. Anything an older client still sends in AdHocApprovers is
+            // ignored on purpose, so a stale screen cannot put an unauthorised approver on a document.
+            //-------------------------------------------------
 
             //-------------------------------------------------
             // 7️⃣ Activate First Step
@@ -1365,7 +1271,6 @@ public class DocumentComponent
             await AttachOrUpdateTemplateAsync(input, doc, CompanyId, empCode, transaction, enforceRequired: false);
             await ValidateAndSaveAttributesAsync(input, doc, transaction, enforceRequired: false);
             await ValidateAndSaveTrainingUsersAsync(input.TrainingUsers, input.DocumentId, doc, CompanyId, empCode, transaction, enforceRequired: false);
-            await PersistAdHocApproversAsync(input.AdHocApprovers, input.DocumentId, CompanyId, empCode, transaction);
 
             var snapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
             await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Draft Saved", "Document",
@@ -2149,6 +2054,199 @@ public class DocumentComponent
             EmployeeName = string.IsNullOrWhiteSpace(name) ? employeeCode : name,
             Role = string.IsNullOrWhiteSpace(role) ? "Review" : role,
         };
+    }
+
+    private static string ZeroTrimmed(string? code) => (code ?? string.Empty).Trim().TrimStart('0');
+
+    /// <summary>
+    /// What the approval dialog needs to offer "add an ad-hoc approver": whether the caller may, and the
+    /// remaining sequence (their own step first) so they can choose a position.
+    ///
+    /// May only when the workflow is currently WITH them and their step in the policy carries "Can add
+    /// ad-hoc approver". The step is read from the running workflow's own snapshot, not the policy, so a
+    /// policy edited while the document is in flight does not change what this person was given.
+    /// </summary>
+    public async Task<AdHocOptionsDto> GetAdHocOptionsAsync(int executionId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+        var clientIp = _clientContextService.GetClientIP();
+        var empCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(clientIp).ToString());
+
+        var result = new AdHocOptionsDto();
+
+        var steps = (await _common.QueryAsync<dynamic>(@"
+            SELECT wes.Id, wes.StepOrder, wes.IsActive, wes.IsAdHoc, wes.AssignedUserId, wes.CanAddAdHocApprover,
+                   emp.FullName, emp.Designation
+            FROM WorkflowExecutionSteps wes
+            LEFT JOIN LATERAL (
+                SELECT LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS FullName,
+                       (SELECT d.name FROM public.tblempjobprofile j
+                          JOIN public.tblsetupsdetail d ON d.sdlid = j.dsgid
+                         WHERE j.empid = e.empid AND COALESCE(j.Active, TRUE) = TRUE
+                         ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1) AS Designation
+                FROM tblEmployee e
+                WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wes.AssignedUserId::text), '0')
+                ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
+                LIMIT 1
+            ) emp ON TRUE
+            WHERE wes.CompanyId = @CompanyId AND wes.WorkflowExecutionId = @ExecutionId
+              AND wes.Decision IS NULL
+            ORDER BY wes.StepOrder;",
+            new { CompanyId = companyId, ExecutionId = executionId })).ToList();
+
+        var current = steps.FirstOrDefault(x => x.isactive == true);
+        if (current == null)
+            return result;
+
+        result.CurrentStepId = (long)Convert.ToInt64(current.id);
+        result.CanAddAdHocApprover =
+            current.canaddadhocapprover == true && ZeroTrimmed(Convert.ToString(current.assigneduserid)) == ZeroTrimmed(empCode)
+            && ZeroTrimmed(empCode).Length > 0;
+
+        foreach (var st in steps)
+        {
+            result.Steps.Add(new AdHocSequenceStepDto
+            {
+                StepId = Convert.ToInt64(st.id),
+                StepOrder = Convert.ToInt32(st.steporder),
+                EmployeeCode = (Convert.ToString(st.assigneduserid) ?? string.Empty).Trim(),
+                EmployeeName = Convert.ToString(st.fullname) ?? string.Empty,
+                Designation = Convert.ToString(st.designation) ?? string.Empty,
+                IsCurrent = st.isactive == true,
+                IsAdHoc = st.isadhoc == true,
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Adds the ad-hoc approvers the person approving has chosen, each at the position they chose.
+    ///
+    /// Rules, all enforced here -- the screen is a convenience, not the control:
+    ///  * the workflow must currently be with the caller, and their step must carry "Can add ad-hoc approver";
+    ///  * a position is "immediately after step X", where X is their own step or a later step that has not
+    ///    been decided yet, or null for the very end -- decided steps are never moved or jumped;
+    ///  * the same person cannot be added twice, nor someone already in this workflow's sequence.
+    /// Steps that follow the new one move down by one, so StepOrder stays a plain 1..N sequence.
+    /// </summary>
+    private async Task AddAdHocApproversAsync(
+        int companyId, string empCode, int documentId, int executionId, dynamic currentStep,
+        List<AdHocPlacementDto> requested, IDbTransaction transaction)
+    {
+        if (!(currentStep.canaddadhocapprover == true))
+            throw new CustomException("Your step in this approval workflow is not set up to add an ad-hoc approver.", 400);
+
+        if (ZeroTrimmed(Convert.ToString(currentStep.assigneduserid)) != ZeroTrimmed(empCode) || ZeroTrimmed(empCode).Length == 0)
+            throw new CustomException("Only the approver this document is currently with can add an ad-hoc approver.", 400);
+
+        long currentStepId = Convert.ToInt64(currentStep.id);
+        int currentOrder = Convert.ToInt32(currentStep.steporder);
+
+        var seen = new HashSet<string>();
+        var placedAt = new Dictionary<long, int>();   // anchor step id (-1 = end) -> how many already put there
+        var summary = new List<object>();
+
+        foreach (var req in requested)
+        {
+            string code = (req.EmployeeCode ?? string.Empty).Trim();
+            if (code.Length == 0)
+                throw new CustomException("Select the ad-hoc approver to add.", 400);
+
+            if (!seen.Add(ZeroTrimmed(code)))
+                throw new CustomException("The same ad-hoc approver was selected more than once.", 400);
+
+            var person = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS FullName
+                FROM tblEmployee e
+                INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
+                WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
+                  AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE
+                LIMIT 1;",
+                new { CompanyId = companyId, EmployeeCode = code }, transaction);
+
+            if (person == null)
+                throw new CustomException($"Selected ad-hoc approver ({code}) was not found or is not active.", 404);
+
+            string name = Convert.ToString(person.fullname) ?? code;
+
+            var alreadyIn = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1) FROM WorkflowExecutionSteps
+                WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId
+                  AND LTRIM(RTRIM(AssignedUserId), '0') = LTRIM(RTRIM(@Code), '0');",
+                new { CompanyId = companyId, ExecutionId = executionId, Code = code }, transaction);
+
+            if (alreadyIn > 0)
+                throw new CustomException($"{name} is already part of this approval workflow.", 400);
+
+            // Where the new step goes.
+            long anchorKey;
+            int anchorOrder;
+            if (req.InsertAfterStepId == null)
+            {
+                anchorKey = -1;
+                anchorOrder = await _common.ExecuteScalarAsync<int>(@"
+                    SELECT COALESCE(MAX(StepOrder), 0) FROM WorkflowExecutionSteps
+                    WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId;",
+                    new { CompanyId = companyId, ExecutionId = executionId }, transaction);
+            }
+            else
+            {
+                anchorKey = req.InsertAfterStepId.Value;
+                var anchor = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT Id, StepOrder, Decision FROM WorkflowExecutionSteps
+                    WHERE Id = @StepId AND CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId;",
+                    new { StepId = anchorKey, CompanyId = companyId, ExecutionId = executionId }, transaction);
+
+                if (anchor == null)
+                    throw new CustomException("The position chosen is not part of this workflow any more. Please reopen and try again.", 400);
+
+                bool isCurrent = Convert.ToInt64(anchor.id) == currentStepId;
+                if (!isCurrent && (Convert.ToInt32(anchor.steporder) < currentOrder || anchor.decision != null))
+                    throw new CustomException("An ad-hoc approver cannot be placed before a step that has already been decided.", 400);
+
+                anchorOrder = Convert.ToInt32(anchor.steporder);
+            }
+
+            // Several approvers sharing one anchor keep the order they were listed in.
+            placedAt.TryGetValue(anchorKey, out int alreadyAtAnchor);
+            int newOrder = anchorKey == -1 ? anchorOrder + 1 : anchorOrder + alreadyAtAnchor + 1;
+            placedAt[anchorKey] = alreadyAtAnchor + 1;
+
+            await _common.ExecuteAsync(@"
+                UPDATE WorkflowExecutionSteps SET StepOrder = StepOrder + 1
+                WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId AND StepOrder >= @NewOrder;",
+                new { CompanyId = companyId, ExecutionId = executionId, NewOrder = newOrder }, transaction);
+
+            string actualUserId = code;
+            var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                SELECT EmployeeTo FROM ResponsibilityTransfers
+                WHERE EmployeeFrom = @EmpFrom AND CompanyId = @CompanyId AND Status = 2
+                  AND EffectiveDateFrom <= CURRENT_DATE
+                  AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                ORDER BY Id DESC LIMIT 1;",
+                new { EmpFrom = actualUserId, CompanyId = companyId }, transaction);
+            if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+            var stepDefId = await EnsureAdHocApproverStepDefinitionAsync(companyId, empCode, actualUserId, transaction);
+
+            await _common.ExecuteAsync(@"
+                INSERT INTO WorkflowExecutionSteps
+                    (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId,
+                     StepOrder, Observation, IsActive, IsAdHoc, AddedBy, CanAddAdHocApprover)
+                VALUES
+                    (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, TRUE, @AddedBy, FALSE);",
+                new { CompanyId = companyId, ExecutionId = executionId, StepDefId = stepDefId, UserId = actualUserId, StepOrder = newOrder, AddedBy = empCode },
+                transaction);
+
+            summary.Add(new { EmployeeCode = actualUserId, Name = name, AtStepOrder = newOrder });
+        }
+
+        await _auditLogComponent.LogActionAsync(companyId, empCode, "Ad-hoc Approver Added", "Document",
+            documentId, _clientContextService.GetRequestIpAddress(),
+            newValues: System.Text.Json.JsonSerializer.Serialize(new { ExecutionId = executionId, Added = summary }),
+            transaction: transaction);
     }
 
     private async Task<int> EnsureAdHocApproverStepDefinitionAsync(int companyId, string empCode, string employeeCode, IDbTransaction transaction)
@@ -3937,60 +4035,6 @@ public class DocumentComponent
         }
     }
 
-    // The durable store for a this-document-only ad-hoc approver -- same role DocumentUserTraining
-    // plays for Training Users. Needed because the approver can be picked on the Create/Update
-    // Document screen and then only "Save as Draft"d: there is no WorkflowExecution yet at that
-    // point for a WorkflowExecutionSteps row to attach to, so without this table the pick was lost
-    // the moment Save as Draft ran (confirmed on IT-II-SOP-012 -- picked at creation, gone by the
-    // time the document was later actually submitted).
-    //
-    // Same null-vs-empty distinction as the ad-hoc block in SubmitDocumentAsync: null means the
-    // caller omitted the field entirely and has nothing new to say, so whatever is already
-    // persisted is left untouched. A non-null list, even empty, is authoritative -- an empty one
-    // clears it outright, which is how Create/Update Document's and the Draft/Reverted Documents
-    // screen's own Remove button take effect (both always send the field, so this only stays null
-    // for a caller that omits it altogether).
-    private async Task PersistAdHocApproversAsync(List<AdHocApproverDto>? adHocApprovers, int documentId, int companyId, string empCode, IDbTransaction transaction)
-    {
-        if (adHocApprovers == null)
-            return;
-
-        foreach (var adHoc in adHocApprovers)
-        {
-            var employeeActive = await _common.ExecuteScalarAsync<int>(@"
-                SELECT COUNT(1)
-                FROM tblEmployee e
-                INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
-                WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
-                  AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE;",
-                new { CompanyId = companyId, EmployeeCode = adHoc.EmployeeCode }, transaction);
-
-            if (employeeActive < 1)
-                throw new CustomException($"Selected ad-hoc approver ({adHoc.EmployeeCode}) was not found or is not active.", 404);
-        }
-
-        await _common.ExecuteAsync(@"
-            DELETE FROM DocumentAdHocApprovers WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
-            new { DocumentId = documentId, CompanyId = companyId }, transaction);
-
-        foreach (var adHoc in adHocApprovers)
-        {
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentAdHocApprovers (CompanyId, DocumentId, EmployeeCode, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
-                VALUES (@CompanyId, @DocumentId, @EmployeeCode, FALSE, NOW(), @UserId, NOW(), @UserId);",
-                new { CompanyId = companyId, DocumentId = documentId, EmployeeCode = adHoc.EmployeeCode, UserId = empCode }, transaction);
-        }
-    }
-
-    private async Task<List<string>> GetPersistedAdHocApproversAsync(int documentId, int companyId, IDbTransaction transaction)
-    {
-        var codes = await _common.QueryAsync<string>(@"
-            SELECT EmployeeCode FROM DocumentAdHocApprovers
-            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsDeleted = FALSE;",
-            new { DocumentId = documentId, CompanyId = companyId }, transaction);
-        return codes.ToList();
-    }
-
     public async Task PromoteVersionAfterReworkAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
     {
         try
@@ -4205,6 +4249,11 @@ public class DocumentComponent
             //-------------------------------------------------
             // 2️⃣ Approve Current Step
             //-------------------------------------------------
+
+            // Extra approvers chosen by the person approving. Added BEFORE their step is closed, so the
+            // "next step" lookup below simply finds whichever one now follows them.
+            if (input.AdHocApprovers != null && input.AdHocApprovers.Any())
+                await AddAdHocApproversAsync(CompanyId, empCode, input.DocumentId, input.ExecutionId, currentStep, input.AdHocApprovers, transaction);
 
             await _common.ExecuteAsync(@"
                 UPDATE WorkflowExecutionSteps

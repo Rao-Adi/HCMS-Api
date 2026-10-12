@@ -226,6 +226,7 @@ public class WorkflowStepComponent
                         wsd.UserId AS userid, 
                         wsd.RequiresAllApprovals AS requiresallapprovals,
                         wsd.RequiresAllApprovals AS isparallelapproval,
+                        wsd.CanAddAdHocApprover AS canaddadhocapprover,
                         FALSE AS canedit,
                         FALSE AS requirecrossfunctionalhead,
                         e.empcode AS employeecode, 
@@ -350,6 +351,7 @@ public class WorkflowStepComponent
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -458,6 +460,7 @@ public class WorkflowStepComponent
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -926,10 +929,10 @@ public class WorkflowStepComponent
 
                         await _dapperService.ExecuteAsync(@"
                             INSERT INTO WorkflowStepDefinitions
-                            (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                            (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                             VALUES
-                            (@CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, NULL, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
-                        new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, RoleId = roleId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = empCode });
+                            (@CompanyId, @VersionId, @StepOrder, 1, @StepType, @RoleId, NULL, NULL, @RequiresAllApprovals, @CanAddAdHocApprover, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
+                        new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, RoleId = roleId, RequiresAllApprovals = filters.IsParallelApproval, CanAddAdHocApprover = filters.CanAddAdHocApprover, CreatedBy = empCode });
                         nextOrder++;
                     }
                 }
@@ -950,10 +953,10 @@ public class WorkflowStepComponent
 
                             await _dapperService.ExecuteAsync(@"
                                 INSERT INTO WorkflowStepDefinitions
-                                (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                                (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
                                 VALUES
-                                (@CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, @DesignationId, NULL, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
-                            new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, DesignationId = designationId, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = empCode });
+                                (@CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, @DesignationId, NULL, @RequiresAllApprovals, @CanAddAdHocApprover, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
+                            new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, DesignationId = designationId, RequiresAllApprovals = filters.IsParallelApproval, CanAddAdHocApprover = filters.CanAddAdHocApprover, CreatedBy = empCode });
                             nextOrder++;
                         }
                     }
@@ -984,11 +987,11 @@ public class WorkflowStepComponent
                         INSERT INTO WorkflowStepDefinitions
                         (
                             CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, 
-                            RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
+                            RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt,LastModifiedBy
                         )
                         VALUES
                         (
-                            @CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, NULL, @UserId, @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
+                            @CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, NULL, @UserId, @RequiresAllApprovals, @CanAddAdHocApprover, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
                         );",
                     new
                     {
@@ -997,7 +1000,7 @@ public class WorkflowStepComponent
                         StepOrder = nextOrder,
                         filters.StepType,
                         UserId = user.EmployeeCode,
-                        RequiresAllApprovals = filters.IsParallelApproval,
+                        RequiresAllApprovals = filters.IsParallelApproval, CanAddAdHocApprover = filters.CanAddAdHocApprover,
                         CreatedBy = empCode
                     });
                     nextOrder++;
@@ -1031,6 +1034,7 @@ public class WorkflowStepComponent
                             wsd.UserId AS userid, 
                             wsd.RequiresAllApprovals AS requiresallapprovals,
                             wsd.RequiresAllApprovals AS isparallelapproval,
+                            wsd.CanAddAdHocApprover AS canaddadhocapprover,
                             FALSE AS canedit,
                             FALSE AS requirecrossfunctionalhead,
                             e.empcode AS employeecode, 
@@ -1140,6 +1144,7 @@ public class WorkflowStepComponent
 
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -1656,12 +1661,12 @@ public class WorkflowStepComponent
                         INSERT INTO WorkflowStepDefinitions
                         (
                             CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, 
-                            RequiresAllApprovals, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
+                            RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
                         )
                         VALUES
                         (
                             @CompanyId, @VersionId, @StepOrder, @StepGroup, @StepType, @RoleId, @DesignationId, @UserId, 
-                            @RequiresAllApprovals, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
+                            @RequiresAllApprovals, @CanAddAdHocApprover, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
                         );",
                     new
                     {
@@ -1674,6 +1679,7 @@ public class WorkflowStepComponent
                         DesignationId = step.DesignationId > 0 ? step.DesignationId : (int?)null,
                         UserId = !string.IsNullOrWhiteSpace(step.UserId) ? step.UserId : null,
                         step.RequiresAllApprovals,
+                        step.CanAddAdHocApprover,
                         CreatedBy = empCode
                     });
                 }
@@ -1729,6 +1735,7 @@ public class WorkflowStepComponent
                     --wsd.ApprovalLevel AS approvallevel, 
                     wsd.RequiresAllApprovals AS requiresallapprovals,
                     wsd.RequiresAllApprovals AS isparallelapproval,
+                    wsd.CanAddAdHocApprover AS canaddadhocapprover,
                     FALSE AS canedit,
                     FALSE AS requirecrossfunctionalhead,
                     e.empcode AS employeecode, 
@@ -1806,6 +1813,7 @@ public class WorkflowStepComponent
                     DocumentTypeCode = GetValue<string>(rowDict, "documenttypecode"),
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
+                    CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
                     IsActive = GetValue<bool>(rowDict, "isactive"),
                     IsDeleted = GetValue<bool>(rowDict, "isdeleted"),

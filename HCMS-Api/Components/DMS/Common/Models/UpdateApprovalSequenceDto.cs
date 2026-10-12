@@ -17,4 +17,8 @@ public class WorkflowStepSequenceDto
     public int? DesignationId { get; set; }
     public string? UserId { get; set; }
     public bool RequiresAllApprovals { get; set; }
+
+    // Carried through a re-ordering: the sequence is rewritten delete-then-insert, so a field that is
+    // not sent back here would be lost every time someone drags a step.
+    public bool CanAddAdHocApprover { get; set; }
 }
