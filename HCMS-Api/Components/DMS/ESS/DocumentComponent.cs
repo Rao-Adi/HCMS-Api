@@ -123,6 +123,11 @@ public class DocumentComponent
         int CompanyId = int.Parse(_CompanyId);
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+        // A record must never be saved without knowing who made it. A blank code means the employee lookup
+        // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+        // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+        if (string.IsNullOrWhiteSpace(empCode))
+            throw new CustomException("Your session could not be verified. Please try again.", 401);
 
         // 2️⃣ Prepare upload path
         var uploadsRoot = DmsPaths.WebRootCombine("uploads", "documents");
@@ -714,9 +719,13 @@ public class DocumentComponent
                 // physical copy collected) before an Obsoletion can go to the approver. A
                 // document with no distribution rows at all has nothing to retrieve, so that
                 // case is not blocked here.
+                // A Digital entry has no physical copy to collect (it is disabled in the system), so it
+                // can never be marked retrieved by hand and is not counted here.
                 var unretrievedCount = await _common.ExecuteScalarAsync<int>(@"
-                    SELECT COUNT(1) FROM DocumentRoleDistributions
-                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND IsRetrieved = FALSE;",
+                    SELECT COUNT(1) FROM DocumentRoleDistributions d
+                    LEFT JOIN DistributionTypes dt ON dt.Id = d.DistributionType
+                    WHERE d.DocumentId = @DocumentId AND d.CompanyId = @CompanyId AND d.IsRetrieved = FALSE
+                      AND UPPER(COALESCE(dt.Name, '')) <> 'DIGITAL';",
                     new { input.DocumentId, CompanyId }, transaction);
 
                 if (unretrievedCount > 0)
@@ -1197,6 +1206,11 @@ public class DocumentComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
             if (input.DocumentId <= 0)
             {
@@ -3251,10 +3265,48 @@ public class DocumentComponent
         if (targetParagraph == null)
             return; // Template doesn't have a content placeholder -- nothing to insert.
 
+        MakeTablesFullWidth(contentElements);
+
         foreach (var element in contentElements)
             targetParagraph.InsertBeforeSelf(element);
 
         targetParagraph.Remove();
+    }
+
+    // Every table in the inserted content -- including one nested inside another table's cell -- is
+    // stretched to the full width of whatever holds it.
+    //
+    // Their width was left as "auto" (or a fixed number of twips from the file they came from). Google
+    // Docs lays an auto-width table out across the available width, but Word shrinks it to fit its
+    // content and pins it to the left -- which is why a nested table, such as the Change History table,
+    // sat as a small block on the left in Word and was only full width in Google Docs. A width stated as
+    // 100% (50ths of a percent, so 5000) means the same thing to both.
+    //
+    // The table indent is cleared because a 100%-wide table that also starts inset from the left would
+    // run past the right edge by that much, and the layout is set back to autofit so the columns spread
+    // out to the new width instead of staying at their old fixed sizes.
+    private static void MakeTablesFullWidth(IEnumerable<OpenXmlElement> elements)
+    {
+        foreach (var element in elements)
+        {
+            var tables = element is Table own
+                ? new[] { own }.Concat(own.Descendants<Table>())
+                : element.Descendants<Table>();
+
+            foreach (var table in tables.ToList())
+            {
+                var properties = table.GetFirstChild<TableProperties>();
+                if (properties == null)
+                {
+                    properties = new TableProperties();
+                    table.PrependChild(properties);
+                }
+
+                properties.TableWidth = new TableWidth { Type = TableWidthUnitValues.Pct, Width = "5000" };
+                properties.TableIndentation = new TableIndentation { Width = 0, Type = TableWidthUnitValues.Dxa };
+                properties.TableLayout = null;
+            }
+        }
     }
 
     // Finds the signature block's template row (the one containing {{ApproverRole}}) within the
@@ -7486,6 +7538,11 @@ public class DocumentComponent
         var clientIp = _clientContextService.GetClientIP();
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+        // A record must never be saved without knowing who made it. A blank code means the employee lookup
+        // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+        // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+        if (string.IsNullOrWhiteSpace(empCode))
+            throw new CustomException("Your session could not be verified. Please try again.", 401);
 
         //LogToFile($"[BULK IMPORT] Starting import. ClientIP: {clientIp}, EmpId: {empId}, EmpCode: {empCode}, CompanyId: {CompanyId}");
 
@@ -8198,9 +8255,13 @@ public class DocumentComponent
                 ) prevver ON TRUE
                 LEFT JOIN public.tblEmployee prevemp ON LTRIM(RTRIM(prevemp.empcode::text), '0') = LTRIM(RTRIM(prevver.CreatedBy::text), '0')
                 LEFT JOIN LATERAL (
+                    -- The live version. An obsoleted document has none -- obsoleting archives its version
+                    -- row (IsActive = FALSE, ArchiveReason = 'Obsoleted') -- so its Version column was blank;
+                    -- fall back to the version that was retired, which is what the person wants to read.
                     SELECT Version FROM DocumentVersions
-                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
-                    ORDER BY CreatedAt DESC LIMIT 1
+                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId
+                      AND (IsActive = TRUE OR ArchiveReason = 'Obsoleted')
+                    ORDER BY IsActive DESC, CreatedAt DESC LIMIT 1
                 ) dv ON TRUE
                 -- Who the document is waiting on right now, so this tab can say it the way the
                 -- Request side's ""My Requests Pending Approval"" does. The step is the active one
@@ -8707,9 +8768,13 @@ public class DocumentComponent
                     TO_CHAR(doc.LastModifiedAt, 'Mon DD, YYYY HH24:MI:SS') AS ""Last Modified On""
                 FROM Vw_Documents doc
                 LEFT JOIN LATERAL (
+                    -- The live version. An obsoleted document has none -- obsoleting archives its version
+                    -- row (IsActive = FALSE, ArchiveReason = 'Obsoleted') -- so its Version column was blank;
+                    -- fall back to the version that was retired, which is what the person wants to read.
                     SELECT Version FROM DocumentVersions
-                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId AND IsActive = TRUE
-                    ORDER BY CreatedAt DESC LIMIT 1
+                    WHERE DocumentId = doc.Id AND CompanyId = doc.CompanyId
+                      AND (IsActive = TRUE OR ArchiveReason = 'Obsoleted')
+                    ORDER BY IsActive DESC, CreatedAt DESC LIMIT 1
                 ) dv ON TRUE
                 -- Same ""Pending with"" the grid shows (see GetMyDocumentsAsync): the active step
                 -- with no decision recorded yet. LATERAL ... LIMIT 1 so a document with several
@@ -9558,6 +9623,16 @@ public class DocumentComponent
         var clientIp = _clientContextService.GetClientIP();
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+        // A Digital entry has nothing to collect, so it is never marked retrieved by hand.
+        var isDigital = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM DocumentRoleDistributions d
+                INNER JOIN DistributionTypes dt ON dt.Id = d.DistributionType
+                WHERE d.Id = @DistributionId AND d.CompanyId = @CompanyId AND UPPER(dt.Name) = 'DIGITAL');",
+            new { DistributionId = distributionId, CompanyId });
+        if (isDigital)
+            throw new CustomException("A Digital distribution has no physical copy to retrieve.", 400);
 
         var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             UPDATE DocumentRoleDistributions

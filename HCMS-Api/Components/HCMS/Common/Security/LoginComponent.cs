@@ -341,14 +341,12 @@ namespace HCMS_Api.Components.HCMS.Common.Security
             string _Prefix = String.Empty;
             if (string.IsNullOrEmpty(_TerminalId)) return _Prefix;
 
-            var sanitizedIP = _TerminalId.Replace("'", "''");
-            Object obj = new object();
-            obj = _utilities.GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
-            if (obj != null)
+            return SessionPrefixCache.GetOrLookup(_TerminalId, () =>
             {
-                _Prefix = obj.ToString();
-            }
-            return _Prefix;
+                var sanitizedIP = _TerminalId.Replace("'", "''");
+                Object obj = _utilities.GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
+                return obj != null ? obj.ToString() ?? string.Empty : string.Empty;
+            });
         }
         public DataSet GetAllCompanies()
         {
@@ -373,6 +371,8 @@ namespace HCMS_Api.Components.HCMS.Common.Security
                 {
                     object obj = new object();
                     _dataservice.ExecuteStatementForSecurity(_Query, ref obj, 2);
+                    // A new login was just recorded for this value; do not keep answering with the old one.
+                    SessionPrefixCache.Invalidate(IP);
 
                 }
                 catch (SqlException exception)
@@ -1197,6 +1197,7 @@ namespace HCMS_Api.Components.HCMS.Common.Security
                     DataServices ds = new DataServices(_configuration);
                     object obj = new object();
                     ds.ExecuteStatement($"Delete FROM tblUniqueKeyForRedis Where UniqueKey='{prefix}'", ref obj, 2);
+                    SessionPrefixCache.InvalidateByPrefix(prefix);
 
                     msg = "Successful";
                 }

@@ -759,14 +759,14 @@ namespace HCMS_Api.Components.HCMS.Common
             string _Prefix = String.Empty;
             if (string.IsNullOrEmpty(_ClientIP)) return _Prefix;
 
-            var sanitizedIP = _ClientIP.Replace("'", "''");
-            Object obj = new object();
-            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
-            if (obj != null)
+            // Cached briefly (see SessionPrefixCache): this is a Security-database query made several times by
+            // almost every request, and a slow answer used to come back as "no session".
+            return SessionPrefixCache.GetOrLookup(_ClientIP, () =>
             {
-                _Prefix = obj.ToString();
-            }
-            return _Prefix;
+                var sanitizedIP = _ClientIP.Replace("'", "''");
+                Object obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
+                return obj != null ? obj.ToString() ?? string.Empty : string.Empty;
+            });
         }
 
 

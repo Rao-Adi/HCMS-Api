@@ -118,6 +118,11 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
 
             string? draftFileUrl = null;
@@ -417,6 +422,11 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
             // ────────────────────────────────────────────────
             // Convert empty strings → null (this is the key fix)
@@ -687,6 +697,11 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
             string? Normalize(string? value) =>
                 string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -1518,6 +1533,11 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
             //-------------------------------------------------
             // Validate Request
@@ -3858,6 +3878,11 @@ public class DocumentRequestComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+            // A record must never be saved without knowing who made it. A blank code means the employee lookup
+            // failed (the remote HCMS database was slow), not that nobody is logged in -- refuse, instead of
+            // saving a blank CreatedBy that later shows as an empty "Requested By" and duplicates inbox rows.
+            if (string.IsNullOrWhiteSpace(empCode))
+                throw new CustomException("Your session could not be verified. Please try again.", 401);
 
 
             var countSql = $@"SELECT COUNT(1)                

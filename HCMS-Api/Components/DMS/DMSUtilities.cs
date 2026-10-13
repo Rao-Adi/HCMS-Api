@@ -764,14 +764,14 @@ namespace HCMS_Api.Components.DMS.Common
             string _Prefix = String.Empty;
             if (string.IsNullOrEmpty(_ClientIP)) return _Prefix;
 
-            var sanitizedIP = _ClientIP.Replace("'", "''");
-            Object obj = new object();
-            obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
-            if (obj != null)
+            // Cached briefly (see SessionPrefixCache): this is a Security-database query made several times by
+            // almost every request, and a slow answer used to come back as "no session".
+            return SessionPrefixCache.GetOrLookup(_ClientIP, () =>
             {
-                _Prefix = obj.ToString();
-            }
-            return _Prefix;
+                var sanitizedIP = _ClientIP.Replace("'", "''");
+                Object obj = GetScalarDataForSecurity("SELECT top 1 UniqueKey FROM tblUniqueKeyForRedis Where EntTerminal='" + sanitizedIP + "' OR EntTerminal LIKE '%" + sanitizedIP + "' order by  Id desc");
+                return obj != null ? obj.ToString() ?? string.Empty : string.Empty;
+            });
         }
 
 
@@ -2302,10 +2302,52 @@ namespace HCMS_Api.Components.DMS.Common
                         _EmpId = Convert.ToInt32(drloginDetail["EmpId"].ToString());
                     }
                 }
+
+                // The session exists (a prefix was found) but its "OtherData" entry -- the one that carries
+                // EmpId -- does not. Login writes LoginDetail first, then makes a run of calls to the remote
+                // databases, and only writes OtherData / IsLogin at the very end; if one of those calls
+                // timed out the session was left half made. Everything then ran with employee id 0, whose
+                // employee code is blank, and records were saved with a blank CreatedBy. The user and company
+                // are still in LoginDetail, so work the employee out from those, the same way login does.
+                if (_EmpId == 0 && !string.IsNullOrEmpty(prefix))
+                {
+                    var resolved = SessionEmpIdCache.GetOrLookup(prefix, () => ResolveEmpIdFromLoginDetail(prefix));
+                    if (int.TryParse(resolved, out var parsed))
+                        _EmpId = parsed;
+                }
             }
             catch (Exception ex) { }
 
             return _EmpId;
+        }
+
+        // Employee id for a session from its LoginDetail alone (user id + company). The user mapping table
+        // (EXTERNAL_SECURITY_USERMAPPING) already carries EmpId, so one lookup is enough. A user can be mapped
+        // to several companies; the row for the session's company wins, otherwise the first one -- the same
+        // choice LoginComponent.GetUserData makes. Empty if the user has no mapping.
+        private string ResolveEmpIdFromLoginDetail(string prefix)
+        {
+            try
+            {
+                string loginDetail = GetKeyInRedis(prefix + "DecryptLoginDetail", _configuration);
+                if (string.IsNullOrEmpty(loginDetail)) return string.Empty;
+
+                var dt = JsonConvert.DeserializeObject<DataTable>(loginDetail);
+                if (dt == null || dt.Rows.Count == 0) return string.Empty;
+
+                string userId = Convert.ToString(dt.Rows[0]["UserId"])?.Trim() ?? string.Empty;
+                string companyId = Convert.ToString(dt.Rows[0]["CompanyId"])?.Trim() ?? string.Empty;
+                if (userId.Length == 0) return string.Empty;
+
+                return GetScalarData(
+                    "SELECT TOP 1 EmpId FROM EXTERNAL_SECURITY_USERMAPPING WHERE UserID = N'" + userId.ToUpper().Replace("'", "''") + "'" +
+                    " ORDER BY CASE WHEN LTRIM(RTRIM(CAST(CCode AS varchar(20)))) = '" + companyId.Replace("'", "''") + "' THEN 0 ELSE 1 END, EmpId")
+                    ?.ToString() ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         public bool isLeaveRequestForSubordinate(string CompanyID, string AppCulture)
@@ -2463,6 +2505,18 @@ namespace HCMS_Api.Components.DMS.Common
         }
 
         public string GetEmpCodeForHCMS(string EmpId)
+        {
+            // Remembered for a while (see EmployeeCodeCache): this is a query to the remote HCMS database
+            // that almost every request makes, and a slow answer used to come back as a blank code that was
+            // then saved as the record's CreatedBy. One retry covers a single dropped connection.
+            return EmployeeCodeCache.GetOrLookup(EmpId, () =>
+            {
+                var code = QueryEmpCodeForHCMS(EmpId);
+                return string.IsNullOrEmpty(code) && !string.IsNullOrWhiteSpace(EmpId) ? QueryEmpCodeForHCMS(EmpId) : code;
+            });
+        }
+
+        private string QueryEmpCodeForHCMS(string EmpId)
         {
             string empcode = "";
             try
