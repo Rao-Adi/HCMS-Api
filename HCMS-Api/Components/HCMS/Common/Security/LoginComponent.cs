@@ -463,11 +463,12 @@ namespace HCMS_Api.Components.HCMS.Common.Security
                 }
                 else
                 {
-
-                    String strResult = _dataservice.GetDataWithClause(" * ", "tblEmployee",
-                     " EmpCode = '" + UserMapping.Tables[0].Rows[0]["EmployeeId"] + "' And CompanyId = " + Convert.ToInt32(UserMapping.Tables[0].Rows[0]["CCode"]).ToString(),
-                     ref _loginResult);
-
+                    // No mapping for the company being logged into. This used to fall back to the user's FIRST
+                    // mapping, which let a person into a company they do not belong to under another
+                    // company's employee record (a user mapped only to company 6 working inside company 1,
+                    // with every employee list and "created by" then belonging to the wrong company).
+                    // Refused instead; the caller sends the user to the unsuccessful-mapping page.
+                    return false;
                 }
                 if (_loginResult.Tables[0].Rows.Count > 0)
                 {

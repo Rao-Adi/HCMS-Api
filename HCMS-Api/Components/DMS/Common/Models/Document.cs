@@ -274,6 +274,12 @@ public class ActionOnDocument
     public List<AdHocPlacementDto>? AdHocApprovers { get; set; }
 }
 
+// Which of these workflow runs may the caller add an ad-hoc approver to right now.
+public class AdHocAuthorityInputDto
+{
+    public List<int> ExecutionIds { get; set; } = new();
+}
+
 // What the approval dialog needs to offer "add an ad-hoc approver".
 public class AdHocOptionsDto
 {
@@ -295,6 +301,11 @@ public class AdHocSequenceStepDto
     public string Designation { get; set; } = string.Empty;
     public bool IsCurrent { get; set; }
     public bool IsAdHoc { get; set; }
+
+    // The step's recorded decision ("Approved", ...), empty while it is still waiting. The modal shows the whole
+    // approval chain, so steps already decided are listed too -- read-only, and never a place to insert.
+    public string Decision { get; set; } = string.Empty;
+    public bool IsDecided { get; set; }
 }
 
 // One ad-hoc approver and where to put them.

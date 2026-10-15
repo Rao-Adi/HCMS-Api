@@ -206,7 +206,7 @@ public class PeoplePartnersComponent
                 LEFT JOIN tblsetupsdetail dept ON e.mdptid = dept.sdlid AND dept.smsid = 84
                 LEFT JOIN tblsetupsdetail subdept ON e.dptid = subdept.sdlid AND subdept.smsid = 24
                 LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
-                LEFT JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND ejp.active = TRUE
+                LEFT JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND ejp.active = TRUE AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
                 LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid";
 
@@ -380,7 +380,7 @@ public class PeoplePartnersComponent
 
         string baseQuery = $@"
             FROM tblEmployee e
-            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
+            INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
             LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid
             LEFT JOIN tblsetupsdetail des_fallback ON e.dsgid = des_fallback.sdlid
             LEFT JOIN tblsetupsdetail r ON ejp.roleid = r.sdlid";
@@ -417,12 +417,12 @@ public class PeoplePartnersComponent
 
         if (input.DesignationId.HasValue)
         {
-            conditions.Add("(e.dsgId = @DesignationId OR EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND (p.dsgid = @DesignationId OR p.ddsgid = @DesignationId) AND p.active = TRUE))");
+            conditions.Add("(e.dsgId = @DesignationId OR EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.CompanyId = @CompanyId AND (p.dsgid = @DesignationId OR p.ddsgid = @DesignationId) AND p.active = TRUE))");
         }
 
         if (input.RoleId.HasValue)
         {
-            conditions.Add("EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.roleid = @RoleId AND p.active = TRUE)");
+            conditions.Add("EXISTS (SELECT 1 FROM TblEmpJobProfile p WHERE p.empid = e.empid AND p.CompanyId = @CompanyId AND p.roleid = @RoleId AND p.active = TRUE)");
         }
 
         // Dynamic Role Checking for Head of Divisions/Departments based on standard setup detail names
@@ -437,7 +437,7 @@ public class PeoplePartnersComponent
             conditions.Add($@"EXISTS (
                 SELECT 1 FROM TblEmpJobProfile p 
                 INNER JOIN tblsetupsdetail b ON p.roleid = b.sdlid 
-                WHERE p.empid = e.empid AND b.smsid = 189 AND b.name IN ({rolesList}) AND p.active = TRUE
+                WHERE p.empid = e.empid AND p.CompanyId = @CompanyId AND b.smsid = 189 AND b.name IN ({rolesList}) AND p.active = TRUE
             )");
         }
 
@@ -551,7 +551,9 @@ public class PeoplePartnersComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
-            string query = $@"select empcode, firstname, midname, lastname from tblEmployee where CompanyId = {CompanyId};";
+            // Active employees only: this feeds the "pick a person" dropdowns (approvers, authorizers,
+            // transfer targets ...), and most of this company's records are leavers who cannot act on anything.
+            string query = $@"select empcode, firstname, midname, lastname from tblEmployee where CompanyId = {CompanyId} and COALESCE(Active, 1) = 1;";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 

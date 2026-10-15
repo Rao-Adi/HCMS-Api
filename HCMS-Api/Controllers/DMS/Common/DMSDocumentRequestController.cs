@@ -548,8 +548,9 @@ public class DMSDocumentRequestController : Controller
                     // approver compared to the request's own Document Name. Prefer that instead,
                     // sanitized since it's free-text user input rather than an already-valid
                     // filesystem name the way filePath/RequestNumber are.
-                    var sanitizedDocumentName = SanitizeForFileName(request.DocumentName);
-                    fileName = Path.GetFileNameWithoutExtension(filePath ?? sanitizedDocumentName ?? request.RequestNumber ?? "Document") + ".docx";
+                    // Always named after the request's Document Name -- the uploaded file's name on disk
+                    // is often a generated one and says nothing to the person downloading it.
+                    fileName = DownloadFileBaseName(request.DocumentName, filePath, request.RequestNumber) + ".docx";
                 }
                 catch (Exception mergeEx)
                 {
@@ -566,7 +567,7 @@ public class DMSDocumentRequestController : Controller
                     }
                     fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    fileName = Path.GetFileName(filePath);
+                    fileName = DownloadFileBaseName(request.DocumentName, filePath, request.RequestNumber) + Path.GetExtension(filePath);
                 }
             }
             else if (filePath != null)
@@ -577,7 +578,7 @@ public class DMSDocumentRequestController : Controller
                 {
                     contentType = "application/octet-stream";
                 }
-                fileName = Path.GetFileName(filePath);
+                fileName = DownloadFileBaseName(request.DocumentName, filePath, request.RequestNumber) + Path.GetExtension(filePath);
             }
             else
             {
@@ -613,6 +614,14 @@ public class DMSDocumentRequestController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+    // The name a downloaded request draft is saved under (without extension): its Document Name, falling
+    // back to the stored file's name and then the request number.
+    private static string DownloadFileBaseName(string? documentName, string? filePath, string? requestNumber) =>
+        SanitizeForFileName(documentName)
+        ?? (filePath != null ? Path.GetFileNameWithoutExtension(filePath) : null)
+        ?? SanitizeForFileName(requestNumber)
+        ?? "Document";
 
     // Strips characters that aren't valid in a filesystem file name -- unlike filePath (already
     // a real path) or RequestNumber (a generated code), DocumentName is free-text the user typed

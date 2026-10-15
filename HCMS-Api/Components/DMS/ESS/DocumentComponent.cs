@@ -719,18 +719,16 @@ public class DocumentComponent
                 // physical copy collected) before an Obsoletion can go to the approver. A
                 // document with no distribution rows at all has nothing to retrieve, so that
                 // case is not blocked here.
-                // A Digital entry has no physical copy to collect (it is disabled in the system), so it
-                // can never be marked retrieved by hand and is not counted here.
+                // Every entry needs a decision: a Physical copy marked retrieved, a Digital one disabled
+                // (both flip the same IsRetrieved flag; Digital also withdraws the users' access).
                 var unretrievedCount = await _common.ExecuteScalarAsync<int>(@"
                     SELECT COUNT(1) FROM DocumentRoleDistributions d
-                    LEFT JOIN DistributionTypes dt ON dt.Id = d.DistributionType
-                    WHERE d.DocumentId = @DocumentId AND d.CompanyId = @CompanyId AND d.IsRetrieved = FALSE
-                      AND UPPER(COALESCE(dt.Name, '')) <> 'DIGITAL';",
+                    WHERE d.DocumentId = @DocumentId AND d.CompanyId = @CompanyId AND d.IsRetrieved = FALSE;",
                     new { input.DocumentId, CompanyId }, transaction);
 
                 if (unretrievedCount > 0)
                     throw new CustomException(
-                        "Confirm every Distribution List entry has been retrieved (digitally disabled or physical copy collected) before submitting this Obsoletion.", 400);
+                        "Confirm every Distribution List entry has been dealt with (physical copies marked retrieved, digital copies disabled) before submitting this Obsoletion.", 400);
             }
             else if (isRevisionSubmission)
             {
@@ -2078,24 +2076,27 @@ public class DocumentComponent
 
         var steps = (await _common.QueryAsync<dynamic>(@"
             SELECT wes.Id, wes.StepOrder, wes.IsActive, wes.IsAdHoc, wes.AssignedUserId, wes.CanAddAdHocApprover,
-                   emp.FullName, emp.Designation
+                   wes.Decision, emp.FullName, emp.Designation
             FROM WorkflowExecutionSteps wes
             LEFT JOIN LATERAL (
                 SELECT LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS FullName,
-                       (SELECT d.name FROM public.tblempjobprofile j
+                       COALESCE((SELECT d.name FROM public.tblempjobprofile j
                           JOIN public.tblsetupsdetail d ON d.sdlid = j.dsgid
                          WHERE j.empid = e.empid AND COALESCE(j.Active, TRUE) = TRUE
-                         ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1) AS Designation
+                         ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1),
+                       (SELECT d2.name FROM public.tblsetupsdetail d2 WHERE d2.sdlid = e.dsgid)) AS Designation
                 FROM tblEmployee e
                 WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wes.AssignedUserId::text), '0')
                 ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
                 LIMIT 1
             ) emp ON TRUE
             WHERE wes.CompanyId = @CompanyId AND wes.WorkflowExecutionId = @ExecutionId
-              AND wes.Decision IS NULL
-            ORDER BY wes.StepOrder;",
+            ORDER BY wes.StepOrder, wes.Id;",
             new { CompanyId = companyId, ExecutionId = executionId })).ToList();
 
+        // The whole chain is returned (decided steps included) so the approver sees where they sit in it.
+        // Only the step that is currently active -- the caller's own, when they may add one -- and the
+        // undecided ones after it are valid places to insert; AddAdHocApproversAsync enforces that.
         var current = steps.FirstOrDefault(x => x.isactive == true);
         if (current == null)
             return result;
@@ -2116,10 +2117,68 @@ public class DocumentComponent
                 Designation = Convert.ToString(st.designation) ?? string.Empty,
                 IsCurrent = st.isactive == true,
                 IsAdHoc = st.isadhoc == true,
+                Decision = (Convert.ToString(st.decision) ?? string.Empty).Trim(),
+                IsDecided = !string.IsNullOrWhiteSpace(Convert.ToString(st.decision)),
             });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Designation of one employee (same lookup the approval chain uses), so a newly picked ad-hoc approver
+    /// is listed with a designation like everyone else. Empty when none is on file.
+    /// </summary>
+    public async Task<string> GetAdHocApproverDesignationAsync(string? empCode)
+    {
+        if (string.IsNullOrWhiteSpace(empCode) || ZeroTrimmed(empCode).Length == 0)
+            return string.Empty;
+
+        int companyId = int.Parse(_utilities.GetCompanyId(_clientContextService.GetClientIP()));
+        var rows = await _common.QueryAsync<string>(@"
+            SELECT COALESCE((SELECT d.name FROM public.tblempjobprofile j
+                      JOIN public.tblsetupsdetail d ON d.sdlid = j.dsgid
+                     WHERE j.empid = e.empid AND COALESCE(j.Active, TRUE) = TRUE
+                     ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1),
+                       (SELECT d2.name FROM public.tblsetupsdetail d2 WHERE d2.sdlid = e.dsgid)) AS Designation
+            FROM tblEmployee e
+            WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(@EmpCode), '0')
+            ORDER BY (e.CompanyId = @CompanyId) DESC, e.empid DESC
+            LIMIT 1;",
+            new { CompanyId = companyId, EmpCode = empCode });
+
+        return (rows.FirstOrDefault() ?? string.Empty).Trim();
+    }
+
+    /// <summary>
+    /// Of the given workflow runs, the ones the caller may add an ad-hoc approver to right now -- the same
+    /// rule GetAdHocOptionsAsync / AddAdHocApproversAsync enforce (the workflow is currently with the caller,
+    /// and their step carries "Can add ad-hoc approver"), asked for many runs in one query so the approvals
+    /// grid can show an "Ad-hoc Approver" link only on the rows where it applies.
+    /// </summary>
+    public async Task<List<int>> GetAdHocAuthorityAsync(List<int>? executionIds)
+    {
+        if (executionIds == null || executionIds.Count == 0)
+            return new List<int>();
+
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+        var empCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString());
+        if (ZeroTrimmed(empCode).Length == 0)
+            return new List<int>();
+
+        var rows = await _common.QueryAsync<int>(@"
+            SELECT DISTINCT wes.WorkflowExecutionId
+            FROM WorkflowExecutionSteps wes
+            WHERE wes.CompanyId = @CompanyId
+              AND wes.WorkflowExecutionId = ANY(@ExecutionIds)
+              AND wes.IsActive = TRUE
+              AND wes.Decision IS NULL
+              AND wes.CanAddAdHocApprover = TRUE
+              AND LTRIM(RTRIM(wes.AssignedUserId::text), '0') = LTRIM(RTRIM(@EmpCode), '0');",
+            new { CompanyId = companyId, ExecutionIds = executionIds.ToArray(), EmpCode = empCode });
+
+        return rows.ToList();
     }
 
     /// <summary>
@@ -3329,6 +3388,10 @@ public class DocumentComponent
     {
         public string Name { get; init; } = string.Empty;
         public string Designation { get; init; } = string.Empty;
+
+        // The person's role (People Partners role on their job profile) -- what the current templates'
+        // signature block shows in place of the designation.
+        public string Role { get; init; } = string.Empty;
         public string? SignatureUrl { get; init; }
         public DateTime? Date { get; init; }
     }
@@ -3360,19 +3423,21 @@ public class DocumentComponent
     // Turns the Parties CTE of a signatory query into rows: who each person is, their designation
     // and their e-signature. Shared by the Document and the Request signatory lookups.
     private const string SignatoryProjectionSql = @"
-            SELECT p.Role, p.Position, emp.FullName, emp.Designation, emp.SignatureURL, p.ActedAt
+            SELECT p.Role, p.Position, emp.FullName, emp.Designation, emp.UserRole, emp.SignatureURL, p.ActedAt
             FROM Parties p
             LEFT JOIN LATERAL (
                 SELECT LTRIM(RTRIM(COALESCE(e.firstname,'') || ' ' || COALESCE(e.midname,'') || ' ' || COALESCE(e.lastname,''))) AS FullName,
                        desig.name AS Designation,
+                       urole.name AS UserRole,
                        es.SignatureURL
                 FROM tblEmployee e
                 LEFT JOIN LATERAL (
-                    SELECT j.dsgid FROM public.tblempjobprofile j
+                    SELECT j.dsgid, j.roleid FROM public.tblempjobprofile j
                     WHERE j.empid = e.empid AND j.Active IS NOT FALSE
                     ORDER BY (j.CompanyId = @CompanyId) DESC, j.jobprofileid DESC LIMIT 1
                 ) ejp ON TRUE
                 LEFT JOIN public.tblsetupsdetail desig ON desig.sdlid = ejp.dsgid
+                LEFT JOIN public.tblsetupsdetail urole ON urole.sdlid = ejp.roleid
                 LEFT JOIN LATERAL (
                     SELECT sg.SignatureURL FROM ESignatures sg
                     WHERE TRIM(sg.UserId) = TRIM(e.empCode) AND sg.IsActive = TRUE AND sg.IsDeleted = FALSE
@@ -3468,6 +3533,7 @@ public class DocumentComponent
             {
                 Name = Convert.ToString(row.fullname) ?? string.Empty,
                 Designation = Convert.ToString(row.designation) ?? string.Empty,
+                Role = Convert.ToString(row.userrole) ?? string.Empty,
                 SignatureUrl = row.signatureurl as string,
                 Date = row.actedat as DateTime?,
             });
@@ -3555,10 +3621,10 @@ public class DocumentComponent
         // Authorizer carries two name spellings because the template misspells one of them.
         var lines = new[]
         {
-            (Label: "Written By",    Role: "Writer",     Names: new[] { "WritersName", "WriterName" },        Designation: "WritersDesignation",    Signature: "WriterSignature"),
-            (Label: "Reviewed By",   Role: "Reviewer",   Names: new[] { "ReviewerName" },                     Designation: "ReviewerDesignation",   Signature: "ReviewerSignature"),
-            (Label: "Approved By",   Role: "Approver",   Names: new[] { "ApproverName" },                     Designation: "ApproverDesignation",   Signature: "ApproverSignature"),
-            (Label: "Authorized By", Role: "Authorizer", Names: new[] { "AuthroizerName", "AuthorizerName" }, Designation: "AuthorizerDesignation", Signature: "AuthorizerSignature"),
+            (Label: "Written By",    Role: "Writer",     Names: new[] { "WritersName", "WriterName" },        Designation: "WritersDesignation",    RoleCell: "WritersRole",    Signature: "WriterSignature"),
+            (Label: "Reviewed By",   Role: "Reviewer",   Names: new[] { "ReviewerName" },                     Designation: "ReviewerDesignation",   RoleCell: "ReviewerRole",   Signature: "ReviewerSignature"),
+            (Label: "Approved By",   Role: "Approver",   Names: new[] { "ApproverName" },                     Designation: "ApproverDesignation",   RoleCell: "ApproverRole",   Signature: "ApproverSignature"),
+            (Label: "Authorized By", Role: "Authorizer", Names: new[] { "AuthroizerName", "AuthorizerName" }, Designation: "AuthorizerDesignation", RoleCell: "AuthorizerRole", Signature: "AuthorizerSignature"),
         };
 
         foreach (var line in lines)
@@ -3576,7 +3642,7 @@ public class DocumentComponent
             // Nobody yet: leave the single row in place, reading N/A across.
             if (people == null || people.Count == 0)
             {
-                FillSignatureRow(ownerPart, templateRow, line.Names, line.Designation, line.Signature, null, ref drawingId);
+                FillSignatureRow(ownerPart, templateRow, line.Names, line.Designation, line.RoleCell, line.Signature, null, ref drawingId);
                 continue;
             }
 
@@ -3584,7 +3650,7 @@ public class DocumentComponent
             foreach (var person in people)
             {
                 var row = (TableRow)templateRow.CloneNode(true);
-                FillSignatureRow(ownerPart, row, line.Names, line.Designation, line.Signature, person, ref drawingId);
+                FillSignatureRow(ownerPart, row, line.Names, line.Designation, line.RoleCell, line.Signature, person, ref drawingId);
                 templateRow.InsertBeforeSelf(row);
             }
 
@@ -3595,17 +3661,24 @@ public class DocumentComponent
     /// <summary>Writes one person (or N/A throughout) into one row of the signature block.</summary>
     private void FillSignatureRow(
         OpenXmlPart ownerPart, TableRow row,
-        string[] nameStems, string designationStem, string signatureStem,
+        string[] nameStems, string designationStem, string roleStem, string signatureStem,
         Signatory? who, ref uint drawingId)
     {
         foreach (var stem in nameStems)
             ReplacePlaceholderText(row, "{{" + stem + "}}", OrNotApplicable(who?.Name));
 
+        // Current templates show the person's Role and have no Signature column; older ones still carry
+        // the Designation / Signature placeholders, which keep being filled.
         ReplacePlaceholderText(row, "{{" + designationStem + "}}", OrNotApplicable(who?.Designation));
+        ReplacePlaceholderText(row, "{{" + roleStem + "}}", OrNotApplicable(who?.Role));
 
         // Every line spells the date the same way, so it is written inside this row only.
         ReplacePlaceholderText(row, "{{ApprovalDate}}",
             who?.Date.HasValue == true ? FormatMergeDate(who.Date!.Value) : SignatureCellWhenEmpty);
+
+        // No Signature column in the template -- nothing to insert, nothing to log.
+        if (!ContainsPlaceholder(row, "{{" + signatureStem + "}}"))
+            return;
 
         byte[]? signatureData = null;
         string? signaturePath = null;
@@ -3636,6 +3709,11 @@ public class DocumentComponent
 
     private void PopulateSignatureBlock(OpenXmlPart ownerPart, OpenXmlElement container, List<dynamic> approvers, ref uint drawingId)
     {
+        // The fixed Written/Reviewed/Approved/Authorized block also uses {{ApproverRole}} (its Approved By
+        // line shows the person's role) -- that layout is filled by PopulateRoleSignatureBlock instead.
+        if (container.Descendants<TableRow>().Any(r => ContainsPlaceholder(r, "{{WritersName}}")))
+            return;
+
         var templateRow = container.Descendants<TableRow>()
             .FirstOrDefault(r => ContainsPlaceholder(r, "{{ApproverRole}}"));
 
@@ -5885,6 +5963,17 @@ public class DocumentComponent
 
 
 
+    // Misc Policies > Authorization Policy decides who may authorize a document: the type must have an active
+    // policy that requires authorization, and the person must be the Authorizing Authority it names. Without
+    // one, nobody sees the document on the Authorization screen or can authorize it. @AuthEmpCode is the caller.
+    private const string AuthorizingAuthorityPolicySql = @"EXISTS (
+                      SELECT 1 FROM DocumentTrainingAuthorizations pol
+                      WHERE pol.CompanyId = doc.CompanyId
+                        AND pol.DocumentTypeCode = doc.DocumentTypeCode
+                        AND pol.IsActive = TRUE AND pol.IsDeleted = FALSE
+                        AND pol.AuthorizationRequired = TRUE
+                        AND LTRIM(RTRIM(pol.AuthorizingUserId::text), '0') = LTRIM(RTRIM(@AuthEmpCode::text), '0'))";
+
     public async Task<PaginationResult<dynamic>> GetPendingAuthorizationsAsync(GetPendingAuthorization input)
     {
         try
@@ -5920,6 +6009,11 @@ public class DocumentComponent
                   -- has a training or authorization step after QA approval). It must never be
                   -- listed here.
                   AND COALESCE((SELECT d2.ActivityTypeCode FROM Documents d2 WHERE d2.Id = doc.Id), '') <> 'DRT-0003'";
+
+            // The Pending tab is the authorizer's work queue, so it is limited to documents this person
+            // is the Authorizing Authority for. (Authorized / Rejected stay a record of what happened.)
+            if (input.ActionType.ToUpper() != "REJECTED" && !input.IsAuthorized)
+                whereClause += " AND " + AuthorizingAuthorityPolicySql;
 
             if (!string.IsNullOrWhiteSpace(input.DivisionCode))
                 whereClause += " AND doc.DivisionCode = @DivisionCode";
@@ -6079,6 +6173,7 @@ public class DocumentComponent
 
             var queryParams = new
             {
+                AuthEmpCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString()),
                 CompanyId = CompanyId,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
@@ -6165,7 +6260,7 @@ public class DocumentComponent
                         JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
                         WHERE dsh.DocumentId = doc.Id
                         ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
-                    ) IN ('APPROVED', 'AUTHORIZATION_PENDING')) AS PendingCount,
+                    ) IN ('APPROVED', 'AUTHORIZATION_PENDING') AND {AuthorizingAuthorityPolicySql}) AS PendingCount,
 
                     COUNT(DISTINCT doc.Id) FILTER (WHERE (
                         SELECT ds.Code
@@ -6188,6 +6283,7 @@ public class DocumentComponent
 
             var queryParams = new
             {
+                AuthEmpCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString()),
                 CompanyId = CompanyId,
                 DivisionCode = input.DivisionCode,
                 DepartmentCode = input.DepartmentCode,
@@ -6506,6 +6602,28 @@ public class DocumentComponent
             // the approval is honoured and lands the document where it belongs: Obsoleted.
             bool isObsoletion = string.Equals(
                 (string?)obsoletionInfo?.activitytypecode, "DRT-0003", StringComparison.OrdinalIgnoreCase);
+
+            // Only the Authorizing Authority named for this document type in Misc Policies > Authorization
+            // Policy may authorize (or reject) it -- the screen already lists only their documents, but this
+            // is the control: the call is refused for anyone else, or when no policy requires authorization.
+            // An Obsoletion has no authorization step and is closed below as before.
+            if (!isObsoletion)
+            {
+                bool isAuthorizingAuthority = await _common.ExecuteScalarAsync<bool>(@"
+                    SELECT EXISTS (
+                        SELECT 1 FROM Documents d
+                        INNER JOIN DocumentTrainingAuthorizations pol
+                                ON pol.CompanyId = d.CompanyId AND pol.DocumentTypeCode = d.DocumentTypeCode
+                        WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
+                          AND pol.IsActive = TRUE AND pol.IsDeleted = FALSE
+                          AND pol.AuthorizationRequired = TRUE
+                          AND LTRIM(RTRIM(pol.AuthorizingUserId::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0'));",
+                    new { input.DocumentId, CompanyId, EmpCode = empCode }, transaction);
+
+                if (!isAuthorizingAuthority)
+                    throw new CustomException(
+                        "You are not the authorizing authority for this document type. Authorization is set up under Misc Policies > Authorization Policy.", 403);
+            }
 
             if (input.Action.Equals("APPROVED", StringComparison.OrdinalIgnoreCase))
             {
@@ -9624,15 +9742,16 @@ public class DocumentComponent
         var empId = _utilities.GetEmpid(clientIp);
         var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
 
-        // A Digital entry has nothing to collect, so it is never marked retrieved by hand.
-        var isDigital = await _common.ExecuteScalarAsync<bool>(@"
-            SELECT EXISTS (
-                SELECT 1 FROM DocumentRoleDistributions d
-                INNER JOIN DistributionTypes dt ON dt.Id = d.DistributionType
-                WHERE d.Id = @DistributionId AND d.CompanyId = @CompanyId AND UPPER(dt.Name) = 'DIGITAL');",
+        // Physical: "retrieved" = the copy was collected. Digital: "retrieved" = the document was disabled for
+        // the people the entry reaches, so their access is withdrawn -- and given back if it is undone.
+        var entry = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT d.DocumentId, (UPPER(COALESCE(dt.Name, '')) = 'DIGITAL') AS IsDigital
+            FROM DocumentRoleDistributions d
+            LEFT JOIN DistributionTypes dt ON dt.Id = d.DistributionType
+            WHERE d.Id = @DistributionId AND d.CompanyId = @CompanyId;",
             new { DistributionId = distributionId, CompanyId });
-        if (isDigital)
-            throw new CustomException("A Digital distribution has no physical copy to retrieve.", 400);
+        if (entry == null)
+            throw new CustomException("Distribution entry not found.", 404);
 
         var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             UPDATE DocumentRoleDistributions
@@ -9650,7 +9769,57 @@ public class DocumentComponent
                 RetrievedAt;",
             new { DistributionId = distributionId, Retrieved = retrieved, EmpCode = empCode, CompanyId });
 
+        if (entry.isdigital == true)
+            await ApplyDigitalDisableAsync((int)entry.documentid, distributionId, CompanyId, retrieved, empCode);
+
         return (row?.retrievedbyname, row?.retrievedat);
+    }
+
+    // The people a Distribution List role entry reaches: active holders of that role within its cabinet scope --
+    // the same rule InsertDocumentDistributionsAsync uses to expand a role into DocumentUserDistributions.
+    private const string DistributionEntryUsersSql = @"
+        FROM DocumentRoleDistributions dr
+        INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
+        INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+        LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
+        LEFT JOIN DistributionTypes dt ON dt.Id = dr.DistributionType
+        WHERE dr.DocumentId = @DocumentId
+          AND dr.CompanyId = @CompanyId
+          AND ejp.roleid = dr.RoleId
+          AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
+          AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
+          AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
+          AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)";
+
+    // Disabling a Digital entry removes the users it reached from the document's user list -- unless another entry
+    // that is still in force (a Physical one, or a Digital one not disabled) reaches them too. Undoing it puts
+    // them back. Only the users that came from expanding the Distribution List (RoleId NULL) are touched; anyone
+    // picked by hand in Document Users keeps their row.
+    private async Task ApplyDigitalDisableAsync(int documentId, int distributionId, int companyId, bool disabled, string? empCode)
+    {
+        if (disabled)
+        {
+            await _common.ExecuteAsync(@"
+                DELETE FROM DocumentUserDistributions u
+                WHERE u.CompanyId = @CompanyId AND u.DocumentId = @DocumentId AND u.RoleId IS NULL
+                  AND TRIM(u.EmployeeCode) IN (SELECT TRIM(e.empcode) " + DistributionEntryUsersSql + @" AND dr.Id = @DistributionId)
+                  AND TRIM(u.EmployeeCode) NOT IN (
+                        SELECT TRIM(e.empcode) " + DistributionEntryUsersSql + @"
+                           AND dr.Id <> @DistributionId
+                           AND NOT (dr.IsRetrieved = TRUE AND UPPER(COALESCE(dt.Name, '')) = 'DIGITAL'));",
+                new { CompanyId = companyId, DocumentId = documentId, DistributionId = distributionId });
+        }
+        else
+        {
+            await _common.ExecuteAsync(@"
+                INSERT INTO DocumentUserDistributions (CompanyId, DocumentId, EmployeeCode, CreatedBy)
+                SELECT DISTINCT dr.CompanyId, dr.DocumentId, TRIM(e.empcode), @CreatedBy " + DistributionEntryUsersSql + @"
+                  AND dr.Id = @DistributionId
+                  AND NOT EXISTS (
+                      SELECT 1 FROM DocumentUserDistributions x
+                      WHERE x.DocumentId = dr.DocumentId AND TRIM(x.EmployeeCode) = TRIM(e.empcode));",
+                new { CompanyId = companyId, DocumentId = documentId, DistributionId = distributionId, CreatedBy = empCode });
+        }
     }
 
     // Helper method to safely get values from the dynamic row

@@ -4279,8 +4279,8 @@ public class DocumentRequestComponent
                     dr.RequestNumber,
                     dr.DocumentRequestTypeCode,
                     dr.Justification,
-                    dr.CreatedAt AS RequestedOn,
-                    COALESCE(reqEmp.Name, dr.CreatedBy) AS RequestedBy,
+                    rv.CreatedAt AS RequestedOn,
+                    COALESCE(reqEmp.Name, rv.CreatedBy) AS RequestedBy,
                     apprv.ChangedAt AS ApprovedOn,
                     COALESCE(apEmp.Name, apprv.ChangedBy) AS ApprovedBy,
                     eff.ChangedAt AS EffectiveOn,
@@ -4357,10 +4357,47 @@ public class DocumentRequestComponent
                    AND dv.CompanyId = d.CompanyId
                    AND dv.VersionType IN (1, 2, 3)
                    AND COALESCE(dv.IsDeleted, FALSE) = FALSE
+                -- Who asked for THIS version, and when.
+                --
+                -- A revision runs on the same document (a new version row), so the document's own
+                -- RequestId only ever points at the Request that created it -- which for a document
+                -- created directly is nothing at all, leaving Requested By/On blank on every row,
+                -- including the revised version raised through a Revision Request. A version owes
+                -- its existence to the newest Revision Request raised against the document after the
+                -- previous version began and no later than this one. The first version falls back to
+                -- the Request that created the document, when there was one.
+                LEFT JOIN LATERAL (
+                    SELECT q.CreatedAt, q.CreatedBy
+                    FROM (
+                        SELECT rr.CreatedAt, rr.CreatedBy, 1 AS Pri
+                        FROM DocumentRequests rr
+                        WHERE rr.CompanyId = d.CompanyId
+                          AND rr.DocumentRequestTypeCode = 'DRT-0002'
+                          AND (rr.DocumentId = d.Id OR rr.ParentDocumentId = d.Id)
+                          AND rr.CreatedAt <= dv.CreatedAt
+                          AND rr.CreatedAt > COALESCE((
+                                SELECT MAX(pv.CreatedAt)
+                                FROM DocumentVersions pv
+                                WHERE pv.DocumentId = d.Id AND pv.CompanyId = d.CompanyId
+                                  AND COALESCE(pv.IsDeleted, FALSE) = FALSE
+                                  AND pv.CreatedAt < dv.CreatedAt
+                            ), TIMESTAMP '-infinity')
+                        UNION ALL
+                        SELECT dr.CreatedAt, dr.CreatedBy, 2
+                        WHERE dr.Id IS NOT NULL
+                          AND NOT EXISTS (
+                                SELECT 1 FROM DocumentVersions pv
+                                WHERE pv.DocumentId = d.Id AND pv.CompanyId = d.CompanyId
+                                  AND COALESCE(pv.IsDeleted, FALSE) = FALSE
+                                  AND pv.CreatedAt < dv.CreatedAt)
+                    ) q
+                    ORDER BY q.Pri, q.CreatedAt DESC
+                    LIMIT 1
+                ) rv ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT ven.employeename AS Name
                     FROM Vw_employeeNames ven
-                    WHERE ven.cleanempcode = LTRIM(RTRIM(dr.CreatedBy::text), '0')
+                    WHERE ven.cleanempcode = LTRIM(RTRIM(rv.CreatedBy::text), '0')
                     ORDER BY (ven.companyid = @CompanyId) DESC
                     LIMIT 1
                 ) reqEmp ON TRUE

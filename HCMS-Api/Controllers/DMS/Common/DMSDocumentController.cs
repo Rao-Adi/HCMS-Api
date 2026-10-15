@@ -523,6 +523,62 @@ public class DMSDocumentController : Controller
         }
     }
 
+    // Designation of a picked ad-hoc approver, for the hierarchy list in the ad-hoc modal.
+    [HttpGet("get-adhoc-approver-designation/{empCode}")]
+    public async Task<IActionResult> GetAdHocApproverDesignation(string empCode)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<string>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetAdHocApproverDesignationAsync(empCode),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    // For the My Approvals grid: of these workflow runs, which may the caller add an ad-hoc approver to.
+    [HttpPost("get-adhoc-authority")]
+    public async Task<IActionResult> GetAdHocAuthority([FromBody] AdHocAuthorityInputDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<List<int>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetAdHocAuthorityAsync(input?.ExecutionIds),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpPost("approve-document")]
     public async Task<IActionResult> ApproveDocument(ActionOnDocument input)
     {
@@ -752,8 +808,9 @@ public class DMSDocumentController : Controller
                     // "QA-QA-QA-SOP-018.docx"), meaningless compared to the document's own
                     // Title. Prefer that instead, sanitized since it's free-text the user typed
                     // rather than an already-valid filesystem name.
-                    var sanitizedTitle = SanitizeForFileName(request.Title);
-                    fileName = Path.GetFileNameWithoutExtension(filePath ?? sanitizedTitle ?? request.DocumentNumber ?? "Document") + ".docx";
+                    // Always named after the document's own Title -- the uploaded file's name on disk is
+                    // often a generated one and says nothing to the person downloading it.
+                    fileName = DownloadFileBaseName(request.Title, filePath, request.DocumentNumber) + ".docx";
                 }
                 catch (Exception mergeEx)
                 {
@@ -780,7 +837,7 @@ public class DMSDocumentController : Controller
                     }
                     fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    fileName = Path.GetFileName(filePath);
+                    fileName = DownloadFileBaseName(request.Title, filePath, request.DocumentNumber) + Path.GetExtension(filePath);
                 }
             }
             else if (filePath != null)
@@ -791,7 +848,7 @@ public class DMSDocumentController : Controller
                 {
                     contentType = "application/octet-stream";
                 }
-                fileName = Path.GetFileName(filePath);
+                fileName = DownloadFileBaseName(request.Title, filePath, request.DocumentNumber) + Path.GetExtension(filePath);
             }
             else
             {
@@ -827,6 +884,14 @@ public class DMSDocumentController : Controller
             return StatusCode(response.Code, response);
         }
     }
+
+    // The name a downloaded document is saved under (without extension): its Title, falling back to the
+    // stored file's name and then the document number.
+    private static string DownloadFileBaseName(string? title, string? filePath, string? documentNumber) =>
+        SanitizeForFileName(title)
+        ?? (filePath != null ? Path.GetFileNameWithoutExtension(filePath) : null)
+        ?? SanitizeForFileName(documentNumber)
+        ?? "Document";
 
     // Strips characters that aren't valid in a filesystem file name -- unlike filePath (already
     // a real path) or DocumentNumber (a generated code), Title is free-text the user typed and
