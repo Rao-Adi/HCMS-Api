@@ -1992,14 +1992,13 @@ public class DocumentRequestComponent
                     FROM DocumentRequestRoleDistributions dr
                     INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1  AND e.CompanyId = @CompanyId
                     INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
-                    LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
                     WHERE dr.DocumentRequestId = @RequestId
                       AND dr.CompanyId = @CompanyId
                       AND ejp.roleid = dr.RoleId
-                      AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
-                      AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
-                      AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
-                      AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)
+                      AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = e.divid::text)
+                      AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = e.mdptid::text)
+                      AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = e.dptid::text)
+                      AND 1 = 1
                       AND NOT EXISTS (
                           SELECT 1 FROM DocumentRequestUserDistributions u
                           WHERE u.DocumentRequestId = dr.DocumentRequestId
@@ -2974,9 +2973,9 @@ public class DocumentRequestComponent
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
                    FROM DocumentRequestRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
-                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70 
+                        LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                        LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r ON dl.RoleId = r.Id 
@@ -3462,9 +3461,9 @@ public class DocumentRequestComponent
                        drd.SubDepartmentCode, subd.Name AS SubDepartment,
                        drd.BusinessDomainCode, bd.Name AS BusinessDomain
                 FROM DocumentRoleDistributions drd
-                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code 
-                LEFT JOIN Departments dep ON drd.DepartmentCode = dep.Code
-                LEFT JOIN SubDepartments subd ON drd.SubDepartmentCode = subd.Code
+                LEFT JOIN tblsetupsdetail div ON div.sdlid::text = drd.DivisionCode AND div.smsid = 70 
+                LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = drd.DepartmentCode AND dep.smsid = 84
+                LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = drd.SubDepartmentCode AND subd.smsid = 24
                 LEFT JOIN BusinessDomains bd ON drd.BusinessDomainCode = bd.Code
                 LEFT JOIN Companies c ON drd.CompanyId = c.Id
                 LEFT JOIN tblsetupsdetail r ON drd.RoleId = r.sdlid AND r.CompanyId = drd.CompanyId
@@ -3629,9 +3628,9 @@ public class DocumentRequestComponent
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
                    FROM DocumentRequestRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code 
-                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70 
+                        LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                        LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN Roles r ON dl.RoleId = r.Id 

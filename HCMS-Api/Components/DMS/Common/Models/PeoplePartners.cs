@@ -469,3 +469,30 @@ public class TblEmpJobProfile
 
     public string? ChangeResponsibilityDetail { get; set; }
 }
+
+// The People Partners organisation a person belongs to, for the Document Users / Distribution List grids:
+// Division > Department > Sub-Department, and which roles are actually held inside each combination.
+public class OrgOptionDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    // Division for a Department, Department for a Sub-Department.
+    public int? ParentId { get; set; }
+}
+
+public class OrgRoleScopeDto
+{
+    public int? DivisionId { get; set; }
+    public int? DepartmentId { get; set; }
+    public int? SubDepartmentId { get; set; }
+    public int RoleId { get; set; }
+    public string RoleName { get; set; } = string.Empty;
+}
+
+public class OrgStructureDto
+{
+    public List<OrgOptionDto> Divisions { get; set; } = new();
+    public List<OrgOptionDto> Departments { get; set; } = new();
+    public List<OrgOptionDto> SubDepartments { get; set; } = new();
+    public List<OrgRoleScopeDto> Roles { get; set; } = new();
+}

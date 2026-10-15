@@ -31,27 +31,25 @@ public static class RoleCabinetMappingQueries
         string? businessDomainCode,
         IDbTransaction? tx = null)
     {
+        // The Division / Department / Sub-Department on a row are People Partners ids (the hierarchy the Users
+        // screen shows); a level left blank is "all". "Any role" is every role held by an active employee inside
+        // that organisation unit -- exactly what the grid's Role dropdown offers for it. The Business Domain is not
+        // part of this hierarchy and is ignored.
         var roleIds = await common.QueryAsync<int>(@"
-            SELECT DISTINCT m.RoleId
-            FROM RoleCabinetMappings m
-            WHERE m.CompanyId = @CompanyId AND m.IsDeleted = FALSE AND m.IsActive = TRUE
-              AND m.DivisionCode = @Division::text
-              AND (COALESCE(m.DepartmentCode, '') = '' OR m.DepartmentCode = @Department::text)
-              AND (COALESCE(m.SubDepartmentCode, '') = '' OR m.SubDepartmentCode = @SubDepartment::text)
-              AND (COALESCE(m.BusinessDomainCode, '') = '' OR m.BusinessDomainCode = @BusinessDomain::text)
-              AND EXISTS (
-                    SELECT 1
-                    FROM tblempjobprofile a
-                    INNER JOIN tblsetupsdetail b ON a.roleid = b.sdlid
-                    WHERE b.smsid = 189 AND a.roleid = m.RoleId
-                      AND a.CompanyId = @CompanyId AND a.Active = TRUE);",
+            SELECT DISTINCT ejp.roleid
+            FROM tblEmployee e
+            INNER JOIN tblempjobprofile ejp ON ejp.empid = e.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            INNER JOIN tblsetupsdetail b ON b.sdlid = ejp.roleid AND b.smsid = 189
+            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND ejp.roleid IS NOT NULL
+              AND (COALESCE(@Division::text, '') = '' OR e.divid::text = @Division::text)
+              AND (COALESCE(@Department::text, '') = '' OR e.mdptid::text = @Department::text)
+              AND (COALESCE(@SubDepartment::text, '') = '' OR e.dptid::text = @SubDepartment::text);",
             new
             {
                 CompanyId = companyId,
                 Division = divisionCode,
                 Department = departmentCode,
-                SubDepartment = subDepartmentCode,
-                BusinessDomain = businessDomainCode
+                SubDepartment = subDepartmentCode
             }, tx);
 
         return roleIds.ToList();

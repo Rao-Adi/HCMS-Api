@@ -362,6 +362,11 @@ public class PeoplePartnersComponent
 
         var whereClause = "WHERE e.CompanyId = @CompanyId AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1";
 
+        // The grid row's Division / Department / Sub-Department are People Partners ids; blank means all of them.
+        if (!string.IsNullOrWhiteSpace(input.DivisionCode)) whereClause += " AND e.divid::text = @DivisionCode";
+        if (!string.IsNullOrWhiteSpace(input.DepartmentCode)) whereClause += " AND e.mdptid::text = @DepartmentCode";
+        if (!string.IsNullOrWhiteSpace(input.SubDepartmentCode)) whereClause += " AND e.dptid::text = @SubDepartmentCode";
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%' OR UPPER(COALESCE(des.name, des_fallback.name)) LIKE '%{search}%' OR UPPER(r.name) LIKE '%{search}%')";
@@ -375,7 +380,10 @@ public class PeoplePartnersComponent
         var queryParams = new
         {
             CompanyId = companyId,
-            RoleId = roleId
+            RoleId = roleId,
+            DivisionCode = input.DivisionCode?.Trim(),
+            DepartmentCode = input.DepartmentCode?.Trim(),
+            SubDepartmentCode = input.SubDepartmentCode?.Trim()
         };
 
         string baseQuery = $@"
@@ -542,6 +550,49 @@ public class PeoplePartnersComponent
         {
             throw;
         }
+    }
+
+    // The company's People Partners organisation (Division > Department > Sub-Department) plus the roles held in each
+    // combination by active employees -- what the Document Users / Distribution List grids offer, and the same
+    // hierarchy the Users screen shows. One call; the screen filters it as the person picks.
+    public async Task<OrgStructureDto> GetOrgStructureAsync()
+    {
+        int companyId = int.Parse(_utilities.GetCompanyId(_clientContextService.GetClientIP()));
+        var p = new { CompanyId = companyId };
+
+        var result = new OrgStructureDto();
+
+        result.Divisions = (await _common.QueryAsync<OrgOptionDto>(@"
+            SELECT s.sdlid AS Id, s.name AS Name
+            FROM tblsetupsdetail s
+            WHERE s.smsid = 70 AND s.CompanyId = @CompanyId AND COALESCE(s.inactive, FALSE) = FALSE
+            ORDER BY s.name;", p)).ToList();
+
+        result.Departments = (await _common.QueryAsync<OrgOptionDto>(@"
+            SELECT DISTINCT s.sdlid AS Id, s.name AS Name, m.divid AS ParentId
+            FROM tbldeptstrmaster m
+            INNER JOIN tblsetupsdetail s ON s.sdlid = m.mdptid AND s.smsid = 84
+            WHERE m.companyid = @CompanyId AND COALESCE(s.inactive, FALSE) = FALSE
+            ORDER BY s.name;", p)).ToList();
+
+        result.SubDepartments = (await _common.QueryAsync<OrgOptionDto>(@"
+            SELECT DISTINCT s.sdlid AS Id, s.name AS Name, m.mdptid AS ParentId
+            FROM tbldeptstrdetail dd
+            INNER JOIN tbldeptstrmaster m ON m.dptmid = dd.dptmid AND m.companyid = @CompanyId
+            INNER JOIN tblsetupsdetail s ON s.sdlid = dd.dptid AND s.smsid = 24
+            WHERE dd.companyid = @CompanyId AND COALESCE(s.inactive, FALSE) = FALSE
+            ORDER BY s.name;", p)).ToList();
+
+        result.Roles = (await _common.QueryAsync<OrgRoleScopeDto>(@"
+            SELECT DISTINCT e.divid AS DivisionId, e.mdptid AS DepartmentId, e.dptid AS SubDepartmentId,
+                            ejp.roleid AS RoleId, r.name AS RoleName
+            FROM tblEmployee e
+            INNER JOIN tblempjobprofile ejp ON ejp.empid = e.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
+            INNER JOIN tblsetupsdetail r ON r.sdlid = ejp.roleid AND r.smsid = 189
+            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND ejp.roleid IS NOT NULL
+            ORDER BY r.name;", p)).ToList();
+
+        return result;
     }
 
     public async Task<IQueryable<SelectListDto>> GetAllEmployeeList()

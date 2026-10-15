@@ -1917,14 +1917,13 @@ public class DocumentComponent
                 FROM DocumentRoleDistributions dr
                 INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
-                LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
                 WHERE dr.DocumentId = @DocumentId
                   AND dr.CompanyId = @CompanyId
                   AND ejp.roleid = dr.RoleId
-                  AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
-                  AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
-                  AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
-                  AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)
+                  AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = e.divid::text)
+                  AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = e.mdptid::text)
+                  AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = e.dptid::text)
+                  AND 1 = 1
                   AND NOT EXISTS (
                       SELECT 1 FROM DocumentUserDistributions u
                       WHERE u.DocumentId = dr.DocumentId
@@ -5585,9 +5584,9 @@ public class DocumentComponent
                    bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
                FROM DocumentRoleDistributions dl
-                    LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
-                    LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                    LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                    LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
+                    LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                    LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
                     LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                     LEFT JOIN Companies c ON dl.CompanyId = c.Id
                     LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
@@ -5860,9 +5859,9 @@ public class DocumentComponent
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
                    FROM DocumentRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
-                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
+                        LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                        LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
@@ -7585,8 +7584,8 @@ public class DocumentComponent
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
                 FROM DocumentRoleDistributions drd
                 LEFT JOIN tblsetupsdetail r ON drd.RoleId = r.sdlid
-                LEFT JOIN Divisions div ON drd.DivisionCode = div.Code
-                LEFT JOIN Departments dep ON drd.DepartmentCode = dep.Code
+                LEFT JOIN tblsetupsdetail div ON div.sdlid::text = drd.DivisionCode AND div.smsid = 70
+                LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = drd.DepartmentCode AND dep.smsid = 84
                 LEFT JOIN TblEmpJobProfile ejp ON ejp.roleid = drd.RoleId AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = drd.CompanyId
                 LEFT JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = drd.CompanyId AND COALESCE(e.Active, 1) = 1
                 WHERE drd.CompanyId = @CompanyId AND drd.DocumentId = ANY(@DocumentIds);",
@@ -9623,9 +9622,9 @@ public class DocumentComponent
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
                    FROM DocumentRoleDistributions dl
-                        LEFT JOIN Divisions div ON dl.DivisionCode = div.Code
-                        LEFT JOIN Departments dep ON dl.DepartmentCode = dep.Code
-                        LEFT JOIN SubDepartments subd ON dl.SubDepartmentCode = subd.Code
+                        LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
+                        LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                        LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
                         LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
                         LEFT JOIN Companies c ON dl.CompanyId = c.Id
                         LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
@@ -9781,15 +9780,14 @@ public class DocumentComponent
         FROM DocumentRoleDistributions dr
         INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
         INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
-        LEFT JOIN UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
         LEFT JOIN DistributionTypes dt ON dt.Id = dr.DistributionType
         WHERE dr.DocumentId = @DocumentId
           AND dr.CompanyId = @CompanyId
           AND ejp.roleid = dr.RoleId
-          AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = ual.DivisionCode)
-          AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = ual.DepartmentCode)
-          AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = ual.SubDepartmentCode)
-          AND (COALESCE(dr.BusinessDomainCode, '') = '' OR dr.BusinessDomainCode = ual.BusinessDomainCode)";
+          AND (COALESCE(dr.DivisionCode, '') = '' OR dr.DivisionCode = e.divid::text)
+          AND (COALESCE(dr.DepartmentCode, '') = '' OR dr.DepartmentCode = e.mdptid::text)
+          AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = e.dptid::text)
+          AND 1 = 1";
 
     // Disabling a Digital entry removes the users it reached from the document's user list -- unless another entry
     // that is still in force (a Physical one, or a Digital one not disabled) reaches them too. Undoing it puts

@@ -367,6 +367,34 @@ public class DMSPeoplePartnersController : Controller
         }
     }
 
+    // Division > Department > Sub-Department > Role as People Partners holds them (see the Users screen).
+    [HttpGet("get-org-structure")]
+    public async Task<IActionResult> GetOrgStructure()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<OrgStructureDto>()
+            {
+                Success = true,
+                Data = await _peoplePartnersComponent.GetOrgStructureAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     [HttpGet("get-all-employee-list")]
     public async Task<IActionResult> GetAllSelectList()
     {
