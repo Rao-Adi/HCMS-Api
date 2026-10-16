@@ -2323,8 +2323,8 @@ namespace HCMS_Api.Components.DMS.Common
 
         // Employee id for a session from its LoginDetail alone (user id + company). The user mapping table
         // (EXTERNAL_SECURITY_USERMAPPING) already carries EmpId, so one lookup is enough. A user can be mapped
-        // to several companies; only the row for the session's company counts (login refuses a company the
-        // user is not mapped to). Empty if the user has no mapping for it.
+        // to several companies; the row for the session's company wins, otherwise the first one -- the same
+        // choice LoginComponent.GetUserData makes. Empty if the user has no mapping.
         private string ResolveEmpIdFromLoginDetail(string prefix)
         {
             try
@@ -2341,8 +2341,7 @@ namespace HCMS_Api.Components.DMS.Common
 
                 return GetScalarData(
                     "SELECT TOP 1 EmpId FROM EXTERNAL_SECURITY_USERMAPPING WHERE UserID = N'" + userId.ToUpper().Replace("'", "''") + "'" +
-                    " AND LTRIM(RTRIM(CAST(CCode AS varchar(20)))) = '" + companyId.Replace("'", "''") + "'" +
-                    " ORDER BY EmpId")
+                    " ORDER BY CASE WHEN LTRIM(RTRIM(CAST(CCode AS varchar(20)))) = '" + companyId.Replace("'", "''") + "' THEN 0 ELSE 1 END, EmpId")
                     ?.ToString() ?? string.Empty;
             }
             catch
