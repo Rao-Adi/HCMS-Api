@@ -14,13 +14,16 @@ public static class AiServiceRegistration
 
         // The certificate pin applies to this named client only. Registering it here rather than
         // on a shared client is what keeps the relaxed chain validation from leaking into any
-        // other outbound call the application makes.
+        // other outbound call the application makes. With no pin configured the endpoint is a normal
+        // (publicly trusted) one and the default handler's usual certificate validation applies.
         services.AddHttpClient(AiGatewayProvider.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(sp =>
             {
                 var options = sp.GetRequiredService<IOptions<AiOptions>>().Value;
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(AiGatewayProvider));
-                return AiGatewayProvider.CreatePinnedHandler(options, logger);
+                return string.IsNullOrWhiteSpace(options.CertificateSha256)
+                    ? new HttpClientHandler()
+                    : AiGatewayProvider.CreatePinnedHandler(options, logger);
             });
 
         services.AddSingleton<AiExecutionGate>();

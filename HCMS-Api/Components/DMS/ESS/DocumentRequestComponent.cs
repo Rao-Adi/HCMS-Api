@@ -1924,6 +1924,13 @@ public class DocumentRequestComponent
                                 _common, companyId, d.DivisionCode, d.DepartmentCode, d.SubDepartmentCode, d.BusinessDomainCode, tx))
                             .Select(r => (int?)r).ToList();
 
+                    // "Any role" on a unit where nobody holds a role expands into nothing, and the row used to vanish without a
+                    // word -- the document then went for approval with no Distribution List at all. Say so instead.
+                    if (expandAnyRole && !d.RoleId.HasValue && targetRoleIds.Count == 0)
+                        throw new CustomException(
+                            "A Distribution List row has no role selected, and no active employee holds a role in the Division / Department / " +
+                            "Sub-Department it covers, so it would reach nobody. Select a role or change the organisation unit.", 400);
+
                     foreach (var roleId in targetRoleIds)
                     {
                         await _common.ExecuteAsync(@"
@@ -4042,6 +4049,10 @@ public class DocumentRequestComponent
                         )
                       AND wes.Observation IS NOT NULL
                       AND TRIM(wes.Observation) <> ''
+                      -- An observation belongs to a step only once that step has acted -- decided it, or left a
+                      -- comment (COMMENT sets ActionAt but no Decision). A step that has not acted yet has none to
+                      -- show, whatever text a past bug left in its column.
+                      AND (wes.Decision IS NOT NULL OR wes.ActionAt IS NOT NULL)
 
                     ORDER BY wes.StepOrder;";
 

@@ -5,6 +5,7 @@
     <SccProvider>{4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}</SccProvider>
     <SccAuxPath>http://tfs2017:8080/tfs/defaultcollection</SccAuxPath>
     <SccLocalPath>.</SccLocalPath>
+    <UserSecretsId>a0f4a65c-bded-4164-9aa9-1147ce98186e</UserSecretsId>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -3,13 +3,17 @@ namespace HCMS_Api.Components.DMS.AI;
 /// <summary>
 /// Settings for the DMS AI features, bound from the "Ai:Gateway" configuration section.
 ///
-/// The model runs on-premises: nothing here points at a third-party API, and no document text
-/// leaves the network. That is the whole reason the gateway exists, and it is the property to
-/// preserve if these values are ever changed.
+/// Any OpenAI-compatible chat-completions endpoint can be configured: the on-premises gateway (self-signed
+/// certificate, pinned with CertificateSha256) or a hosted service with an ordinary public certificate
+/// (CertificateSha256 left empty). With a hosted service the prompt -- including any document text the
+/// assistant is allowed to read, see AllowDocumentContent -- leaves the network.
 /// </summary>
 public sealed class AiOptions
 {
-    /// <summary>OpenAI-compatible base, e.g. https://10.10.0.110:8443/v1</summary>
+    /// <summary>
+    /// OpenAI-compatible base, e.g. https://10.10.0.110:8443/v1 (on-premises) or the hosted service's
+    /// compatible-mode URL (Alibaba Model Studio: https://dashscope-intl.aliyuncs.com/compatible-mode/v1).
+    /// </summary>
     public string BaseUrl { get; set; } = "";
 
     public string ApiKey { get; set; } = "";
@@ -17,12 +21,13 @@ public sealed class AiOptions
     public string Model { get; set; } = "";
 
     /// <summary>
-    /// SHA-256 of the gateway's certificate, uppercase hex, no separators.
+    /// SHA-256 of the gateway's certificate, uppercase hex, no separators. Only for an endpoint that serves a
+    /// self-signed certificate (the on-premises gateway).
     ///
-    /// The gateway serves a self-signed certificate, so ordinary chain validation cannot be used.
-    /// Pinning the exact certificate is what keeps that from degrading into "trust anything":
-    /// leave this empty and the provider refuses to run rather than silently accepting any
-    /// certificate offered on that address.
+    /// When set, exactly that certificate is trusted and nothing else -- pinning is what keeps a self-signed
+    /// endpoint from degrading into "trust anything". When EMPTY the endpoint is expected to present a normal
+    /// certificate, and ordinary chain validation applies: a hosted service is verified the usual way, and
+    /// a bad certificate is still refused.
     /// </summary>
     public string CertificateSha256 { get; set; } = "";
 
@@ -60,6 +65,20 @@ public sealed class AiOptions
     /// Engines that do not know the field ignore it, so leaving it set is safe.
     /// </summary>
     public string ReasoningEffort { get; set; } = "none";
+
+    /// <summary>
+    /// For models that have a "thinking" mode switched by a request field (Qwen: enable_thinking). Null leaves
+    /// the field out and the model's own default applies; false turns thinking off, which these mechanical
+    /// tasks want for the same reason ReasoningEffort is "none" -- thinking tokens come out of MaxOutputTokens.
+    /// </summary>
+    public bool? EnableThinking { get; set; }
+
+    /// <summary>
+    /// How a reply is constrained to the caller's JSON shape: "json_schema" (strict schema, what the
+    /// on-premises gateway supports), "json_object" (any valid JSON; for endpoints without schema support --
+    /// the schema is then added to the prompt instead) or "none". Callers validate the reply either way.
+    /// </summary>
+    public string JsonResponseFormat { get; set; } = "json_schema";
 
     /// <summary>
     /// Upper bound on generated tokens per request.

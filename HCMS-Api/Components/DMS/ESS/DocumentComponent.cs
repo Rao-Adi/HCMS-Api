@@ -1836,6 +1836,13 @@ public class DocumentComponent
                             _common, companyId, d.DivisionCode, d.DepartmentCode, d.SubDepartmentCode, d.BusinessDomainCode, transaction))
                         .Select(r => (int?)r).ToList();
 
+                // "Any role" on a unit where nobody holds a role expands into nothing, and the row used to vanish without a
+                // word -- the document then went for approval with no Distribution List at all. Say so instead.
+                if (!d.RoleId.HasValue && targetRoleIds.Count == 0)
+                    throw new CustomException(
+                        "A Distribution List row has no role selected, and no active employee holds a role in the Division / Department / " +
+                        "Sub-Department it covers, so it would reach nobody. Select a role or change the organisation unit.", 400);
+
                 foreach (var roleId in targetRoleIds)
                 {
                     await _common.ExecuteAsync(@"
@@ -3000,10 +3007,14 @@ public class DocumentComponent
         // layout, not the template's).
         //-------------------------------------------------
 
+        // Pictures in the content: collected here, added to the template's package once it is open (below). Without this
+        // every picture was lost -- a Word body only references its images, and the editor's <img> was never converted.
+        var contentImages = new MergeImageSet();
+
         List<OpenXmlElement> contentBodyElements;
         if (!string.IsNullOrWhiteSpace(htmlContent))
         {
-            contentBodyElements = HtmlToOpenXmlConverter.Convert(htmlContent);
+            contentBodyElements = HtmlToOpenXmlConverter.Convert(htmlContent, contentImages);
         }
         else if (contentStream != null && contentStream.Length > 0)
         {
@@ -3024,6 +3035,9 @@ public class DocumentComponent
                 .Where(el => el is not SectionProperties)
                 .Select(el => el.CloneNode(true))
                 .ToList();
+
+            // The images live in the uploaded file's package, which is only open here.
+            contentImages.CollectFrom(contentDoc.MainDocumentPart!, contentBodyElements);
         }
         else
         {
@@ -3087,6 +3101,9 @@ public class DocumentComponent
                 // second, separate pass collapses that paragraph's runs back down to plain text.
                 InsertPageNumberFields(container, PageFieldPlaceholders);
             }
+
+            // The content's pictures go into the template's package and its drawings are pointed at them.
+            contentImages.AttachTo(mainPart, contentBodyElements);
 
             InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
 
@@ -4406,12 +4423,14 @@ public class DocumentComponent
 
             if (nextStep != null)
             {
-                // Activate next approver
+                // Activate next approver. Only activated: the observation just given belongs to the step that was
+                // approved above. It used to be copied onto this step as well, so the next approver's entry in the
+                // Observation History showed the previous approver's words before they had done anything.
                 await _common.ExecuteAsync(@"
                     UPDATE WorkflowExecutionSteps
-                    SET IsActive = TRUE, Observation = @Observation
+                    SET IsActive = TRUE
                     WHERE Id = @NextStepId;",
-                new { NextStepId = nextStep.id, input.Observation }, transaction);
+                new { NextStepId = nextStep.id }, transaction);
 
                 nextStepApprovers = await _workflowStepComponent.GetNextStepApproversAsync(CompanyId, input.ExecutionId, (int)nextStep.steporder, transaction);
             }

@@ -13,14 +13,19 @@ namespace HCMS_Api.Components.DMS.ESS;
 // color/highlight, alignment, blockquotes, simple tables, and ordered/unordered lists (rendered
 // as plain "1. "/"- " prefixed paragraphs, not native Word list numbering -- a real numbered list
 // needs a numbering.xml part with matching AbstractNum/Num definitions, which the arbitrary
-// uploaded template can't be assumed to have). Known gaps: embedded images (Quill can produce
-// base64 <img> tags; wiring those into a package's image relationships is real additional work,
-// not attempted here) and true hyperlink relationships (link text renders styled but isn't
-// clickable). Anything unrecognised falls back to being read as plain text so content is never
-// silently dropped, just under-formatted.
+// uploaded template can't be assumed to have). Embedded images (Quill's base64 <img> tags) become inline
+// pictures: the converter only registers each image with the MergeImageSet it is given, and the merge adds
+// them to the template's package afterwards (the converter has no package to add them to). Known gap: true
+// hyperlink relationships (link text renders styled but isn't clickable). Anything unrecognised falls back to
+// being read as plain text so content is never silently dropped, just under-formatted.
 public static class HtmlToOpenXmlConverter
 {
-    public static List<OpenXmlElement> Convert(string? html)
+    // The image set of the conversion in progress. The conversion is synchronous and runs start to finish on one
+    // thread, so a thread-static avoids threading a parameter through every method below.
+    [ThreadStatic]
+    private static MergeImageSet? _images;
+
+    public static List<OpenXmlElement> Convert(string? html, MergeImageSet? images = null)
     {
         var elements = new List<OpenXmlElement>();
         if (string.IsNullOrWhiteSpace(html))
@@ -32,15 +37,40 @@ public static class HtmlToOpenXmlConverter
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        var root = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
-        foreach (var node in root.ChildNodes)
-            elements.AddRange(ConvertBlock(node));
+        _images = images;
+        try
+        {
+            var root = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
+            foreach (var node in root.ChildNodes)
+                elements.AddRange(ConvertBlock(node));
+        }
+        finally
+        {
+            _images = null;
+        }
 
         if (elements.Count == 0)
             elements.Add(new Paragraph());
 
         return elements;
     }
+
+    // Width / height an <img> asks for, from its attributes or its inline style (pixels).
+    private static int? ImageSize(HtmlNode img, string name)
+    {
+        var attribute = img.GetAttributeValue(name, "");
+        if (int.TryParse(attribute.Replace("px", "").Trim(), out var fromAttribute) && fromAttribute > 0)
+            return fromAttribute;
+
+        var match = Regex.Match(img.GetAttributeValue("style", ""), name + @":\s*(\d+(?:\.\d+)?)px", RegexOptions.IgnoreCase);
+        return match.Success && double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var fromStyle) && fromStyle > 0
+            ? (int)Math.Round(fromStyle)
+            : null;
+    }
+
+    private static Run? ConvertImage(HtmlNode img) =>
+        _images?.CreateRunForHtmlImage(img.GetAttributeValue("src", ""), ImageSize(img, "width"), ImageSize(img, "height"));
 
     private static IEnumerable<OpenXmlElement> ConvertBlock(HtmlNode node)
     {
@@ -81,6 +111,13 @@ public static class HtmlToOpenXmlConverter
 
             case "br":
                 yield return new Paragraph();
+                break;
+
+            case "img":
+                // A picture sitting directly in the body, not inside a paragraph.
+                var blockImage = ConvertImage(node);
+                if (blockImage != null)
+                    yield return new Paragraph(blockImage);
                 break;
 
             case "#text":
@@ -169,6 +206,12 @@ public static class HtmlToOpenXmlConverter
 
                 case "br":
                     yield return new Run(new Break());
+                    break;
+
+                case "img":
+                    var imageRun = ConvertImage(child);
+                    if (imageRun != null)
+                        yield return imageRun;
                     break;
 
                 case "strong":

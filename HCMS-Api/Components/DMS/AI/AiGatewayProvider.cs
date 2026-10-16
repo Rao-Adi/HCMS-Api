@@ -44,8 +44,7 @@ public sealed class AiGatewayProvider : IAiProvider
         _options.Enabled
         && !string.IsNullOrWhiteSpace(_options.BaseUrl)
         && !string.IsNullOrWhiteSpace(_options.ApiKey)
-        && !string.IsNullOrWhiteSpace(_options.Model)
-        && !string.IsNullOrWhiteSpace(_options.CertificateSha256);
+        && !string.IsNullOrWhiteSpace(_options.Model);
 
     /// <summary>Name the pinned HttpClient is registered under (see AiServiceRegistration).</summary>
     public const string HttpClientName = "dms-ai-gateway";
@@ -79,21 +78,37 @@ public sealed class AiGatewayProvider : IAiProvider
         if (!string.IsNullOrWhiteSpace(reasoningEffort))
             payload["reasoning_effort"] = reasoningEffort;
 
+        // Qwen-style models switch thinking with this field instead.
+        if (_options.EnableThinking.HasValue)
+            payload["enable_thinking"] = _options.EnableThinking.Value;
+
         // Constrains the reply to a schema the caller can parse. Engines that do not support this
         // ignore the field, which is why every caller still validates what comes back.
         if (!string.IsNullOrWhiteSpace(request.JsonSchema) && !string.IsNullOrWhiteSpace(request.JsonSchemaName))
         {
-            using var schema = JsonDocument.Parse(request.JsonSchema);
-            payload["response_format"] = new
+            var format = (_options.JsonResponseFormat ?? "json_schema").Trim().ToLowerInvariant();
+
+            if (format == "json_schema")
             {
-                type = "json_schema",
-                json_schema = new
+                using var schema = JsonDocument.Parse(request.JsonSchema);
+                payload["response_format"] = new
                 {
-                    name = request.JsonSchemaName,
-                    schema = schema.RootElement.Clone(),
-                    strict = true,
-                }
-            };
+                    type = "json_schema",
+                    json_schema = new
+                    {
+                        name = request.JsonSchemaName,
+                        schema = schema.RootElement.Clone(),
+                        strict = true,
+                    }
+                };
+            }
+            else if (format == "json_object")
+            {
+                // No schema support on this endpoint: ask for JSON mode, and put the schema in the prompt so
+                // the model still knows the shape (JSON mode also requires the word "JSON" in the messages).
+                payload["response_format"] = new { type = "json_object" };
+                payload["messages"] = AppendSchemaInstruction(request);
+            }
         }
 
         var client = _httpFactory.CreateClient(HttpClientName);
@@ -147,6 +162,17 @@ public sealed class AiGatewayProvider : IAiProvider
 
             return ParseCompletion(body);
         }
+    }
+
+    private static List<object> AppendSchemaInstruction(AiCompletionRequest request)
+    {
+        var messages = request.Messages.Select(m => (object)new { role = m.Role, content = m.Content }).ToList();
+        messages.Add(new
+        {
+            role = "system",
+            content = "Reply with a single JSON object only, no other text, that conforms to this JSON Schema:\n" + request.JsonSchema,
+        });
+        return messages;
     }
 
     private static AiCompletion ParseCompletion(string body)
