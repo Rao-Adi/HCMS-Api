@@ -741,6 +741,15 @@ public class DocumentComponent
                 // Idempotent: a revision sent back for rework already has its draft row and
                 // continues on it, so resubmitting does not open a second version.
                 await OpenRevisionDraftVersionAsync(CompanyId, input.DocumentId, empCode, transaction);
+
+                // The Revision screen shows the document's Document Users and Distribution List and lets the person
+                // change them. What is on screen at submission is what the approver must see -- but the document's own
+                // list belongs to the version still in force, so it is NOT replaced here: the submitted list is kept as
+                // the revision's proposed list and only becomes the document's when the revision is approved. Only when
+                // the screen says it is showing those grids (ReplaceDistributions), never because a caller happened to
+                // send empty lists. Obsoletion is not here: its list is shown for confirmation only and is never changed.
+                if (input.ReplaceDistributions)
+                    await StageRevisionDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
             }
             else if (input.DocumentId <= 0)
             {
@@ -1823,8 +1832,14 @@ public class DocumentComponent
         IEnumerable<DistributionListCreateDto>? roles,
         IEnumerable<UserDistributionInputDto>? users,
         string empCode,
-        IDbTransaction transaction)
+        IDbTransaction transaction,
+        bool staged = false)
     {
+        // staged = the list a revision proposes, held apart until the revision is approved (see
+        // StageRevisionDistributionsAsync). Same columns, same expansion rules -- only the tables differ.
+        var roleTable = staged ? "DocumentRevisionRoleDistributions" : "DocumentRoleDistributions";
+        var userTable = staged ? "DocumentRevisionUserDistributions" : "DocumentUserDistributions";
+
         if (roles?.Any() == true)
         {
             foreach (var d in roles)
@@ -1845,8 +1860,8 @@ public class DocumentComponent
 
                 foreach (var roleId in targetRoleIds)
                 {
-                    await _common.ExecuteAsync(@"
-                        INSERT INTO DocumentRoleDistributions
+                    await _common.ExecuteAsync($@"
+                        INSERT INTO {roleTable}
                         (CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
                          BusinessDomainCode, RoleId, DistributionType, CreatedBy)
                         VALUES
@@ -1877,8 +1892,8 @@ public class DocumentComponent
                 // it groups rows by role, and a row with no RoleId is skipped entirely. The
                 // Request-scoped table has always stored these; the Document-scoped one dropped
                 // them, which is why reopened documents showed an empty Document Users grid.
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentUserDistributions
+                await _common.ExecuteAsync($@"
+                    INSERT INTO {userTable}
                     (CompanyId, DocumentId, EmployeeCode, RoleId, DivisionCode, DepartmentCode,
                      SubDepartmentCode, BusinessDomainCode, CreatedBy)
                     VALUES
@@ -1913,15 +1928,15 @@ public class DocumentComponent
             // from the Distribution List was never picked there. DRUsersComponent skips rows with
             // a null RoleId, which is exactly what keeps the expanded employees out of the
             // Document Users grid while the Distribution List card still shows the role rules.
-            await _common.ExecuteAsync(@"
-                INSERT INTO DocumentUserDistributions
+            await _common.ExecuteAsync($@"
+                INSERT INTO {userTable}
                 (CompanyId, DocumentId, EmployeeCode, CreatedBy)
                 SELECT DISTINCT
                     dr.CompanyId,
                     dr.DocumentId,
                     TRIM(e.empcode),
                     @CreatedBy
-                FROM DocumentRoleDistributions dr
+                FROM {roleTable} dr
                 INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
                 WHERE dr.DocumentId = @DocumentId
@@ -1932,7 +1947,7 @@ public class DocumentComponent
                   AND (COALESCE(dr.SubDepartmentCode, '') = '' OR dr.SubDepartmentCode = e.dptid::text)
                   AND 1 = 1
                   AND NOT EXISTS (
-                      SELECT 1 FROM DocumentUserDistributions u
+                      SELECT 1 FROM {userTable} u
                       WHERE u.DocumentId = dr.DocumentId
                         AND u.EmployeeCode = TRIM(e.empcode)
                   );",
@@ -1943,6 +1958,109 @@ public class DocumentComponent
                 CreatedBy = empCode
             }, transaction);
         }
+    }
+
+    //-------------------------------------------------
+    // A revision's Document Users / Distribution List, per version
+    //-------------------------------------------------
+    // DocumentRoleDistributions / DocumentUserDistributions hold the list of the version IN FORCE and are not versioned.
+    // While a revision is waiting for approval, the list it proposes is kept apart (DocumentRevision*Distributions,
+    // flagged by a row in DocumentRevisionDistributions), so:
+    //   - the approver, and the person reworking the revision, see the proposed list;
+    //   - everyone else, and every other feature (training, notifications, reports, obsoletion), keeps seeing the list of
+    //     the version in force, untouched;
+    //   - approval (the version becoming Effective) moves the proposed list onto the document, and rejection throws it away.
+
+    // The list a screen should show for a document: the revision's proposed list while one is waiting, otherwise the
+    // document's own. Same columns either way, spelled out so a column added to one table later cannot misalign the UNION.
+    private const string RoleDistributionsToShow = @"(
+        SELECT x.Id, x.CompanyId, x.DocumentId, x.DivisionCode, x.DepartmentCode, x.SubDepartmentCode, x.BusinessDomainCode,
+               x.RoleId, x.DistributionType, x.CreatedAt, x.CreatedBy, x.IsRetrieved, x.RetrievedAt, x.RetrievedBy
+        FROM DocumentRoleDistributions x
+        WHERE NOT EXISTS (SELECT 1 FROM DocumentRevisionDistributions h WHERE h.CompanyId = x.CompanyId AND h.DocumentId = x.DocumentId)
+        UNION ALL
+        SELECT s.Id, s.CompanyId, s.DocumentId, s.DivisionCode, s.DepartmentCode, s.SubDepartmentCode, s.BusinessDomainCode,
+               s.RoleId, s.DistributionType, s.CreatedAt, s.CreatedBy, s.IsRetrieved, s.RetrievedAt, s.RetrievedBy
+        FROM DocumentRevisionRoleDistributions s)";
+
+    private const string UserDistributionsToShow = @"(
+        SELECT x.Id, x.CompanyId, x.DocumentId, x.EmployeeCode, x.CreatedAt, x.CreatedBy, x.RoleId,
+               x.DivisionCode, x.DepartmentCode, x.SubDepartmentCode, x.BusinessDomainCode
+        FROM DocumentUserDistributions x
+        WHERE NOT EXISTS (SELECT 1 FROM DocumentRevisionDistributions h WHERE h.CompanyId = x.CompanyId AND h.DocumentId = x.DocumentId)
+        UNION ALL
+        SELECT s.Id, s.CompanyId, s.DocumentId, s.EmployeeCode, s.CreatedAt, s.CreatedBy, s.RoleId,
+               s.DivisionCode, s.DepartmentCode, s.SubDepartmentCode, s.BusinessDomainCode
+        FROM DocumentRevisionUserDistributions s)";
+
+    // Throws away whatever list a revision of this document had waiting. Nothing else is touched.
+    public async Task DiscardStagedRevisionDistributionsAsync(int companyId, int documentId, IDbTransaction transaction)
+    {
+        await _common.ExecuteAsync(@"
+            DELETE FROM DocumentRevisionRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+            DELETE FROM DocumentRevisionUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+            DELETE FROM DocumentRevisionDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+    }
+
+    // Starts a fresh, empty proposed list for the document (replacing any earlier one). The caller then fills it.
+    public async Task BeginStagedRevisionDistributionsAsync(int companyId, int documentId, string empCode, IDbTransaction transaction)
+    {
+        await DiscardStagedRevisionDistributionsAsync(companyId, documentId, transaction);
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentRevisionDistributions (CompanyId, DocumentId, CreatedBy)
+            VALUES (@CompanyId, @DocumentId, @CreatedBy);",
+            new { CompanyId = companyId, DocumentId = documentId, CreatedBy = empCode }, transaction);
+    }
+
+    // The list the person on the Revision screen submitted becomes the revision's proposed list. The document's own list,
+    // which belongs to the version in force, is not touched.
+    private async Task StageRevisionDistributionsAsync(
+        int companyId,
+        int documentId,
+        IEnumerable<DistributionListCreateDto>? roles,
+        IEnumerable<UserDistributionInputDto>? users,
+        string empCode,
+        IDbTransaction transaction)
+    {
+        await BeginStagedRevisionDistributionsAsync(companyId, documentId, empCode, transaction);
+        await InsertDocumentDistributionsAsync(companyId, documentId, roles, users, empCode, transaction, staged: true);
+    }
+
+    // The revision became Effective: its proposed list now IS the document's list. No-op when the revision proposed none
+    // (nothing was changed on the Revision screen), which leaves the document's list as it was.
+    public async Task ApplyStagedRevisionDistributionsAsync(int companyId, int documentId, IDbTransaction transaction)
+    {
+        var hasStaged = await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (SELECT 1 FROM DocumentRevisionDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId);",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+        if (!hasStaged)
+            return;
+
+        await _common.ExecuteAsync(@"
+            DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+            DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
+
+            INSERT INTO DocumentRoleDistributions
+                (CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                 RoleId, DistributionType, CreatedAt, CreatedBy)
+            SELECT CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode,
+                   RoleId, DistributionType, CreatedAt, CreatedBy
+            FROM DocumentRevisionRoleDistributions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+            ORDER BY Id;
+
+            INSERT INTO DocumentUserDistributions
+                (CompanyId, DocumentId, EmployeeCode, CreatedAt, CreatedBy, RoleId,
+                 DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode)
+            SELECT CompanyId, DocumentId, EmployeeCode, CreatedAt, CreatedBy, RoleId,
+                   DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode
+            FROM DocumentRevisionUserDistributions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId
+            ORDER BY Id;",
+            new { DocumentId = documentId, CompanyId = companyId }, transaction);
+
+        await DiscardStagedRevisionDistributionsAsync(companyId, documentId, transaction);
     }
 
     // Resolves (creating if needed) a real, fully-populated WorkflowStepDefinitions row for an
@@ -4599,6 +4717,9 @@ public class DocumentComponent
                   AND VersionType = 1
             ", new { companyId, documentId }, transaction);
 
+            // A revision's Document Users / Distribution List become the document's now that its version is in force.
+            await ApplyStagedRevisionDistributionsAsync(companyId, documentId, transaction);
+
             //-----------------------------------------
             // Approved → Effective
             //-----------------------------------------
@@ -5317,6 +5438,10 @@ public class DocumentComponent
                 empCode
             }, transaction);
 
+            // A rejected revision never takes effect, so the list it proposed goes with it; the document keeps the
+            // list of the version in force.
+            await DiscardStagedRevisionDistributionsAsync(CompanyId, input.DocumentId, transaction);
+
             var rejectSnapshotJson = await BuildDocumentSnapshotJson(CompanyId, input.DocumentId, transaction);
             await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Rejected", "Document",
                 input.DocumentId, _clientContextService.GetRequestIpAddress(), newValues: rejectSnapshotJson, transaction: transaction);
@@ -5602,7 +5727,7 @@ public class DocumentComponent
                    subd.Name AS SubDepartment,
                    bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-               FROM DocumentRoleDistributions dl
+               FROM " + RoleDistributionsToShow + @" dl
                     LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
                     LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
                     LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
@@ -5619,7 +5744,7 @@ public class DocumentComponent
             drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
             LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
             COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-            FROM DocumentUserDistributions drd
+            FROM " + UserDistributionsToShow + @" drd
             LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
             INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
             LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
@@ -5877,7 +6002,7 @@ public class DocumentComponent
                        subd.Name AS SubDepartment,
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-                   FROM DocumentRoleDistributions dl
+                   FROM " + RoleDistributionsToShow + @" dl
                         LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
                         LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
                         LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
@@ -5905,7 +6030,7 @@ public class DocumentComponent
                 drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
                 LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-                FROM DocumentUserDistributions drd
+                FROM " + UserDistributionsToShow + @" drd
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
@@ -6700,9 +6825,13 @@ public class DocumentComponent
 
                 // 2. Mark the current pending version as Effective
                 await _common.ExecuteAsync(@"
-                    UPDATE DocumentVersions SET VersionType = 2 
+                    UPDATE DocumentVersions SET VersionType = 2
                     WHERE DocumentId = @DocumentId AND VersionType = 1 AND CompanyId = @CompanyId;",
                     new { input.DocumentId, CompanyId }, transaction);
+
+                // A revision's Document Users / Distribution List become the document's now that its version is in
+                // force -- before the notifications below, which go to the people on that list.
+                await ApplyStagedRevisionDistributionsAsync(CompanyId, input.DocumentId, transaction);
 
                 // 3. Update Document State History to 'EFFECTIVE'
                 await _common.ExecuteAsync(@"
@@ -6778,6 +6907,10 @@ public class DocumentComponent
                     INSERT INTO DocumentStateHistory (CompanyId, DocumentId, FromStateId, ToStateId, ChangedBy, Comments, ChangedAt)
                     VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'REJECTED'), @empCode, @Observation, NOW());",
                     new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
+
+                // A rejected revision never takes effect, so the list it proposed goes with it; the document keeps
+                // the list of the version in force.
+                await DiscardStagedRevisionDistributionsAsync(CompanyId, input.DocumentId, transaction);
 
                 // 2. Notify the document creator about the rejection
                 var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -9519,7 +9652,9 @@ public class DocumentComponent
                 input.BusinessDomainCode
             };
 
-            return await HydrateEffectiveDocumentDetailsResultAsync(dataSql, countSql, queryParams, CompanyId);
+            // This is the screen where the approved Revision request is finished and submitted, so it shows the list that
+            // request proposed (kept apart from the document's own until the revision is approved) when there is one.
+            return await HydrateEffectiveDocumentDetailsResultAsync(dataSql, countSql, queryParams, CompanyId, preferStagedRevisionList: true);
         }
         catch (Exception ex)
         {
@@ -9533,7 +9668,7 @@ public class DocumentComponent
     // EffectiveDocumentDetailsDto (Dapper's own typed materialization was never used for this --
     // see GetValue below), and hydrate each row's Distribution List / Document Users.
     private async Task<PaginationResult<EffectiveDocumentDetailsDto>> HydrateEffectiveDocumentDetailsResultAsync(
-        string dataSql, string countSql, object queryParams, int CompanyId)
+        string dataSql, string countSql, object queryParams, int CompanyId, bool preferStagedRevisionList = false)
     {
         try
         {
@@ -9640,7 +9775,7 @@ public class DocumentComponent
                        subd.Name AS SubDepartment,
                        bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-                   FROM DocumentRoleDistributions dl
+                   FROM " + (preferStagedRevisionList ? RoleDistributionsToShow : "DocumentRoleDistributions") + @" dl
                         LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
                         LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
                         LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
@@ -9666,7 +9801,7 @@ public class DocumentComponent
                 drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
                 LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
                 COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-                FROM DocumentUserDistributions drd
+                FROM " + (preferStagedRevisionList ? UserDistributionsToShow : "DocumentUserDistributions") + @" drd
                 LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode  AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid  AND des.CompanyId = @CompanyId

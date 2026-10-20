@@ -4666,14 +4666,13 @@ public class DocumentRequestComponent
                         }, transaction);
                 }
 
-                // The document already carries the distribution it was issued with. The promotion
-                // steps below are pure inserts, so clear first -- otherwise every revision doubles
-                // the distribution list. A revision is allowed to change who receives the document,
-                // and this is what lets the request's own list replace the previous one.
-                await _common.ExecuteAsync(@"
-                    DELETE FROM DocumentRoleDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;
-                    DELETE FROM DocumentUserDistributions WHERE CompanyId = @CompanyId AND DocumentId = @DocumentId;",
-                    new { CompanyId = companyId, DocumentId = documentId }, transaction);
+                // The document already carries the distribution it was issued with, and that list belongs to the
+                // version still in force -- it must stay as it is until this revision is approved. A revision is
+                // allowed to change who receives the document, so the request's own list is promoted into a
+                // separate, empty "proposed list" for the revision (replacing any earlier one) by the steps below,
+                // and moves onto the document only when the revision becomes Effective.
+                await _documentComponent.BeginStagedRevisionDistributionsAsync(
+                    companyId, documentId, (string)request.createdby, transaction);
             }
             else if (isObsoletionRequest)
             {
@@ -4838,11 +4837,16 @@ public class DocumentRequestComponent
             // here.
             if (!isObsoletionRequest)
             {
+                // A revision's list goes to its own proposed-list tables (see the revision branch above); a new
+                // document's goes straight onto the document.
+                var roleTargetTable = isRevisionRequest ? "DocumentRevisionRoleDistributions" : "DocumentRoleDistributions";
+                var userTargetTable = isRevisionRequest ? "DocumentRevisionUserDistributions" : "DocumentUserDistributions";
+
                 //-----------------------------------------
                 // 6️⃣ Promote Role Distribution
                 //-----------------------------------------
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentRoleDistributions
+                await _common.ExecuteAsync($@"
+                    INSERT INTO {roleTargetTable}
                     (
                         CompanyId, DocumentId, DivisionCode, DepartmentCode, SubDepartmentCode,
                         BusinessDomainCode, RoleId, DistributionType, CreatedBy
@@ -4869,8 +4873,8 @@ public class DocumentRequestComponent
                 //
                 // NULLIF keeps an unset cabinet level as NULL rather than an empty string, which is
                 // what the composite foreign keys onto the cabinet tables require.
-                await _common.ExecuteAsync(@"
-                    INSERT INTO DocumentUserDistributions
+                await _common.ExecuteAsync($@"
+                    INSERT INTO {userTargetTable}
                     (
                         CompanyId, DocumentId, EmployeeCode, RoleId,
                         DivisionCode, DepartmentCode, SubDepartmentCode, BusinessDomainCode, CreatedBy
