@@ -2842,7 +2842,8 @@ public class DocumentComponent
     // to the very person being asked to approve the new one. Everything else (My Documents, View
     // Documents, reports) keeps showing the version in force.
     public async Task<byte[]> MergeDocumentTemplateAsync(
-        int documentId, Stream? contentStream, IDbTransaction transaction = null, bool useWorkingVersion = false)
+        int documentId, Stream? contentStream, IDbTransaction transaction = null, bool useWorkingVersion = false,
+        bool includeDistributionLists = false)
     {
         try
         {
@@ -3028,12 +3029,27 @@ public class DocumentComponent
             var signatories = await ResolveDocumentSignatoriesAsync(
                 companyId, documentId, executionId, versionFrom, versionTo, transaction);
 
+            // The Document Users and the Distribution List, printed after the content -- only for the
+            // download / preview, and never allowed to stop the document itself from being produced.
+            DocumentPreviewListsDto? distributionLists = null;
+            if (includeDistributionLists)
+            {
+                try
+                {
+                    distributionLists = await GetDocumentPreviewListsAsync(documentId, useWorkingVersion);
+                }
+                catch (Exception listEx)
+                {
+                    _logger.LogWarning(listEx, "MergeDocumentTemplateAsync: Distribution List / Document Users could not be read for Document {DocumentId}; downloading without them.", documentId);
+                }
+            }
+
             return await MergeContentIntoTemplateAsync(
                 (string)doc.documenttypecode,
                 (string?)doc.divisioncode, (string?)doc.departmentcode, (string?)doc.subdepartmentcode, (string?)doc.businessdomaincode,
                 placeholders, versionHtmlContent, contentStream, approvers,
                 ResolveWatermarkText(currentStateCode, isReverted),
-                signatories);
+                signatories, distributionLists);
         }
         catch(Exception ex)
         {
@@ -3074,7 +3090,8 @@ public class DocumentComponent
         Stream? contentStream,
         List<dynamic> approvers,
         string? watermarkText = null,
-        Dictionary<string, List<Signatory>>? signatories = null)
+        Dictionary<string, List<Signatory>>? signatories = null,
+        DocumentPreviewListsDto? distributionLists = null)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(_CompanyId);
@@ -3225,6 +3242,23 @@ public class DocumentComponent
 
             InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
 
+            // After the content, at the end of the body (the footer stays where the template put it).
+            if (distributionLists != null)
+            {
+                // The content often ends in a few empty lines (the editor leaves them). Left in, they sit between the
+                // text and the lists and eat the room that is still free on the last page, pushing the lists onto a
+                // page of their own. Trailing blank paragraphs are dropped so the lists follow the content directly
+                // and the page layout (Word / Google Docs) decides where they fall.
+                RemoveTrailingEmptyParagraphs(body);
+
+                var sectionProperties = body.Elements<SectionProperties>().LastOrDefault();
+                foreach (var element in BuildDistributionListElements(distributionLists))
+                {
+                    if (sectionProperties != null) body.InsertBefore(element, sectionProperties);
+                    else body.AppendChild(element);
+                }
+            }
+
             // The signature block's template row can live in the body, or (as in the SOP
             // template) in a footer so the full approval matrix repeats on every page --
             // check every text container, not just the body. drawingId is threaded through
@@ -3248,6 +3282,136 @@ public class DocumentComponent
         }
 
         return outputStream.ToArray();
+    }
+
+    // Removes the empty paragraphs at the very end of the body. A paragraph only counts as empty when it has no text and
+    // nothing else that matters (a picture, a page / section break, a field), so nothing visible is ever lost.
+    private static void RemoveTrailingEmptyParagraphs(Body body)
+    {
+        while (body.Elements().LastOrDefault(e => e is not SectionProperties) is Paragraph last)
+        {
+            bool hasText = !string.IsNullOrWhiteSpace(last.InnerText);
+            bool hasOther = last.Descendants().Any(d =>
+                d is Drawing || d is Picture || d is Break || d is SectionProperties || d is FieldChar || d is SimpleField);
+            // A paragraph that carries a page break before it, or a section break, shapes the layout.
+            bool shapesLayout = last.ParagraphProperties?.PageBreakBefore != null
+                || last.ParagraphProperties?.SectionProperties != null;
+            if (hasText || hasOther || shapesLayout) break;
+            last.Remove();
+        }
+    }
+
+    // The Distribution List and Document Users as two small tables ending the document, the same content the Preview
+    // screen shows. A blank Division / Department / Sub Department reads "All" and a blank Role "Any".
+    private static List<OpenXmlElement> BuildDistributionListElements(DocumentPreviewListsDto lists)
+    {
+        const string fontSize = "18";
+        const string headingSize = "28"; // half-points: 14 pt
+
+        Paragraph MakeParagraph(string text, bool bold, bool italic = false, string? spaceBefore = null, bool keepNext = false, string? size = null)
+        {
+            var runProps = new RunProperties();
+            if (bold) runProps.Append(new Bold());
+            if (italic) runProps.Append(new Italic());
+            runProps.Append(new DocumentFormat.OpenXml.Wordprocessing.FontSize { Val = size ?? fontSize });
+            var p = new Paragraph();
+            if (keepNext || spaceBefore != null)
+            {
+                // Schema order: keepNext before spacing. keepNext keeps a heading with the table under it, so the
+                // heading is never left alone at the bottom of a page.
+                var pPr = new ParagraphProperties();
+                if (keepNext) pPr.Append(new KeepNext());
+                if (spaceBefore != null) pPr.Append(new SpacingBetweenLines { Before = spaceBefore, After = "60" });
+                p.Append(pPr);
+            }
+            p.Append(new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
+            return p;
+        }
+
+        TableCell MakeCell(string text, bool bold, bool keepNext = false)
+        {
+            var cell = new TableCell(new TableCellProperties(new TableCellMargin(
+                new LeftMargin { Width = "80", Type = TableWidthUnitValues.Dxa },
+                new RightMargin { Width = "80", Type = TableWidthUnitValues.Dxa })));
+            cell.Append(MakeParagraph(text, bold, keepNext: keepNext));
+            return cell;
+        }
+
+        Table MakeTable(string[] headers, List<string[]> rows)
+        {
+            var borders = new TableBorders(
+                new TopBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new LeftBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new BottomBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new RightBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" });
+            var table = new Table(new TableProperties(
+                new TableWidth { Width = "5000", Type = TableWidthUnitValues.Pct },
+                borders));
+
+            // The schema wants a grid; the columns share the width evenly (the pct table width does the sizing).
+            var grid = new TableGrid();
+            for (int i = 0; i < headers.Length; i++)
+                grid.Append(new GridColumn { Width = (9000 / headers.Length).ToString() });
+            table.Append(grid);
+
+            var headerRow = new TableRow(new TableRowProperties(new TableHeader()));
+            // The header row and the first row stay with what follows them, so a table never starts with only its
+            // header at the bottom of a page.
+            foreach (var h in headers) headerRow.Append(MakeCell(h, true, keepNext: true));
+            table.Append(headerRow);
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = new TableRow(new TableRowProperties(new CantSplit()));
+                foreach (var c in rows[i]) row.Append(MakeCell(c, false, keepNext: i == 0 && rows.Count > 1));
+                table.Append(row);
+            }
+            return table;
+        }
+
+        string Or(string? v, string fallback) => string.IsNullOrWhiteSpace(v) ? fallback : v.Trim();
+
+        var elements = new List<OpenXmlElement>
+        {
+            MakeParagraph("Distribution List", bold: true, spaceBefore: "240", keepNext: true, size: headingSize)
+        };
+
+        if (lists.DistributionList.Count > 0)
+        {
+            elements.Add(MakeTable(
+                new[] { "Division", "Department", "Sub Department", "Role", "Distribution Type" },
+                lists.DistributionList.Select(d => new[]
+                {
+                    Or(d.Division, "All"), Or(d.Department, "All"), Or(d.SubDepartment, "All"),
+                    Or(d.Role, "Any"), Or(d.DistributionType, "")
+                }).ToList()));
+        }
+        else
+        {
+            elements.Add(MakeParagraph("No Distribution List.", bold: false, italic: true));
+        }
+
+        elements.Add(MakeParagraph("Document Users", bold: true, spaceBefore: "240", keepNext: true, size: headingSize));
+        if (lists.UserList.Count > 0)
+        {
+            elements.Add(MakeTable(
+                new[] { "Division", "Department", "Sub Department", "Role", "Employees Selected" },
+                lists.UserList.Select(u => new[]
+                {
+                    Or(u.Division, "All"), Or(u.Department, "All"), Or(u.SubDepartment, "All"),
+                    Or(u.Role, ""), u.SelectedEmployees.ToString(CultureInfo.InvariantCulture)
+                }).ToList()));
+        }
+        else
+        {
+            elements.Add(MakeParagraph("No Document Users.", bold: false, italic: true));
+        }
+
+        // Word needs a paragraph after a table that ends the body's content.
+        elements.Add(new Paragraph());
+        return elements;
     }
 
     // Replaces a {{placeholder}} token with a value, anywhere it appears within root. Handles
@@ -5712,7 +5876,7 @@ public class DocumentComponent
     // Draft/Reverted list and by get-draft-by-request so the same document cannot come back
     // looking different depending on which screen asked for it.
     private async Task<(List<DistributionListReadDto> Roles, List<DocumentRequestUserDistribution> Users)>
-        LoadDocumentDistributionsAsync(int companyId, int[] documentIds)
+        LoadDocumentDistributionsAsync(int companyId, int[] documentIds, bool preferStagedRevisionList = true)
     {
         if (documentIds.Length == 0)
             return (new List<DistributionListReadDto>(), new List<DocumentRequestUserDistribution>());
@@ -5727,7 +5891,7 @@ public class DocumentComponent
                    subd.Name AS SubDepartment,
                    bd.Name AS BusinessDomain,
 	                   dt.Name AS DistributionType
-               FROM " + RoleDistributionsToShow + @" dl
+               FROM " + (preferStagedRevisionList ? RoleDistributionsToShow : "DocumentRoleDistributions") + @" dl
                     LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
                     LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
                     LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
@@ -5744,7 +5908,7 @@ public class DocumentComponent
             drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode,
             LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' ||COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName,
             COALESCE(des.name, des_fallback.name) AS Designation, r.name AS Role
-            FROM " + UserDistributionsToShow + @" drd
+            FROM " + (preferStagedRevisionList ? UserDistributionsToShow : "DocumentUserDistributions") + @" drd
             LEFT JOIN tblEmployee e on LPAD(drd.EmployeeCode::text, 9, '0') = e.empCode AND e.CompanyId = @CompanyId
             INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
             LEFT JOIN tblsetupsdetail des ON ejp.dsgid = des.sdlid AND des.CompanyId = @CompanyId
@@ -5761,6 +5925,70 @@ public class DocumentComponent
             new { CompanyId = companyId, DocumentIds = documentIds })).ToList();
 
         return (roleDistributions, userDistributions);
+    }
+
+    // Document Users and Distribution List for the Preview screen, shaped for read-only tables. pending = the version still
+    // being prepared (what the approver or author works on), so the revision's proposed list when one is waiting; otherwise
+    // the list of the version in force.
+    public async Task<DocumentPreviewListsDto> GetDocumentPreviewListsAsync(int documentId, bool pending)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        var (roles, users) = await LoadDocumentDistributionsAsync(companyId, new[] { documentId }, preferStagedRevisionList: pending);
+
+        return new DocumentPreviewListsDto
+        {
+            DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(
+                _common, companyId, roles.Where(x => x.DocumentRequestId == documentId).ToList()),
+            UserList = await GroupUsersByRoleAsync(companyId, users.Where(x => x.DocumentRequestId == documentId).ToList())
+        };
+    }
+
+    // The Document Users the way the screen's own grid shows them: one row per Role + cabinet that was picked
+    // (Division, Department, Sub Department, Role), with how many employees were selected under it -- not one row
+    // per employee.
+    private async Task<List<DocumentPreviewUserRoleDto>> GroupUsersByRoleAsync(int companyId, List<DocumentRequestUserDistribution> users)
+    {
+        var groups = users
+            .Where(u => u.RoleId.HasValue)
+            .GroupBy(u => new
+            {
+                RoleId = u.RoleId!.Value,
+                Division = u.DivisionCode ?? "",
+                Department = u.DepartmentCode ?? "",
+                SubDepartment = u.SubDepartmentCode ?? ""
+            })
+            .ToList();
+        if (groups.Count == 0) return new List<DocumentPreviewUserRoleDto>();
+
+        var cabinetCodes = groups
+            .SelectMany(g => new[] { g.Key.Division, g.Key.Department, g.Key.SubDepartment })
+            .Where(c => c.Length > 0).Distinct().ToArray();
+        var cabinetNames = cabinetCodes.Length == 0
+            ? new Dictionary<string, string>()
+            : (await _common.QueryAsync<dynamic>(@"
+                SELECT sdlid::text AS code, name FROM tblsetupsdetail
+                WHERE smsid IN (70, 84, 24) AND sdlid::text = ANY(@Codes);",
+                new { Codes = cabinetCodes }))
+                .GroupBy(r => (string)r.code).ToDictionary(g => g.Key, g => (string)g.First().name);
+
+        var roleNames = (await _common.QueryAsync<dynamic>(@"
+            SELECT sdlid AS id, name FROM tblsetupsdetail
+            WHERE CompanyId = @CompanyId AND sdlid = ANY(@RoleIds);",
+            new { CompanyId = companyId, RoleIds = groups.Select(g => g.Key.RoleId).Distinct().ToArray() }))
+            .GroupBy(r => (int)r.id).ToDictionary(g => g.Key, g => (string)g.First().name);
+
+        string Name(string code) => code.Length > 0 && cabinetNames.TryGetValue(code, out var n) ? n : "";
+
+        return groups.Select(g => new DocumentPreviewUserRoleDto
+        {
+            Division = Name(g.Key.Division),
+            Department = Name(g.Key.Department),
+            SubDepartment = Name(g.Key.SubDepartment),
+            Role = roleNames.TryGetValue(g.Key.RoleId, out var rn) ? rn : "",
+            SelectedEmployees = g.Select(u => u.EmployeeCode).Distinct().Count()
+        }).ToList();
     }
 
     public async Task<IEnumerable<dynamic>> GetDraftDocumentByRequestAsync(int requestId)
@@ -10008,6 +10236,21 @@ public class DocumentComponent
     }
 
 
+}
+
+public class DocumentPreviewListsDto
+{
+    public List<DistributionListReadDto> DistributionList { get; set; } = new();
+    public List<DocumentPreviewUserRoleDto> UserList { get; set; } = new();
+}
+
+public class DocumentPreviewUserRoleDto
+{
+    public string Division { get; set; } = "";
+    public string Department { get; set; } = "";
+    public string SubDepartment { get; set; } = "";
+    public string Role { get; set; } = "";
+    public int SelectedEmployees { get; set; }
 }
 
 public class AuthorizeDocumentDto

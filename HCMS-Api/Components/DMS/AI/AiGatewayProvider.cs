@@ -150,6 +150,14 @@ public sealed class AiGatewayProvider : IAiProvider
                     "AI gateway returned {Status} for model {Model}. Body: {Body}",
                     (int)response.StatusCode, _options.Model, Truncate(body, 300));
 
+                // The provider answers 403 (and sometimes 429) when the account has run out of free quota or credit.
+                // That is not a credentials problem and not a busy server, and saying so sends people looking in the
+                // wrong place -- name it plainly.
+                if (IsQuotaOrBillingProblem(body))
+                    throw new AiException(
+                        AiFailure.Unavailable,
+                        "The AI assistant's usage quota has been used up, so it cannot answer right now. Please contact your administrator.");
+
                 throw response.StatusCode switch
                 {
                     HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
@@ -162,6 +170,19 @@ public sealed class AiGatewayProvider : IAiProvider
 
             return ParseCompletion(body);
         }
+    }
+
+    // Quota / billing wording used by the gateway's error bodies (DashScope: AllocationQuota.FreeTierOnly,
+    // Arrearage, "insufficient_quota", "overdue-payment", "free quota has been exhausted").
+    private static bool IsQuotaOrBillingProblem(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return false;
+        return body.Contains("AllocationQuota", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("Arrearage", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("overdue", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("quota has been exhausted", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("exceeded your current quota", StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<object> AppendSchemaInstruction(AiCompletionRequest request)
