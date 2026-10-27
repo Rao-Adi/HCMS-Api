@@ -3242,20 +3242,36 @@ public class DocumentComponent
 
             InsertContentPlaceholder(body, "{{DocumentContent}}", contentBodyElements);
 
-            // After the content, at the end of the body (the footer stays where the template put it).
+            // Straight after the content, in the same place the content sits (inside the template's content box when it
+            // has one), so the lists stay with the document's text, line up with the box and come ahead of the
+            // approval / signature block -- which these templates keep in the footer. Content that sits directly in
+            // the body gets the lists after it, lined up with the template's header box.
             if (distributionLists != null)
             {
-                // The content often ends in a few empty lines (the editor leaves them). Left in, they sit between the
-                // text and the lists and eat the room that is still free on the last page, pushing the lists onto a
-                // page of their own. Trailing blank paragraphs are dropped so the lists follow the content directly
-                // and the page layout (Word / Google Docs) decides where they fall.
-                RemoveTrailingEmptyParagraphs(body);
-
                 var sectionProperties = body.Elements<SectionProperties>().LastOrDefault();
-                foreach (var element in BuildDistributionListElements(distributionLists))
+                RemoveTrailingBlankContent(contentBodyElements);
+
+                OpenXmlElement? lastContent = contentBodyElements.LastOrDefault(e => e.Parent != null);
+                bool insideCell = lastContent?.Ancestors<TableCell>().Any() == true;
+                var (listIndent, listWidth) = insideCell ? (0, 0) : HeaderBoxGeometry(mainPart, sectionProperties);
+                var listElements = BuildDistributionListElements(distributionLists, listIndent, listWidth);
+
+                if (lastContent != null)
                 {
-                    if (sectionProperties != null) body.InsertBefore(element, sectionProperties);
-                    else body.AppendChild(element);
+                    OpenXmlElement previous = lastContent;
+                    foreach (var element in listElements)
+                    {
+                        previous.InsertAfterSelf(element);
+                        previous = element;
+                    }
+                }
+                else
+                {
+                    foreach (var element in listElements)
+                    {
+                        if (sectionProperties != null) body.InsertBefore(element, sectionProperties);
+                        else body.AppendChild(element);
+                    }
                 }
             }
 
@@ -3284,6 +3300,23 @@ public class DocumentComponent
         return outputStream.ToArray();
     }
 
+    // The content often ends in a few empty lines (the editor leaves them). Left in, they sit between the text and the
+    // lists. Drops them from the end of the inserted content, under the same rule as RemoveTrailingEmptyParagraphs.
+    private static void RemoveTrailingBlankContent(List<OpenXmlElement> content)
+    {
+        while (content.Count > 1 && content[^1] is Paragraph last && last.Parent != null)
+        {
+            bool hasText = !string.IsNullOrWhiteSpace(last.InnerText);
+            bool hasOther = last.Descendants().Any(d =>
+                d is Drawing || d is Picture || d is Break || d is SectionProperties || d is FieldChar || d is SimpleField);
+            bool shapesLayout = last.ParagraphProperties?.PageBreakBefore != null
+                || last.ParagraphProperties?.SectionProperties != null;
+            if (hasText || hasOther || shapesLayout) break;
+            last.Remove();
+            content.RemoveAt(content.Count - 1);
+        }
+    }
+
     // Removes the empty paragraphs at the very end of the body. A paragraph only counts as empty when it has no text and
     // nothing else that matters (a picture, a page / section break, a field), so nothing visible is ever lost.
     private static void RemoveTrailingEmptyParagraphs(Body body)
@@ -3303,25 +3336,56 @@ public class DocumentComponent
 
     // The Distribution List and Document Users as two small tables ending the document, the same content the Preview
     // screen shows. A blank Division / Department / Sub Department reads "All" and a blank Role "Any".
-    private static List<OpenXmlElement> BuildDistributionListElements(DocumentPreviewListsDto lists)
+    // Where the template's header box sits, so the lists can line up with it: the template's header table often
+    // starts left of the text margin and runs wider than the text area. Returns (indent, width) in dxa, or
+    // (0, 0) when no header table is found -- then the lists keep the text-area width.
+    private static (int indent, int width) HeaderBoxGeometry(MainDocumentPart mainPart, SectionProperties? sectionProperties)
+    {
+        try
+        {
+            var pageSize = sectionProperties?.GetFirstChild<PageSize>();
+            var margin = sectionProperties?.GetFirstChild<PageMargin>();
+            if (pageSize?.Width == null || margin?.Left == null || margin.Right == null) return (0, 0);
+            int textWidth = (int)pageSize.Width.Value - (int)margin.Left.Value - (int)margin.Right.Value;
+
+            foreach (var header in mainPart.HeaderParts)
+            {
+                var table = header.Header?.Descendants<Table>().FirstOrDefault();
+                var props = table?.GetFirstChild<TableProperties>();
+                var tableWidth = props?.TableWidth;
+                if (tableWidth?.Width == null || !int.TryParse(tableWidth.Width.Value, out var w)) continue;
+
+                int width = tableWidth.Type?.Value == TableWidthUnitValues.Pct ? textWidth * w / 5000
+                          : tableWidth.Type?.Value == TableWidthUnitValues.Dxa ? w : 0;
+                int indent = props!.TableIndentation?.Width?.Value is int i ? i : 0;
+                if (width > 0) return (indent, width);
+            }
+        }
+        catch { /* alignment is cosmetic; never fail the download over it */ }
+        return (0, 0);
+    }
+
+    private static List<OpenXmlElement> BuildDistributionListElements(DocumentPreviewListsDto lists, int indent = 0, int width = 0)
     {
         const string fontSize = "18";
         const string headingSize = "28"; // half-points: 14 pt
 
-        Paragraph MakeParagraph(string text, bool bold, bool italic = false, string? spaceBefore = null, bool keepNext = false, string? size = null)
+        Paragraph MakeParagraph(string text, bool bold, bool italic = false, string? spaceBefore = null, bool keepNext = false, string? size = null, bool inCell = false)
         {
             var runProps = new RunProperties();
             if (bold) runProps.Append(new Bold());
             if (italic) runProps.Append(new Italic());
             runProps.Append(new DocumentFormat.OpenXml.Wordprocessing.FontSize { Val = size ?? fontSize });
             var p = new Paragraph();
-            if (keepNext || spaceBefore != null)
+            bool indented = indent != 0 && !inCell;
+            if (keepNext || spaceBefore != null || indented)
             {
                 // Schema order: keepNext before spacing. keepNext keeps a heading with the table under it, so the
                 // heading is never left alone at the bottom of a page.
                 var pPr = new ParagraphProperties();
                 if (keepNext) pPr.Append(new KeepNext());
                 if (spaceBefore != null) pPr.Append(new SpacingBetweenLines { Before = spaceBefore, After = "60" });
+                if (indented) pPr.Append(new Indentation { Left = indent.ToString(CultureInfo.InvariantCulture) });
                 p.Append(pPr);
             }
             p.Append(new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
@@ -3333,7 +3397,7 @@ public class DocumentComponent
             var cell = new TableCell(new TableCellProperties(new TableCellMargin(
                 new LeftMargin { Width = "80", Type = TableWidthUnitValues.Dxa },
                 new RightMargin { Width = "80", Type = TableWidthUnitValues.Dxa })));
-            cell.Append(MakeParagraph(text, bold, keepNext: keepNext));
+            cell.Append(MakeParagraph(text, bold, keepNext: keepNext, inCell: true));
             return cell;
         }
 
@@ -3346,14 +3410,19 @@ public class DocumentComponent
                 new RightBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
                 new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
                 new InsideVerticalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" });
-            var table = new Table(new TableProperties(
-                new TableWidth { Width = "5000", Type = TableWidthUnitValues.Pct },
-                borders));
+            var tableProps = new TableProperties(
+                width > 0
+                    ? new TableWidth { Width = width.ToString(CultureInfo.InvariantCulture), Type = TableWidthUnitValues.Dxa }
+                    : new TableWidth { Width = "5000", Type = TableWidthUnitValues.Pct });
+            // Schema order: width, indent, borders.
+            if (width > 0) tableProps.Append(new TableIndentation { Width = indent, Type = TableWidthUnitValues.Dxa });
+            tableProps.Append(borders);
+            var table = new Table(tableProps);
 
             // The schema wants a grid; the columns share the width evenly (the pct table width does the sizing).
             var grid = new TableGrid();
             for (int i = 0; i < headers.Length; i++)
-                grid.Append(new GridColumn { Width = (9000 / headers.Length).ToString() });
+                grid.Append(new GridColumn { Width = ((width > 0 ? width : 9000) / headers.Length).ToString() });
             table.Append(grid);
 
             var headerRow = new TableRow(new TableRowProperties(new TableHeader()));
@@ -3758,15 +3827,20 @@ public class DocumentComponent
         // projection first and filtering afterwards meant touching every employee in the company
         // for one document, which timed out and sent the caller the unmerged file instead.
         var rows = (await _common.QueryAsync<dynamic>(@"
-            WITH Steps AS (
-                SELECT wes.AssignedUserId, wes.ActionAt,
+            -- Position counted over EVERY step of the round, not just the ones that approved so far: the final approver is
+            -- the workflow's last step, so while it is still waiting the people who have approved are reviewers, not
+            -- the approver.
+            WITH AllSteps AS (
+                SELECT wes.AssignedUserId, wes.ActionAt, wes.Decision,
                        ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
                        ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
                 FROM WorkflowExecutionSteps wes
                 JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
                 WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
                   AND we.Id = COALESCE(@ExecutionId::int, -1)
-                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
+            ),
+            Steps AS (
+                SELECT * FROM AllSteps WHERE Decision = 'Approved' AND ActionAt IS NOT NULL
             ),
             -- Whoever raised the Revision Request this version came from. Absent for the first
             -- version of a document, where the writer is simply the document's creator.
@@ -3851,8 +3925,11 @@ public class DocumentComponent
         int companyId, int requestId)
     {
         var rows = (await _common.QueryAsync<dynamic>(@"
-            WITH Steps AS (
-                SELECT wes.AssignedUserId, wes.ActionAt,
+            -- Position counted over EVERY step of the round, not just the ones that approved so far: the final approver is
+            -- the workflow's last step, so while it is still waiting the people who have approved are reviewers, not
+            -- the approver.
+            WITH AllSteps AS (
+                SELECT wes.AssignedUserId, wes.ActionAt, wes.Decision,
                        ROW_NUMBER() OVER (ORDER BY wes.StepOrder DESC, wes.Id DESC) AS FromLast,
                        ROW_NUMBER() OVER (ORDER BY wes.StepOrder ASC, wes.Id ASC) AS Position
                 FROM WorkflowExecutionSteps wes
@@ -3861,7 +3938,9 @@ public class DocumentComponent
                   -- Latest approval round only: a request sent back for rework starts a new one.
                   AND we.Id = (SELECT MAX(x.Id) FROM WorkflowExecutions x
                                WHERE x.CompanyId = @CompanyId AND x.EntityType = 'Request' AND x.EntityId = @RequestId)
-                  AND wes.Decision = 'Approved' AND wes.ActionAt IS NOT NULL
+            ),
+            Steps AS (
+                SELECT * FROM AllSteps WHERE Decision = 'Approved' AND ActionAt IS NOT NULL
             ),
             Parties AS (
                 SELECT 'Writer' AS Role, 1 AS Position, TRIM(r.CreatedBy) AS EmpCode, r.CreatedAt AS ActedAt
@@ -7067,23 +7146,11 @@ public class DocumentComponent
                     VALUES (@CompanyId, @DocumentId, @FromStateId, (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE'), @empCode, @Observation, NOW());",
                     new { CompanyId, input.DocumentId, fromStateId, empCode, input.Observation }, transaction);
 
-                // 4. Trigger DCA Notification for physical copy retrieval
-                var dcaUsers = await _common.QueryAsync<string>(@"
-                    SELECT TRIM(e.empcode) FROM public.tblempjobprofile ejp 
-                    INNER JOIN public.tblEmployee e ON e.empid = ejp.empid 
-                    INNER JOIN public.tblsetupsdetail sd ON sd.sdlid = ejp.roleid 
-                    INNER JOIN DocumentUserDistributions dud ON dud.EmployeeCode = e.Empcode
-                    WHERE sd.smsid = 189 AND e.CompanyId = @CompanyId AND dud.DocumentId = @DocumentId
-                    AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE",
-                    new { CompanyId, input.DocumentId }, transaction);
+                // The "Retrieve Physical Copies" task is NOT raised here. It used to be: it went to every person in the
+                // document's user list who held any role, with an "Obsoleted Document" message, when a document merely
+                // became Effective. The task belongs to the Obsoletion (see the DCA step where a document is retired).
 
                 var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
-                var placeholders = new Dictionary<string, string> { { "Doc Name", (string)docInfo?.title ?? "Document" }, { "V#", "Latest" } };
-
-                foreach (var dcaUser in dcaUsers)
-                {
-                    pendingNotifications.Add((NotificationScenario.PhysicalCopyRetrievalTask, input.DocumentId, dcaUser, placeholders));
-                }
 
                 // 5. Tell the initiator their document is authorized and effective, and confirm it
                 // to the person who authorized it. Nothing sent this before: the notification
@@ -7966,8 +8033,15 @@ public class DocumentComponent
                 LEFT JOIN tblsetupsdetail r ON drd.RoleId = r.sdlid
                 LEFT JOIN tblsetupsdetail div ON div.sdlid::text = drd.DivisionCode AND div.smsid = 70
                 LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = drd.DepartmentCode AND dep.smsid = 84
-                LEFT JOIN TblEmpJobProfile ejp ON ejp.roleid = drd.RoleId AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = drd.CompanyId
-                LEFT JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = drd.CompanyId AND COALESCE(e.Active, 1) = 1
+                -- Only the holders inside the organisation unit the row names (blank level = all), the same rule the
+                -- document's user list is built with; matching on the role alone listed its holders in every other
+                -- department too.
+                LEFT JOIN (TblEmpJobProfile ejp
+                           INNER JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = ejp.CompanyId AND COALESCE(e.Active, 1) = 1)
+                       ON ejp.roleid = drd.RoleId AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = drd.CompanyId
+                      AND (COALESCE(drd.DivisionCode, '') = '' OR drd.DivisionCode = e.divid::text)
+                      AND (COALESCE(drd.DepartmentCode, '') = '' OR drd.DepartmentCode = e.mdptid::text)
+                      AND (COALESCE(drd.SubDepartmentCode, '') = '' OR drd.SubDepartmentCode = e.dptid::text)
                 WHERE drd.CompanyId = @CompanyId AND drd.DocumentId = ANY(@DocumentIds);",
                 new { CompanyId, DocumentIds = documentIds })).ToList();
 
@@ -8631,7 +8705,9 @@ public class DocumentComponent
                 {
                     pending = myInboxCounts?.pending ?? 0,
                     approved = myInboxCounts?.approved ?? 0,
-                    rejectedorreverted = (myInboxCounts?.rejected ?? 0) + (myInboxCounts?.reworked ?? 0)
+                    rejectedorreverted = (myInboxCounts?.rejected ?? 0) + (myInboxCounts?.reworked ?? 0),
+                    rejected = myInboxCounts?.rejected ?? 0,
+                    reworked = myInboxCounts?.reworked ?? 0
                 }
             };
         }

@@ -58,6 +58,8 @@ public class NotificationComponent
         {
             string targetUserId = recipientUserId?.Trim() ?? string.Empty;
 
+            placeholders = await ResolveEmployeeNamePlaceholdersAsync(companyId, placeholders, transaction);
+
             var (title, message, relatedEntityType, redirectionUrl) = GetNotificationDetails(scenario, placeholders);
 
             string insertQuery = @"
@@ -101,7 +103,7 @@ public class NotificationComponent
             await _hubContext.Clients.Group($"user_{targetUserId}").SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, transaction);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, scenario, transaction);
 
             
             return true;
@@ -110,6 +112,54 @@ public class NotificationComponent
         {
             throw;
         }
+    }
+
+    // Some call sites hand over an employee code where the message reads as a person ("rejected by 011001011",
+    // "transfer from 011001011 to 011001277"). Those placeholders are turned into the person's name here, once, for every
+    // scenario and call site; a value that is not a bare code, or a code with no employee behind it, is left as it is.
+    private static readonly string[] EmployeePlaceholders = { "Approver", "Emp From", "Emp To" };
+
+    private async Task<Dictionary<string, string>> ResolveEmployeeNamePlaceholdersAsync(int companyId, Dictionary<string, string> placeholders, IDbTransaction transaction)
+    {
+        if (placeholders == null) return placeholders;
+
+        Dictionary<string, string> resolved = null;
+        foreach (var key in EmployeePlaceholders)
+        {
+            if (!placeholders.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value)) continue;
+            var code = value.Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(code, @"^\d{5,}$")) continue;
+
+            string name = null;
+            try
+            {
+                name = await _common.QueryFirstOrDefaultAsync<string>(@"
+                    SELECT LTRIM(RTRIM(COALESCE(firstname, '') || ' ' || COALESCE(midname, '') || ' ' || COALESCE(lastname, '')))
+                    FROM tblEmployee
+                    WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(@Code, '0') AND CompanyId = @CompanyId
+                    ORDER BY COALESCE(Active, 1) DESC LIMIT 1;",
+                    new { Code = code, CompanyId = companyId }, transaction);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not resolve the name of employee {Code} for a notification placeholder.", code);
+            }
+
+            name = System.Text.RegularExpressions.Regex.Replace(name ?? string.Empty, @"\s+", " ").Trim();
+            if (name.Length == 0) continue;
+
+            resolved ??= new Dictionary<string, string>(placeholders);
+            resolved[key] = name;
+        }
+        return resolved ?? placeholders;
+    }
+
+    // "Reason: <text>." -- the reason is typed free-hand and usually already ends in a full stop, which the sentence then
+    // doubled. Exactly one is kept.
+    private static string Reason(string observation)
+    {
+        var text = (observation ?? string.Empty).Trim().TrimEnd('.', ' ');
+        return text.Length == 0 ? "No reason was given" : text;
     }
 
     private (string Title, string Message, string RelatedEntityType, string RedirectionUrl) GetNotificationDetails(NotificationScenario scenario, Dictionary<string, string> p)
@@ -159,13 +209,13 @@ public class NotificationComponent
             ),
             NotificationScenario.RequestRejected => (
                 "DMS – Request Rejected",
-                $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
+                $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
                 "Request",
                 "/documents/my-approvals-request?tab=Rejected"
             ),
             NotificationScenario.RequestRevertedForRework => (
                 "DMS – Request Rework Required",
-                $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Get("Observation")}.",
+                $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Reason(Get("Observation"))}.",
                 "Request",
                 $"/documents/my-approvals-request?tab=Rejected"
             ),
@@ -177,7 +227,7 @@ public class NotificationComponent
             ),
             NotificationScenario.PendingDocumentApproval => (
                 "DMS – New Document Pending Review",
-                $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) pending for your technical review.",
+                $"A new document ({Get("Doc Name")}, Version: {Get("V#")}) is pending for your technical review.",
                 "Document",
                 "/documents/my-approvals-documents?tab=Pending"
             ),
@@ -197,7 +247,7 @@ public class NotificationComponent
             ),
             NotificationScenario.DocumentRejected => (
                 "DMS – Document Rejected",
-                $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Get("Observation")}.",
+                $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
                 "Document",
                 // Was pointed at my-approvals-request -- wrong page entirely for a Document-type
                 // notification, and inconsistent with its three siblings below which all
@@ -239,13 +289,16 @@ public class NotificationComponent
                 "DMS – Document Authorized",
                 $"Document \"{Get("Doc Name")}\" (V:{Get("V#")}) is now authorized and effective as of {Get("Date")}.",
                 "Authorization",
-                "/documents/trainingauthorization"
+                // The person told is the initiator (and whoever authorized): the approved / effective documents list is
+                // where the document now is. The Training Authorization page is the authorizer's work queue.
+                "/reports/viewapproved"
             ),
             NotificationScenario.PeriodicReviewDue => (
                 "DMS – Document Review Due Soon",
                 $"Document {Get("Doc Name")} (V:{Get("V#")}) is due for review on {Get("Date")}. Please initiate a Revision Request.",
                 "Review",
-                "/documents/trainingauthorization"
+                // The message asks for a Revision Request, which is raised from Create / Update Document.
+                "/documents/create-update-document"
             ),
             NotificationScenario.DocumentObsoleted => (
                 "DMS – Document Obsoleted",
@@ -260,9 +313,10 @@ public class NotificationComponent
                 "DMS – Task: Retrieve Physical Copies",
                 $"ACTION REQUIRED: Retrieve and destroy physical copies for Obsoleted Document {Get("Doc Name")} (V:{Get("V#")}).",
                 "Obsoletion",
-                // An outstanding task, so the Pending tab -- stated explicitly rather than relying
-                // on the page's default, which is what every other actionable scenario does.
-                "/documents/my-approvals-documents?tab=Pending"
+                // Goes to the dashboard. It used to open My Approvals > Pending, which lists documents waiting for the
+                // signed-in person's approval -- empty for the DCA, who is not an approver of the obsoleted document --
+                // and no other list shows an obsolete document (View Approved leaves them out).
+                "/dashboard"
             ),
             NotificationScenario.NewUserAccountCreated => (
                 "DMS – Welcome to DMS",
@@ -686,7 +740,57 @@ public class NotificationComponent
     }
 
 
-    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, IDbTransaction transaction = null)
+    // What the email says around the message: the badge, the line above the button and the button itself. Every email used to
+    // read "Action Required ... review and process this request ... View Request Details", including the ones that only
+    // report something that already happened.
+    private static (string Badge, string Intro, string Button, string Bg, string Border, string Fg) GetEmailPresentation(NotificationScenario scenario)
+    {
+        var blue = ("#eff6ff", "#bfdbfe", "#1d4ed8");
+        var green = ("#f0fdf4", "#bbf7d0", "#15803d");
+        var red = ("#fef2f2", "#fecaca", "#b91c1c");
+        var amber = ("#fffbeb", "#fde68a", "#b45309");
+
+        (string, string, string, (string, string, string)) P(string badge, string intro, string button, (string, string, string) c) => (badge, intro, button, c);
+        var (badge, intro, button, c) = scenario switch
+        {
+            NotificationScenario.PendingRequest or NotificationScenario.RequestApprovedForwarded or NotificationScenario.OverdueRequestReminder
+                => P("Action Required", "Click the button below to review and process this request:", "Review Request", blue),
+            NotificationScenario.PendingDocumentApproval or NotificationScenario.DocumentApprovedForwarded
+                => P("Action Required", "Click the button below to review this document:", "Review Document", blue),
+            NotificationScenario.RequestApproved
+                => P("Approved", "Click the button below to view the request:", "View Request", green),
+            NotificationScenario.DocumentApproved
+                => P("Approved", "Click the button below to view the document:", "View Document", green),
+            NotificationScenario.RequestRejected
+                => P("Rejected", "Click the button below to view the request and the reason:", "View Request", red),
+            NotificationScenario.DocumentRejected
+                => P("Rejected", "Click the button below to view the document and the reason:", "View Document", red),
+            NotificationScenario.RequestRevertedForRework
+                => P("Rework Required", "Click the button below to open the request and make the changes asked for:", "Open Request", amber),
+            NotificationScenario.DocumentRevertedForRework
+                => P("Rework Required", "Click the button below to open the document and make the changes asked for:", "Open Document", amber),
+            NotificationScenario.TrainingProofRequired
+                => P("Action Required", "Click the button below to upload the training proof:", "Upload Training Proof", blue),
+            NotificationScenario.TrainingProofSubmitted
+                => P("Update", "Click the button below to follow the authorization:", "View Document", blue),
+            NotificationScenario.DocumentAuthorizedEffective
+                => P("Authorized", "Click the button below to view the document:", "View Document", green),
+            NotificationScenario.PeriodicReviewDue
+                => P("Review Due", "Click the button below to start the revision:", "Start Revision", amber),
+            NotificationScenario.DocumentObsoleted
+                => P("Obsoleted", "Click the button below to view the details:", "View Details", amber),
+            NotificationScenario.PhysicalCopyRetrievalTask
+                => P("Action Required", "Click the button below to open DMS:", "Open DMS", blue),
+            NotificationScenario.NewUserAccountCreated
+                => P("Welcome", "Click the button below to sign in:", "Open DMS", green),
+            NotificationScenario.TransferRequestApproval
+                => P("Update", "Click the button below to view the transfer:", "View Transfer", blue),
+            _ => P("Notification", "Click the button below to view the details:", "View Details", blue),
+        };
+        return (badge, intro, button, c.Item1, c.Item2, c.Item3);
+    }
+
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, NotificationScenario scenario, IDbTransaction transaction = null)
     {
         try
         {
@@ -695,7 +799,7 @@ public class NotificationComponent
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {
-                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl);
+                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl, scenario);
                 await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
                 _logger.LogInformation("Notification email sent: '{Title}' to employee {EmpCode}.", title, recipientUserId);
             }
@@ -719,8 +823,15 @@ public class NotificationComponent
         }
     }
 
-    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl)
+    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl, NotificationScenario scenario)
     {
+        var (badge, intro, button, badgeBg, badgeBorder, badgeFg) = GetEmailPresentation(scenario);
+
+        // The title and message are plain text (a document's name can hold & or quotes); they go into HTML, so they are
+        // encoded -- otherwise such a name broke the layout.
+        title = System.Net.WebUtility.HtmlEncode(title ?? string.Empty);
+        message = System.Net.WebUtility.HtmlEncode(message ?? string.Empty);
+
         string actionUrl = redirectionUrl ?? "";
         var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
         if (!string.IsNullOrEmpty(actionUrl) && actionUrl != "#")
@@ -797,8 +908,8 @@ public class NotificationComponent
                                         <!-- Status badge -->
                                         <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-bottom: 20px;'>
                                             <tr>
-                                                <td bgcolor='#eff6ff' style='background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 20px; padding: 6px 14px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; font-weight: 600; color: #1d4ed8; mso-line-height-rule: exactly; line-height: 15px;'>
-                                                    Action Required
+                                                <td bgcolor='{badgeBg}' style='background-color: {badgeBg}; border: 1px solid {badgeBorder}; border-radius: 20px; padding: 6px 14px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; font-weight: 600; color: {badgeFg}; mso-line-height-rule: exactly; line-height: 15px;'>
+                                                    {badge}
                                                 </td>
                                             </tr>
                                         </table>
@@ -822,13 +933,13 @@ public class NotificationComponent
                                                     <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
                                                         <tr>
                                                             <td align='center' style='padding-bottom: 16px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 13px; font-weight: 500; color: #64748b; mso-line-height-rule: exactly; line-height: 18px;'>
-                                                                Click the button below to review and process this request:
+                                                                {intro}
                                                             </td>
                                                         </tr>
                                                         <tr>
                                                             <td align='center' bgcolor='#2563eb' style='background-color: #2563eb; border: 1px solid #1d4ed8; border-radius: 8px; mso-padding-alt: 12px 30px;'>
                                                                 <a href='{actionUrl}' target='_blank' style='display: inline-block; padding: 12px 30px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; mso-line-height-rule: exactly; line-height: 18px;'>
-                                                                    View Request Details &rarr;
+                                                                    {button} &rarr;
                                                                 </a>
                                                             </td>
                                                         </tr>

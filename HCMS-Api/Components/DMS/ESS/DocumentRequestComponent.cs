@@ -4054,7 +4054,9 @@ public class DocumentRequestComponent
                       -- show, whatever text a past bug left in its column.
                       AND (wes.Decision IS NOT NULL OR wes.ActionAt IS NOT NULL)
 
-                    ORDER BY wes.StepOrder;";
+                    -- Oldest first, by when each step acted. StepOrder alone restarts at 1 with every round after a
+                    -- revert, so a later round's first step was listed before an earlier round's last one.
+                    ORDER BY wes.ActionAt NULLS LAST, wes.StepOrder;";
 
             return await _common.QueryAsync<DocumentRequestDetailsDto>(sql, new
             {
@@ -5063,7 +5065,9 @@ public class DocumentRequestComponent
              SELECT
                  COUNT(1) FILTER (WHERE we.Status = 'Running' AND wes.IsActive = TRUE AND wes.Decision IS NULL) AS Pending,
                  COUNT(1) FILTER (WHERE wes.Decision = 'Approved') AS Approved,
-                 COUNT(1) FILTER (WHERE (we.Status = 'Rejected' AND wes.Decision = 'Rejected') OR (we.Status = 'Reworked' AND wes.Decision = 'Reworked')) AS RejectedOrReverted
+                 COUNT(1) FILTER (WHERE (we.Status = 'Rejected' AND wes.Decision = 'Rejected') OR (we.Status = 'Reworked' AND wes.Decision = 'Reworked')) AS RejectedOrReverted,
+                 COUNT(1) FILTER (WHERE we.Status = 'Rejected' AND wes.Decision = 'Rejected') AS Rejected,
+                 COUNT(1) FILTER (WHERE we.Status = 'Reworked' AND wes.Decision = 'Reworked') AS Reverted
              FROM WorkflowExecutionSteps wes
              JOIN WorkflowExecutions we ON we.Id = wes.WorkflowExecutionId AND we.CompanyId = wes.CompanyId
              JOIN Vw_DocumentRequests dr ON dr.Id = we.EntityId AND dr.CompanyId = we.CompanyId
@@ -5101,7 +5105,7 @@ public class DocumentRequestComponent
 
             var myInboxResult = (IDictionary<string, object>)myInboxCounts ?? new Dictionary<string, object>
             {
-                { "pending", 0L }, { "approved", 0L }, { "rejectedorreverted", 0L }
+                { "pending", 0L }, { "approved", 0L }, { "rejectedorreverted", 0L }, { "rejected", 0L }, { "reverted", 0L }
             };
 
             return new
@@ -5116,7 +5120,9 @@ public class DocumentRequestComponent
                 {
                     Pending = (long)myInboxResult["pending"],
                     Approved = (long)myInboxResult["approved"],
-                    RejectedOrReverted = (long)myInboxResult["rejectedorreverted"]
+                    RejectedOrReverted = (long)myInboxResult["rejectedorreverted"],
+                    Rejected = (long)myInboxResult["rejected"],
+                    Reverted = (long)myInboxResult["reverted"]
                 }
             };
         }

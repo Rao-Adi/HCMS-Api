@@ -131,6 +131,37 @@ public class DashboardComponent
             summary.ApprovedByMe = Convert.ToInt32(requestCounts.MyInbox.Approved);
             summary.RejectedByMe = Convert.ToInt32(requestCounts.MyInbox.RejectedOrReverted);
 
+            // The four-way split the dashboard cards show. Request side is read from the same
+            // counts the pages use; the document side likewise.
+            summary.RequestsApprovedByMe = Convert.ToInt32(requestCounts.MyInbox.Approved);
+            summary.RequestsRejectedByMe = Convert.ToInt32(requestCounts.MyInbox.Rejected);
+            summary.RequestsRevertedByMe = Convert.ToInt32(requestCounts.MyInbox.Reverted);
+            summary.DocumentsApprovedByMe = Convert.ToInt32(documentCounts.MyInbox.approved);
+            summary.DocumentsRejectedByMe = Convert.ToInt32(documentCounts.MyInbox.rejected);
+            summary.DocumentsRevertedByMe = Convert.ToInt32(documentCounts.MyInbox.reworked);
+
+            // My Documents: same state buckets as the My Documents counts (Pending = in approval,
+            // Approved = approved / in training / effective). Reverted = back in DRAFT after an
+            // approver sent it back, the same test the Draft/Reverted Documents tab uses.
+            var myDocs = documentCounts.MyDocuments;
+            if (myDocs != null)
+            {
+                summary.MyDocumentsPending = Convert.ToInt32(myDocs.inreview);
+                summary.MyDocumentsApproved = Convert.ToInt32(myDocs.approved);
+                summary.MyDocumentsRejected = Convert.ToInt32(myDocs.rejected);
+            }
+            summary.MyDocumentsReverted = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1) FROM Documents d
+                WHERE d.CompanyId = @CompanyId AND d.CreatedBy = @empCode AND d.IsDeleted = FALSE
+                  AND (SELECT ds.Id FROM DocumentStateHistory dsh
+                       JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+                       WHERE dsh.DocumentId = d.Id
+                       ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1) = 1
+                  AND EXISTS (SELECT 1 FROM DocumentStateHistory rw
+                              WHERE rw.CompanyId = d.CompanyId AND rw.DocumentId = d.Id
+                                AND rw.ToStateId = 1 AND rw.WorkflowExecutionId IS NOT NULL);",
+                new { CompanyId, empCode });
+
             dashboardData.Summary = summary;
 
             // 2. Get Document Distribution by Type

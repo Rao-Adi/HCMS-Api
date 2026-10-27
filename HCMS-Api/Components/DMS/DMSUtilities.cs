@@ -2175,7 +2175,10 @@ namespace HCMS_Api.Components.DMS.Common
                 var alreadyAny = groupList.Any(g => !g.RoleId.HasValue);
                 var groupRoleIds = groupList.Where(g => g.RoleId.HasValue).Select(g => g.RoleId!.Value).ToHashSet();
 
-                if (!alreadyAny && groupRoleIds.Count > 0 && activeSet.SetEquals(groupRoleIds))
+                // A single role is never folded into "Any": when the unit has only that one role, the row is just as
+                // likely a role that was picked by name (e.g. the only role in IT Infrastructure), and the name is
+                // the more useful thing to show.
+                if (!alreadyAny && groupRoleIds.Count > 1 && activeSet.SetEquals(groupRoleIds))
                 {
                     var first = groupList[0];
                     result.Add(new DistributionListReadDto

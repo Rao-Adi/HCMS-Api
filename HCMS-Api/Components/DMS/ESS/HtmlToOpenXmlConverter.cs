@@ -175,11 +175,22 @@ public static class HtmlToOpenXmlConverter
     // formatting accumulated from its ancestor chain within this block.
     private static IEnumerable<Run> ConvertInline(HtmlNode node, bool bold = false, bool italic = false,
         bool underline = false, bool strike = false, string? color = null, string? highlight = null,
-        bool forceBold = false, uint? forceSize = null)
+        bool forceBold = false, uint? forceSize = null, uint? size = null, VerticalPositionValues? vPos = null)
     {
         foreach (var child in node.ChildNodes)
         {
-            switch (child.Name.ToLowerInvariant())
+            // Whatever formatting this element carries itself (colour, background, size from its style / Quill class) is
+            // added to what its ancestors already gave. Quill puts it on a <span>, but a pasted or older document can
+            // carry it on any element, so every element is read, not just <span>.
+            var (ownColor, ownHighlight, ownSize) = child.NodeType == HtmlNodeType.Element ? GetInlineFormatting(child) : (null, null, null);
+            var cColor = ownColor ?? color;
+            var cHighlight = ownHighlight ?? highlight;
+            var cSize = ownSize ?? size;
+            var childName = child.Name.ToLowerInvariant();
+            VerticalPositionValues? cVPos = childName == "sub" ? VerticalPositionValues.Subscript
+                : childName == "sup" ? VerticalPositionValues.Superscript : vPos;
+
+            switch (childName)
             {
                 case "#text":
                     var text = HtmlEntity.DeEntitize(child.InnerText);
@@ -192,12 +203,16 @@ public static class HtmlToOpenXmlConverter
                     if (underline) rPr.Underline = new Underline { Val = UnderlineValues.Single };
                     if (strike) rPr.Strike = new Strike();
                     if (color != null) rPr.Color = new Color { Val = color };
-                    if (highlight != null) rPr.Shading = new Shading { Fill = highlight };
-                    if (forceSize.HasValue)
+                    // w:val is required on a shading element; without it Word ignores the whole thing, so the background
+                    // the writer picked never showed.
+                    if (highlight != null) rPr.Shading = new Shading { Val = ShadingPatternValues.Clear, Color = "auto", Fill = highlight };
+                    var runSize = forceSize ?? size;
+                    if (runSize.HasValue)
                     {
-                        rPr.FontSize = new FontSize { Val = forceSize.Value.ToString() };
-                        rPr.FontSizeComplexScript = new FontSizeComplexScript { Val = forceSize.Value.ToString() };
+                        rPr.FontSize = new FontSize { Val = runSize.Value.ToString() };
+                        rPr.FontSizeComplexScript = new FontSizeComplexScript { Val = runSize.Value.ToString() };
                     }
+                    if (vPos.HasValue) rPr.VerticalTextAlignment = new VerticalTextAlignment { Val = vPos.Value };
                     if (rPr.HasChildren) run.RunProperties = rPr;
 
                     run.AppendChild(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
@@ -216,37 +231,33 @@ public static class HtmlToOpenXmlConverter
 
                 case "strong":
                 case "b":
-                    foreach (var r in ConvertInline(child, true, italic, underline, strike, color, highlight, forceBold, forceSize)) yield return r;
+                    foreach (var r in ConvertInline(child, true, italic, underline, strike, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
 
                 case "em":
                 case "i":
-                    foreach (var r in ConvertInline(child, bold, true, underline, strike, color, highlight, forceBold, forceSize)) yield return r;
+                    foreach (var r in ConvertInline(child, bold, true, underline, strike, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
 
                 case "u":
-                    foreach (var r in ConvertInline(child, bold, italic, true, strike, color, highlight, forceBold, forceSize)) yield return r;
+                    foreach (var r in ConvertInline(child, bold, italic, true, strike, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
 
                 case "s":
                 case "strike":
                 case "del":
-                    foreach (var r in ConvertInline(child, bold, italic, underline, true, color, highlight, forceBold, forceSize)) yield return r;
+                    foreach (var r in ConvertInline(child, bold, italic, underline, true, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
 
                 case "a":
                     // No relationship-backed hyperlink (see file header) -- rendered as styled
                     // (underlined) text so the link target text is at least still visible.
-                    foreach (var r in ConvertInline(child, bold, italic, true, strike, color, highlight, forceBold, forceSize)) yield return r;
-                    break;
-
-                case "span":
-                    var (spanColor, spanHighlight) = GetInlineColors(child);
-                    foreach (var r in ConvertInline(child, bold, italic, underline, strike, spanColor ?? color, spanHighlight ?? highlight, forceBold, forceSize)) yield return r;
+                    foreach (var r in ConvertInline(child, bold, italic, true, strike, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
 
                 default:
-                    foreach (var r in ConvertInline(child, bold, italic, underline, strike, color, highlight, forceBold, forceSize)) yield return r;
+                    // <span>, <sub>, <sup>, <mark> and anything else: the formatting it carries was merged above.
+                    foreach (var r in ConvertInline(child, bold, italic, underline, strike, cColor, cHighlight, forceBold, forceSize, cSize, cVPos)) yield return r;
                     break;
             }
         }
@@ -266,20 +277,90 @@ public static class HtmlToOpenXmlConverter
         return null;
     }
 
-    private static readonly Regex ColorRegex = new(@"color:\s*(#[0-9a-fA-F]{3,6})", RegexOptions.Compiled);
-    private static readonly Regex BackgroundRegex = new(@"background(?:-color)?:\s*(#[0-9a-fA-F]{3,6})", RegexOptions.Compiled);
+    // "color:" must not be read out of "background-color:", and the value is whatever the editor wrote: Quill writes
+    // rgb(230, 0, 0), a paste can bring #f00 or a colour name. Only #rrggbb used to be understood, so the colour (and the
+    // background) the writer picked was dropped for everything the editor actually produces.
+    private static readonly Regex ColorRegex = new(@"(?<![\w-])color\s*:\s*([^;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex BackgroundRegex = new(@"(?<![\w-])background(?:-color)?\s*:\s*([^;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex FontSizeRegex = new(@"(?<![\w-])font-size\s*:\s*([\d.]+)\s*(px|pt|em|rem|%)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RgbRegex = new(@"rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*(?:[,/]\s*([\d.]+%?))?\s*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static (string? color, string? highlight) GetInlineColors(HtmlNode node)
+    private static readonly Dictionary<string, string> NamedColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["black"] = "000000", ["white"] = "FFFFFF", ["red"] = "FF0000", ["green"] = "008000", ["blue"] = "0000FF",
+        ["yellow"] = "FFFF00", ["orange"] = "FFA500", ["purple"] = "800080", ["gray"] = "808080", ["grey"] = "808080",
+        ["navy"] = "000080", ["teal"] = "008080", ["maroon"] = "800000", ["olive"] = "808000", ["silver"] = "C0C0C0",
+        ["lime"] = "00FF00", ["aqua"] = "00FFFF", ["cyan"] = "00FFFF", ["fuchsia"] = "FF00FF", ["magenta"] = "FF00FF",
+        ["brown"] = "A52A2A", ["pink"] = "FFC0CB",
+    };
+
+    // A CSS colour as the six hex digits Word wants, or null when it is not a colour Word can show (transparent, inherit,
+    // an unknown name).
+    private static string? ParseCssColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        value = value.Trim().TrimEnd('!', ' ').Replace("!important", "", StringComparison.OrdinalIgnoreCase).Trim();
+
+        var hex = Regex.Match(value, @"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
+        if (hex.Success)
+        {
+            var h = hex.Groups[1].Value;
+            if (h.Length == 3) h = string.Concat(h.Select(c => new string(c, 2)));
+            return h.ToUpperInvariant();
+        }
+
+        var rgb = RgbRegex.Match(value);
+        if (rgb.Success)
+        {
+            var alpha = rgb.Groups[4].Value;
+            if (alpha.Length > 0 && double.TryParse(alpha.TrimEnd('%'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a)
+                && (alpha.EndsWith("%") ? a : a * 100) < 1) return null; // fully transparent: nothing to show
+            string Two(int g) => Math.Clamp(int.Parse(rgb.Groups[g].Value), 0, 255).ToString("X2");
+            return Two(1) + Two(2) + Two(3);
+        }
+
+        return NamedColors.TryGetValue(value, out var named) ? named : null;
+    }
+
+    // Quill's own size classes are relative to the normal size (0.75em / 1.5em / 2.5em of an 11pt body); returned in
+    // half-points, which is what Word's size property counts in.
+    private static uint? ParseFontSize(string style, string cls)
+    {
+        if (cls.Contains("ql-size-small")) return 17;
+        if (cls.Contains("ql-size-large")) return 33;
+        if (cls.Contains("ql-size-huge")) return 55;
+
+        var m = FontSizeRegex.Match(style ?? string.Empty);
+        if (!m.Success || !double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n) || n <= 0)
+            return null;
+
+        double points = m.Groups[2].Value.ToLowerInvariant() switch
+        {
+            "pt" => n,
+            "em" or "rem" => n * 11,
+            "%" => n / 100 * 11,
+            _ => n * 0.75, // px (and a bare number)
+        };
+        var half = (uint)Math.Round(points * 2);
+        return half is >= 2 and <= 400 ? half : null; // Word accepts 1 to 1638 pt; anything outside a sane range is a typo
+    }
+
+    private static (string? color, string? highlight, uint? size) GetInlineFormatting(HtmlNode node)
     {
         var style = node.GetAttributeValue("style", "");
-        if (string.IsNullOrEmpty(style)) return (null, null);
+        var cls = node.GetAttributeValue("class", "");
 
-        var colorMatch = ColorRegex.Match(style);
-        var bgMatch = BackgroundRegex.Match(style);
+        string? color = null, highlight = null;
+        if (!string.IsNullOrEmpty(style))
+        {
+            var colorMatch = ColorRegex.Match(style);
+            var bgMatch = BackgroundRegex.Match(style);
+            color = colorMatch.Success ? ParseCssColor(colorMatch.Groups[1].Value) : null;
+            highlight = bgMatch.Success ? ParseCssColor(bgMatch.Groups[1].Value) : null;
+        }
+        if (node.Name.Equals("mark", StringComparison.OrdinalIgnoreCase) && highlight == null) highlight = "FFFF00";
 
-        string? color = colorMatch.Success ? colorMatch.Groups[1].Value.TrimStart('#') : null;
-        string? highlight = bgMatch.Success ? bgMatch.Groups[1].Value.TrimStart('#') : null;
-        return (color, highlight);
+        return (color, highlight, ParseFontSize(style, cls));
     }
 
     // Word's own default cell margin (0.08" = 108 twentieths of a point). Used for both the cell

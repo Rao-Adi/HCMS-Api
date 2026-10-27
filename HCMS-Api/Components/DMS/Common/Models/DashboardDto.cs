@@ -20,6 +20,20 @@ public class DashboardSummaryDto
     public int RejectedByMe { get; set; }
     public int PendingTrainings { get; set; }
     public int PendingAuthorizations { get; set; }
+
+    // My Documents (documents you created), by where they stand.
+    public int MyDocumentsPending { get; set; }
+    public int MyDocumentsApproved { get; set; }
+    public int MyDocumentsRejected { get; set; }
+    public int MyDocumentsReverted { get; set; }
+
+    // My Requests (Approvals) / My Documents (Approvals): what you decided as an approver.
+    public int RequestsApprovedByMe { get; set; }
+    public int RequestsRejectedByMe { get; set; }
+    public int RequestsRevertedByMe { get; set; }
+    public int DocumentsApprovedByMe { get; set; }
+    public int DocumentsRejectedByMe { get; set; }
+    public int DocumentsRevertedByMe { get; set; }
 }
 
 public class DocumentTypeDistributionDto
