@@ -3335,7 +3335,7 @@ public class DocumentComponent
     }
 
     // The Distribution List and Document Users as two small tables ending the document, the same content the Preview
-    // screen shows. A blank Division / Department / Sub Department reads "All" and a blank Role "Any".
+    // screen shows. A blank Division / Department / Sub Department or Role reads "All".
     // Where the template's header box sits, so the lists can line up with it: the template's header table often
     // starts left of the text margin and runs wider than the text area. Returns (indent, width) in dxa, or
     // (0, 0) when no header table is found -- then the lists keep the text-area width.
@@ -3454,7 +3454,7 @@ public class DocumentComponent
                 lists.DistributionList.Select(d => new[]
                 {
                     Or(d.Division, "All"), Or(d.Department, "All"), Or(d.SubDepartment, "All"),
-                    Or(d.Role, "Any"), Or(d.DistributionType, "")
+                    Or(d.Role, "All"), Or(d.DistributionType, "")
                 }).ToList()));
         }
         else
@@ -8026,7 +8026,10 @@ public class DocumentComponent
             // dropped just because it's unstaffed). This is a display-only resolution for this
             // report; it doesn't touch DocumentUserDistributions or how that table gets populated.
             var roleDistributions = (await _common.QueryAsync<dynamic>(@"
-                SELECT drd.DocumentId, r.sdlid AS RoleId, r.Name AS RoleName, div.Name AS Division, dep.Name AS Department,
+                -- A Division / Department left blank on the row means all of them; the cell says so rather than staying empty.
+                SELECT drd.DocumentId, r.sdlid AS RoleId, r.Name AS RoleName,
+                       CASE WHEN COALESCE(drd.DivisionCode, '') = '' THEN 'All' ELSE div.Name END AS Division,
+                       CASE WHEN COALESCE(drd.DepartmentCode, '') = '' THEN 'All' ELSE dep.Name END AS Department,
                        e.empCode AS EmployeeCode,
                        LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))) AS EmployeeName
                 FROM DocumentRoleDistributions drd

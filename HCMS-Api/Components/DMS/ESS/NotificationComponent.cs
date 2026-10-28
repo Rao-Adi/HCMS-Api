@@ -2,6 +2,7 @@ using HCMS_Api.Common;
 using HCMS_Api.Common.DMS;
 using HCMS_Api.Common.Misc;
 using HCMS_Api.Components.DMS.Common;
+using HCMS_Api.Components.DMS.Common.BackgroundJobs;
 using HCMS_Api.Components.DMS.Common.Dapper;
 using HCMS_Api.Components.DMS.Common.DataAccess;
 using HCMS_Api.Components.DMS.Common.Models;
@@ -24,6 +25,7 @@ public class NotificationComponent
     private readonly DMSCommon _common;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly PeoplePartnersComponent _peoplePartnersComponent;
+    private readonly EmailOutboxStore _emailOutbox;
     public NotificationComponent(
         DMSUtilities utilities
         , DMSDataServices dataservice
@@ -34,9 +36,11 @@ public class NotificationComponent
         , IHttpContextAccessor http,
         DMSCommon common,
         IHubContext<NotificationHub> hubContext,
-        PeoplePartnersComponent peoplePartnersComponent
+        PeoplePartnersComponent peoplePartnersComponent,
+        EmailOutboxStore emailOutbox
         )
     {
+        _emailOutbox = emailOutbox;
         _http = http;
         _logger = logger;
         _utilities = utilities;
@@ -103,7 +107,7 @@ public class NotificationComponent
             await _hubContext.Clients.Group($"user_{targetUserId}").SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, scenario, transaction);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, scenario, relatedEntityId, transaction);
 
             
             return true;
@@ -790,7 +794,7 @@ public class NotificationComponent
         return (badge, intro, button, c.Item1, c.Item2, c.Item3);
     }
 
-    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, NotificationScenario scenario, IDbTransaction transaction = null)
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, NotificationScenario scenario, int relatedEntityId, IDbTransaction transaction = null)
     {
         try
         {
@@ -800,8 +804,15 @@ public class NotificationComponent
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {
                 string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl, scenario);
-                await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
-                _logger.LogInformation("Notification email sent: '{Title}' to employee {EmpCode}.", title, recipientUserId);
+                if (await TryQueueEmailAsync(companyId, recipientUserId, recipientEmail, title, emailBody, scenario, relatedEntityId))
+                {
+                    _logger.LogInformation("Notification email queued: '{Title}' to employee {EmpCode}.", title, recipientUserId);
+                }
+                else
+                {
+                    await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+                    _logger.LogInformation("Notification email sent: '{Title}' to employee {EmpCode}.", title, recipientUserId);
+                }
             }
             else
             {
@@ -820,6 +831,24 @@ public class NotificationComponent
             _logger.LogError(ex, "Notification email FAILED for employee {EmpCode} (company {CompanyId}). Title: '{Title}'.",
                 recipientUserId, companyId, title);
             Console.WriteLine($"[Email Notification Failed] User: {recipientUserId} | Error: {ex.Message}");
+        }
+    }
+
+    // Puts the mail in EmailOutbox for the background job, which sends it within the per-minute limit and keeps the result.
+    // False means "send it directly instead": the queue is switched off, or the table is not there yet (the SQL script has not
+    // been run). Falling back keeps mail flowing -- as it did before the queue existed -- rather than losing it.
+    private async Task<bool> TryQueueEmailAsync(int companyId, string employeeCode, string email, string title, string body, NotificationScenario scenario, int relatedEntityId)
+    {
+        if (!EmailQueueOptions.From(_configuration).Enabled) return false;
+        try
+        {
+            await _emailOutbox.EnqueueAsync(companyId, employeeCode, email, title, body, (int)scenario, relatedEntityId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not queue the notification email '{Title}' for employee {EmpCode}; sending it directly.", title, employeeCode);
+            return false;
         }
     }
 

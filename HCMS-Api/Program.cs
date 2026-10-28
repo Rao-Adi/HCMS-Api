@@ -312,6 +312,9 @@ builder.Services.AddScoped<UncontrolledDocumentComponent>();
 
 builder.Services.AddHostedService<DataSyncService>();
 builder.Services.AddHostedService<EmailAlertBackgroundService>();
+// Notification emails are queued in EmailOutbox and sent by this job at EmailQueue:MaxPerMinute (see appsettings).
+builder.Services.AddSingleton<EmailOutboxStore>();
+builder.Services.AddHostedService<EmailOutboxBackgroundService>();
 #endregion DMS Service
 
 

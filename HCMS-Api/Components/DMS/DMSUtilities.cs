@@ -2188,7 +2188,7 @@ namespace HCMS_Api.Components.DMS.Common
                         CompanyId = first.CompanyId,
                         Company = first.Company,
                         RoleId = null,
-                        Role = "Any",
+                        Role = "All",
                         DistributionTypeId = first.DistributionTypeId,
                         DistributionType = first.DistributionType,
                         Division = first.Division,

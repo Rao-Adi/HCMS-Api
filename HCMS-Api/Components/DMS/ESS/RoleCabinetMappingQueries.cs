@@ -16,8 +16,7 @@ public static class RoleCabinetMappingQueries
     ///
     /// A mapping covers a level when its own level is blank ("Any" -- it covers everything below the level
     /// above) or is exactly the value given. A level left blank on the row is "Any" too, so only a mapping
-    /// that is blank at that level covers it. A mapping's Division is always set, so a row with no Division
-    /// has no roles.
+    /// that is blank at that level covers it.
     ///
     /// This is exactly the set the Document Users / Distribution List Role dropdown offers for that
     /// cabinet, so "Any role" on a Distribution List row expands into precisely those roles and no others.

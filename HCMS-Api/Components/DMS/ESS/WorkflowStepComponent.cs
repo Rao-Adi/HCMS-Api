@@ -275,7 +275,11 @@ public class WorkflowStepComponent
                     WHERE wp.CompanyId = @CompanyId
                     AND wp.EntityType = @EntityType
                     AND wp.DocumentTypeCode = @DocumentTypeCode
-                    
+                    -- A deleted (or deactivated) policy keeps its step rows; deleting the policy only flags the policy.
+                    -- Without this its approvers kept showing for the cabinet, although submit already ignores it.
+                    AND wp.IsDeleted = FALSE
+                    AND wp.IsActive = TRUE
+
                     -- UPDATED: Treats NULL or 0 as an inactive filter, otherwise matches exactly
                     AND (COALESCE(@WorkflowPolicyId, 0) = 0 OR wp.Id = @WorkflowPolicyId)
 
