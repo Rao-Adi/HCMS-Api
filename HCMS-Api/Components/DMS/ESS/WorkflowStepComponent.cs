@@ -280,14 +280,39 @@ public class WorkflowStepComponent
                     AND wp.IsDeleted = FALSE
                     AND wp.IsActive = TRUE
 
-                    -- UPDATED: Treats NULL or 0 as an inactive filter, otherwise matches exactly
-                    AND (COALESCE(@WorkflowPolicyId, 0) = 0 OR wp.Id = @WorkflowPolicyId)
-
-                    -- Exact match filters: Treats NULL and empty string '' as identical values, without acting as wildcards
-                    AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode, '')
-                    AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode, '')
-                    AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode, '')
-                    AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode, '')
+                    -- A policy asked for by id (the Approval Workflow Policy screen) is shown as that policy, for its own exact
+                    -- cabinet. Otherwise (a request / document form previewing who will receive it) the policy shown is the very one a
+                    -- submit routes through: a level left blank on a policy reads applies-to-everything-under-this, so a policy written
+                    -- for a Division also covers the Department / Sub-Department the document sits in; the most specific match wins, and
+                    -- among equals the newest. (This used to demand an exact cabinet, so a document filed deeper than its policy --
+                    -- every Revision, which stays in its document's cabinet -- showed no Workflow Authorities although the policy
+                    -- was defined and the submit would have used it.)
+                    AND (
+                        (COALESCE(@WorkflowPolicyId, 0) <> 0
+                            AND wp.Id = @WorkflowPolicyId
+                            AND COALESCE(wp.DivisionCode, '') = COALESCE(@DivisionCode, '')
+                            AND COALESCE(wp.DepartmentCode, '') = COALESCE(@DepartmentCode, '')
+                            AND COALESCE(wp.SubDepartmentCode, '') = COALESCE(@SubDepartmentCode, '')
+                            AND COALESCE(wp.BusinessDomainCode, '') = COALESCE(@BusinessDomainCode, ''))
+                        OR
+                        (COALESCE(@WorkflowPolicyId, 0) = 0 AND wp.Id = (
+                            SELECT p2.Id FROM WorkflowPolicies p2
+                            WHERE p2.CompanyId = @CompanyId
+                              AND p2.EntityType = @EntityType
+                              AND p2.DocumentTypeCode = @DocumentTypeCode
+                              AND p2.IsDeleted = FALSE
+                              AND p2.IsActive = TRUE
+                              AND COALESCE(p2.DivisionCode, '')       IN ('', COALESCE(@DivisionCode, ''))
+                              AND COALESCE(p2.DepartmentCode, '')     IN ('', COALESCE(@DepartmentCode, ''))
+                              AND COALESCE(p2.SubDepartmentCode, '')  IN ('', COALESCE(@SubDepartmentCode, ''))
+                              AND COALESCE(p2.BusinessDomainCode, '') IN ('', COALESCE(@BusinessDomainCode, ''))
+                            ORDER BY (CASE WHEN COALESCE(p2.BusinessDomainCode, '') <> '' THEN 1 ELSE 0 END
+                                    + CASE WHEN COALESCE(p2.SubDepartmentCode, '')  <> '' THEN 1 ELSE 0 END
+                                    + CASE WHEN COALESCE(p2.DepartmentCode, '')     <> '' THEN 1 ELSE 0 END
+                                    + CASE WHEN COALESCE(p2.DivisionCode, '')       <> '' THEN 1 ELSE 0 END) DESC,
+                                    p2.Id DESC
+                            LIMIT 1))
+                    )
 
                     AND wsd.IsActive = TRUE
                     AND wsd.IsDeleted = FALSE
@@ -801,29 +826,52 @@ public class WorkflowStepComponent
             // 1️⃣ Resolve WorkflowPolicyId
             //-----------------------------------------
 
-            var policyId = await _dapperService.ExecuteScalarAsync<int?>(@"
+            // The caller names the policy it is adding to (the Approval Workflow Policy screen always does). That Id is what
+            // decides: the cabinet / entity type / document type sent along are only a restatement of the same policy, and
+            // matching them too meant that any difference in how they were written (case, spaces, a code re-saved with a
+            // different value) made this lookup miss. The step was then added to a brand-new "System Generated" policy
+            // instead -- the screen reported success, and showed nothing, because it reads the policy it had selected.
+            int? policyId = null;
+            if (filters.WorkflowPolicyId > 0)
+            {
+                policyId = await _dapperService.ExecuteScalarAsync<int?>(@"
+                    SELECT Id
+                    FROM WorkflowPolicies
+                    WHERE CompanyId = @CompanyId
+                    AND Id = @WorkflowPolicyId
+                    AND IsDeleted = FALSE;",
+                new { CompanyId, filters.WorkflowPolicyId });
+
+                if (policyId == null)
+                    throw new CustomException(
+                        "The selected approval policy no longer exists. Refresh the page and select it again.", 404);
+            }
+            else
+            {
+                policyId = await _dapperService.ExecuteScalarAsync<int?>(@"
                 SELECT Id
                 FROM WorkflowPolicies
                 WHERE CompanyId = @CompanyId
                 AND EntityType = @EntityType
-                AND Id = @WorkflowPolicyId
                 AND DocumentTypeCode = @DocumentTypeCode
                 AND COALESCE(DivisionCode, '') = COALESCE(@DivisionCode::varchar, '')
                 AND COALESCE(DepartmentCode, '') = COALESCE(@DepartmentCode::varchar, '')
                 AND COALESCE(SubDepartmentCode, '') = COALESCE(@SubDepartmentCode::varchar, '')
                 AND COALESCE(BusinessDomainCode, '') = COALESCE(@BusinessDomainCode::varchar, '')
-                AND IsDeleted = FALSE;",
-            new
-            {
-                CompanyId,
-                filters.EntityType,
-                filters.DocumentTypeCode,
-                filters.WorkflowPolicyId,
-                DivisionCode = divCode,
-                DepartmentCode = depCode,
-                SubDepartmentCode = subDepCode,
-                BusinessDomainCode = bdCode
-            });
+                AND IsDeleted = FALSE
+                ORDER BY IsActive DESC, Id DESC
+                LIMIT 1;",
+                new
+                {
+                    CompanyId,
+                    filters.EntityType,
+                    filters.DocumentTypeCode,
+                    DivisionCode = divCode,
+                    DepartmentCode = depCode,
+                    SubDepartmentCode = subDepCode,
+                    BusinessDomainCode = bdCode
+                });
+            }
 
 
             //-----------------------------------------
@@ -971,6 +1019,9 @@ public class WorkflowStepComponent
                 // Only fetch specific employees if no role/designation group assignment was selected
                 var users = await GetEmployeesByAccessFiltersAsync(filters);
 
+                // An employee is a step of a policy once. Checked for all of them BEFORE any is added, so that a request that
+                // names an employee already in the sequence (a second click on "add", a repeated request) adds nobody
+                // rather than some of them.
                 foreach (var user in users)
                 {
                     var existingStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
@@ -979,13 +1030,16 @@ public class WorkflowStepComponent
                         WHERE WorkflowPolicyVersionId = @VersionId
                         AND UserId = @UserId
                         AND CompanyId = @CompanyId
+                        AND IsActive = TRUE
                         AND IsDeleted = FALSE;",
                         new { VersionId = versionId, UserId = user.EmployeeCode, CompanyId });
 
-                    //if (existingStepCount > 0)
-                    //{
-                    //    throw new CustomException($"Employee {user.EmployeeName} ({user.EmployeeCode}) already exists in this workflow.", 409);
-                    //}
+                    if (existingStepCount > 0)
+                        throw new CustomException($"{user.EmployeeName} is already in the approval sequence of this policy.", 409);
+                }
+
+                foreach (var user in users)
+                {
 
                     await _dapperService.ExecuteAsync(@"
                         INSERT INTO WorkflowStepDefinitions

@@ -95,14 +95,9 @@ public static class HtmlToOpenXmlConverter
                 break;
 
             case "ul":
-                foreach (var li in node.ChildNodes.Where(n => n.Name.Equals("li", StringComparison.OrdinalIgnoreCase)))
-                    yield return ConvertParagraph(li, listPrefix: "- ");
-                break;
-
             case "ol":
-                int i = 1;
-                foreach (var li in node.ChildNodes.Where(n => n.Name.Equals("li", StringComparison.OrdinalIgnoreCase)))
-                    yield return ConvertParagraph(li, listPrefix: $"{i++}. ");
+                foreach (var item in ConvertList(node))
+                    yield return item;
                 break;
 
             case "table":
@@ -138,7 +133,66 @@ public static class HtmlToOpenXmlConverter
         }
     }
 
-    private static Paragraph ConvertParagraph(HtmlNode node, int headingLevel = 0, bool indent = false, string? listPrefix = null)
+    // A list as the editor writes it. Quill 2 puts EVERY list item -- bulleted or numbered, at any depth -- in one <ol>, and says
+    // which it is on the item: data-list="bullet" | "ordered" | "checked" | "unchecked", with the depth as a ql-indent-N class.
+    // (A plain <ul>/<ol> from older content or a paste has no such attributes, so the tag decides.) Reading the tag alone turned
+    // every bullet into "1. 2. 3." and flattened every nested item to the top level.
+    private static IEnumerable<Paragraph> ConvertList(HtmlNode list)
+    {
+        var tagIsBullet = list.Name.Equals("ul", StringComparison.OrdinalIgnoreCase);
+        var counters = new Dictionary<int, int>();
+        var types = new Dictionary<int, string>();
+
+        foreach (var li in list.ChildNodes.Where(n => n.Name.Equals("li", StringComparison.OrdinalIgnoreCase)))
+        {
+            var dataList = li.GetAttributeValue("data-list", "");
+            var kind = dataList.Length > 0 ? dataList.ToLowerInvariant() : (tagIsBullet ? "bullet" : "ordered");
+            var level = 0;
+            var indentMatch = Regex.Match(li.GetAttributeValue("class", ""), @"ql-indent-(\d+)");
+            if (indentMatch.Success) level = Math.Min(int.Parse(indentMatch.Groups[1].Value), 8);
+
+            // Going back up, or switching between bullets and numbers at a level, starts that level (and every deeper one) over.
+            foreach (var deeper in counters.Keys.Where(k => k > level).ToList()) { counters.Remove(deeper); types.Remove(deeper); }
+            var ordered = kind == "ordered";
+            if (types.TryGetValue(level, out var previous) && previous != (ordered ? "ordered" : "bullet")) counters.Remove(level);
+            types[level] = ordered ? "ordered" : "bullet";
+
+            string prefix;
+            if (ordered)
+            {
+                counters[level] = counters.TryGetValue(level, out var n) ? n + 1 : 1;
+                prefix = OrderedMarker(counters[level], level);
+            }
+            else
+            {
+                prefix = kind == "checked" ? "☑ " : kind == "unchecked" ? "☐ " : (level % 2 == 0 ? "• " : "◦ ");
+            }
+
+            yield return ConvertParagraph(li, listPrefix: prefix, listLevel: level);
+        }
+    }
+
+    // 1. / a. / i. by depth, as Word's own outline numbering does.
+    private static string OrderedMarker(int n, int level)
+    {
+        switch (level % 3)
+        {
+            case 1:
+                var letters = "";
+                for (var v = n; v > 0; v = (v - 1) / 26) letters = (char)('a' + (v - 1) % 26) + letters;
+                return letters + ". ";
+            case 2:
+                var romans = new[] { (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i") };
+                var sb = new System.Text.StringBuilder();
+                var rest = n;
+                foreach (var (value, symbol) in romans) while (rest >= value) { sb.Append(symbol); rest -= value; }
+                return sb + ". ";
+            default:
+                return n + ". ";
+        }
+    }
+
+    private static Paragraph ConvertParagraph(HtmlNode node, int headingLevel = 0, bool indent = false, string? listPrefix = null, int listLevel = 0)
     {
         var paragraph = new Paragraph();
         var pPr = new ParagraphProperties();
@@ -147,8 +201,8 @@ public static class HtmlToOpenXmlConverter
         if (align != null)
             pPr.Justification = new Justification { Val = align };
 
-        if (indent || headingLevel > 0)
-            pPr.Indentation = new Indentation { Left = indent ? "720" : "0" };
+        if (indent || headingLevel > 0 || listLevel > 0)
+            pPr.Indentation = new Indentation { Left = indent ? "720" : (listLevel > 0 ? (listLevel * 720).ToString() : "0") };
 
         if (pPr.HasChildren)
             paragraph.ParagraphProperties = pPr;

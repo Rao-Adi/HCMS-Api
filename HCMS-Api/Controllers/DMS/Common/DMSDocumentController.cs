@@ -434,6 +434,34 @@ public class DMSDocumentController : Controller
     }
 
 
+    // The same lists for a document request (Preview opened from the request screens).
+    [HttpGet("get-request-preview-lists/{requestId}")]
+    public async Task<IActionResult> GetRequestPreviewLists(int requestId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<DocumentPreviewListsDto>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetRequestPreviewListsAsync(requestId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
     // Document Users and Distribution List shown under the document in the Preview screen. pending=true for a
     // caller working on the version still being prepared (same meaning as download-submitted-document-template).
     [HttpGet("get-document-preview-lists/{documentId}")]

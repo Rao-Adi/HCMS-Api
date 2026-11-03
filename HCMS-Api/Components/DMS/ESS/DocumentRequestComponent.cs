@@ -436,7 +436,7 @@ public class DocumentRequestComponent
 
             // Validation: Justification is mandatory for submission
             if (string.IsNullOrWhiteSpace(dto.Justification))
-                throw new CustomException("Justification is required to submit a document request.", 400);
+                throw new CustomException("Rationale is required to submit a document request.", 400);
 
             // 2. Handle File Upload
             string? draftFileUrl = null;
@@ -493,6 +493,7 @@ public class DocumentRequestComponent
 
             // 4. Insert Distribution Lists -- submitting directly (no separate draft stage), so
             // "Any role" expands into concrete rows now.
+            DistributionListRules.Require(dto.DistributionList);
             await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction, expandAnyRole: true);
 
 
@@ -554,6 +555,9 @@ public class DocumentRequestComponent
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                  -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
+                  -- copying them made the request wait at an approver nobody could see in the sequence.
+                  AND IsActive = TRUE AND IsDeleted = FALSE
                 ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, transaction);
 
             int runningStepOrder = 1;
@@ -708,7 +712,7 @@ public class DocumentRequestComponent
 
             // Validation: Justification is mandatory for submission
             if (string.IsNullOrWhiteSpace(dto.Justification))
-                throw new CustomException("Justification is required to submit a document request.", 400);
+                throw new CustomException("Rationale is required to submit a document request.", 400);
 
             // A Revision must reference the existing document being revised
             if (dto.ParentDocumentId == null)
@@ -795,6 +799,9 @@ public class DocumentRequestComponent
 
             // 4. Insert Distribution Lists -- submitting directly (no separate draft stage), so
             // "Any role" expands into concrete rows now.
+            // A Revision needs a Distribution List; an Obsoletion carries the document's own, shown for confirmation only.
+            if (!IsObsoletionRequestType(dto.DocumentRequestTypeCode))
+                DistributionListRules.Require(dto.DistributionList);
             await InsertDistributionsAsync(CompanyId, requestId, dto.DistributionList, dto.UserIds, empCode, transaction, expandAnyRole: true);
 
 
@@ -861,6 +868,9 @@ public class DocumentRequestComponent
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                  -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
+                  -- copying them made the request wait at an approver nobody could see in the sequence.
+                  AND IsActive = TRUE AND IsDeleted = FALSE
                 ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, transaction);
 
             int runningStepOrder = 1;
@@ -1025,7 +1035,7 @@ public class DocumentRequestComponent
 
             // UC-22 Validation: Justification is mandatory
             if (submittedJustification == null && string.IsNullOrWhiteSpace((string?)request.justification))
-                throw new Exception("Justification is required to submit a document request.");
+                throw new Exception("Rationale is required to submit a document request.");
 
             if (submittedJustification != null || submittedDocumentName != null)
             {
@@ -1268,6 +1278,7 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
+            DistributionListRules.Require(input.DistributionList);
             await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
                 empCode, tx, expandAnyRole: true);
@@ -1371,6 +1382,9 @@ public class DocumentRequestComponent
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                  -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
+                  -- copying them made the request wait at an approver nobody could see in the sequence.
+                  AND IsActive = TRUE AND IsDeleted = FALSE
                 ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, tx);
 
             int runningStepOrder = 1;
@@ -1565,7 +1579,7 @@ public class DocumentRequestComponent
 
             // UC-22 Validation: Justification is mandatory
             if (string.IsNullOrWhiteSpace(request.justification))
-                throw new Exception("Justification is required to submit a document request.");
+                throw new Exception("Rationale is required to submit a document request.");
 
             // UC-22 Validation: Ensure content has been altered from the original document being revised
             if (request.parentdocumentid != null)
@@ -1649,6 +1663,8 @@ public class DocumentRequestComponent
             //-------------------------------------------------
             // RE-INSERT ALL DISTRIBUTIONS (INCLUDING ROLE EXPANSION)
             //-------------------------------------------------
+            if (!IsObsoletionRequestType((string?)request.documentrequesttypecode))
+                DistributionListRules.Require(input.DistributionList);
             await InsertDistributionsAsync(CompanyId, submittedRequestId,
                 input.DistributionList, input.UserIds,
                 empCode, tx, expandAnyRole: true);
@@ -1747,6 +1763,9 @@ public class DocumentRequestComponent
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
+                  -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
+                  -- copying them made the request wait at an approver nobody could see in the sequence.
+                  AND IsActive = TRUE AND IsDeleted = FALSE
                 ORDER BY StepOrder;", new { VersionId = versionId, CompanyId }, tx);
 
             int runningStepOrder = 1;

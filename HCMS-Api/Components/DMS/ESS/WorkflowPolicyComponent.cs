@@ -42,6 +42,45 @@ public class WorkflowPolicyComponent
     }
 
 
+    private const string DuplicatePolicyMessage = "The policy for this cabinet structure and document type already exists.";
+
+    // A cabinet level left blank ("All") reaches the database as NULL or as an empty string depending on the screen that saved it,
+    // so both are one and the same value here.
+    private static string PolicyKeyPart(string? value)
+    {
+        var v = (value ?? string.Empty).Trim();
+        return v == "0" || v.Equals("null", StringComparison.OrdinalIgnoreCase) ? string.Empty : v;
+    }
+
+    // Is there already a policy (not deleted, active or not) for this tab (entity type), document type and cabinet structure?
+    private async Task<bool> PolicyExistsAsync(int companyId, string? entityType, string? documentTypeCode,
+        string? divisionCode, string? departmentCode, string? subDepartmentCode, string? businessDomainCode, int? excludeId)
+    {
+        return await _common.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM WorkflowPolicies
+                WHERE CompanyId = @CompanyId
+                  AND IsDeleted = FALSE
+                  AND COALESCE(EntityType, '') = @EntityType
+                  AND COALESCE(DocumentTypeCode, '') = @DocumentTypeCode
+                  AND COALESCE(DivisionCode, '') = @DivisionCode
+                  AND COALESCE(DepartmentCode, '') = @DepartmentCode
+                  AND COALESCE(SubDepartmentCode, '') = @SubDepartmentCode
+                  AND COALESCE(BusinessDomainCode, '') = @BusinessDomainCode
+                  AND (@ExcludeId IS NULL OR Id <> @ExcludeId));",
+            new
+            {
+                CompanyId = companyId,
+                EntityType = PolicyKeyPart(entityType),
+                DocumentTypeCode = PolicyKeyPart(documentTypeCode),
+                DivisionCode = PolicyKeyPart(divisionCode),
+                DepartmentCode = PolicyKeyPart(departmentCode),
+                SubDepartmentCode = PolicyKeyPart(subDepartmentCode),
+                BusinessDomainCode = PolicyKeyPart(businessDomainCode),
+                ExcludeId = excludeId
+            });
+    }
+
     public async Task<WorkflowPolicyReadDto> CreateAsync(WorkflowPolicyCreateDto input)
     {
         try
@@ -51,6 +90,10 @@ public class WorkflowPolicyComponent
             int CompanyId = int.Parse(_CompanyId);
             var empId = _utilities.GetEmpid(clientIp);
             var empCode = _utilities.GetEmpCodeForHCMS(empId.ToString());
+
+            if (await PolicyExistsAsync(CompanyId, input.EntityType, input.DocumentTypeCode,
+                    input.DivisionCode, input.DepartmentCode, input.SubDepartmentCode, input.BusinessDomainCode, excludeId: null))
+                throw new CustomException(DuplicatePolicyMessage, 409);
 
             // Insert (PostgreSQL syntax)
             string insertQuery = $@"
@@ -421,6 +464,27 @@ public class WorkflowPolicyComponent
 
             if (exists == 0)
                 throw new CustomException("WorkflowPolicies not found", 404);
+
+            // Only when the policy is being moved to another cabinet structure / document type / tab. A policy that keeps its own
+            // key (a rename, say) is never refused, so a duplicate that was created before this rule existed can still be edited.
+            var current = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT COALESCE(EntityType, '') AS entitytype, COALESCE(DocumentTypeCode, '') AS documenttypecode,
+                       COALESCE(DivisionCode, '') AS divisioncode, COALESCE(DepartmentCode, '') AS departmentcode,
+                       COALESCE(SubDepartmentCode, '') AS subdepartmentcode, COALESCE(BusinessDomainCode, '') AS businessdomaincode
+                FROM WorkflowPolicies WHERE Id = @Id AND CompanyId = @CompanyId;",
+                new { input.Id, CompanyId });
+
+            bool keyChanged = current == null
+                || (string)current.entitytype != PolicyKeyPart(input.EntityType)
+                || (string)current.documenttypecode != PolicyKeyPart(input.DocumentTypeCode)
+                || (string)current.divisioncode != PolicyKeyPart(input.DivisionCode)
+                || (string)current.departmentcode != PolicyKeyPart(input.DepartmentCode)
+                || (string)current.subdepartmentcode != PolicyKeyPart(input.SubDepartmentCode)
+                || (string)current.businessdomaincode != PolicyKeyPart(input.BusinessDomainCode);
+
+            if (keyChanged && await PolicyExistsAsync(CompanyId, input.EntityType, input.DocumentTypeCode,
+                    input.DivisionCode, input.DepartmentCode, input.SubDepartmentCode, input.BusinessDomainCode, excludeId: input.Id))
+                throw new CustomException(DuplicatePolicyMessage, 409);
 
             // Update (PostgreSQL boolean + timestamp)
             string updateQuery = $@"

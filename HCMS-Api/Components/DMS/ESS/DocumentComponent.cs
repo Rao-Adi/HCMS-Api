@@ -749,7 +749,10 @@ public class DocumentComponent
                 // the screen says it is showing those grids (ReplaceDistributions), never because a caller happened to
                 // send empty lists. Obsoletion is not here: its list is shown for confirmation only and is never changed.
                 if (input.ReplaceDistributions)
+                {
+                    DistributionListRules.Require(input.DistributionList);
                     await StageRevisionDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
+                }
             }
             else if (input.DocumentId <= 0)
             {
@@ -760,6 +763,7 @@ public class DocumentComponent
                 // steps do when a Request-driven document is approved. There's no Request here
                 // to promote from, so this inserts straight into DocumentRoleDistributions/
                 // DocumentUserDistributions instead of the DocumentRequest* tables.
+                DistributionListRules.Require(input.DistributionList);
                 await InsertDocumentDistributionsAsync(CompanyId, input.DocumentId, input.DistributionList, input.UserIds, empCode, transaction);
             }
             else if (!string.IsNullOrWhiteSpace(input.DocumentName))
@@ -797,6 +801,8 @@ public class DocumentComponent
                         CompanyId
                     }, transaction);
 
+                DistributionListRules.Require(input.DistributionList);
+
                 // Delete-then-reinsert because InsertDocumentDistributionsAsync is pure-insert
                 // (it would otherwise duplicate every row already saved with the draft).
                 await _common.ExecuteAsync(@"
@@ -817,6 +823,7 @@ public class DocumentComponent
                 // clear them. The presence of the fields is not enough on its own: callers that
                 // do not show the grids send empty lists meaning "nothing to say", and acting on
                 // that deleted what the Request had promoted.
+                DistributionListRules.Require(input.DistributionList);
                 await _common.ExecuteAsync(@"
                     DELETE FROM DocumentRoleDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;
                     DELETE FROM DocumentUserDistributions WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId;",
@@ -1019,6 +1026,8 @@ public class DocumentComponent
                 SELECT Id, UserId, RoleId, DesignationId, StepOrder, CanAddAdHocApprover
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId
+                  -- Only live steps (see the same filter on the request side): what the form previewed is what runs.
+                  AND IsActive = TRUE AND IsDeleted = FALSE
                 ORDER BY StepOrder;", new { VersionId = versionId }, transaction);
 
             int runningStepOrder = 1;
@@ -1345,7 +1354,7 @@ public class DocumentComponent
         // (document-request-form.ts) -- this path is the direct-create equivalent of that
         // form, so it carries the same requirement.
         if (string.IsNullOrWhiteSpace(input.Justification))
-            throw new CustomException("Justification is required.", 400);
+            throw new CustomException("Rationale is required.", 400);
 
         // Request-driven creation skips this check because the Request itself was already
         // vetted before approval; this path takes freshly-typed, unvetted input instead.
@@ -3470,7 +3479,7 @@ public class DocumentComponent
                 lists.UserList.Select(u => new[]
                 {
                     Or(u.Division, "All"), Or(u.Department, "All"), Or(u.SubDepartment, "All"),
-                    Or(u.Role, ""), u.SelectedEmployees.ToString(CultureInfo.InvariantCulture)
+                    Or(u.Role, "All"), u.SelectedEmployees.ToString(CultureInfo.InvariantCulture)
                 }).ToList()));
         }
         else
@@ -6024,6 +6033,43 @@ public class DocumentComponent
         };
     }
 
+    // The same two lists for a document REQUEST (Preview from the request screens): they are on the request's own tables until
+    // the request is approved and they are promoted onto the document.
+    public async Task<DocumentPreviewListsDto> GetRequestPreviewListsAsync(int requestId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        var roles = (await _common.QueryAsync<DistributionListReadDto>(@"
+            SELECT dl.Id, dl.CompanyId, dl.DocumentRequestId, dl.RoleId, dl.DistributionTypeId,
+                   dl.DivisionCode, dl.DepartmentCode, dl.SubDepartmentCode, dl.BusinessDomainCode,
+                   r.Name AS Role, div.Name AS Division, dep.Name AS Department, subd.Name AS SubDepartment,
+                   bd.Name AS BusinessDomain, dt.Name AS DistributionType
+            FROM DocumentRequestRoleDistributions dl
+                 LEFT JOIN tblsetupsdetail div ON div.sdlid::text = dl.DivisionCode AND div.smsid = 70
+                 LEFT JOIN tblsetupsdetail dep ON dep.sdlid::text = dl.DepartmentCode AND dep.smsid = 84
+                 LEFT JOIN tblsetupsdetail subd ON subd.sdlid::text = dl.SubDepartmentCode AND subd.smsid = 24
+                 LEFT JOIN BusinessDomains bd ON dl.BusinessDomainCode = bd.Code
+                 LEFT JOIN tblsetupsdetail r ON dl.RoleId = r.sdlid AND r.CompanyId = dl.CompanyId
+                 LEFT JOIN DistributionTypes dt ON dl.DistributionTypeId = dt.Id
+            WHERE dl.CompanyId = @CompanyId AND dl.DocumentRequestId = @RequestId;",
+            new { CompanyId = companyId, RequestId = requestId })).ToList();
+
+        // Only the employees picked in the Document Users grid carry a RoleId (the ones expanded from the Distribution List do not).
+        var users = (await _common.QueryAsync<DocumentRequestUserDistribution>(@"
+            SELECT drd.Id, drd.CompanyId, drd.DocumentRequestId, drd.EmployeeCode,
+                   drd.RoleId, drd.DivisionCode, drd.DepartmentCode, drd.SubDepartmentCode, drd.BusinessDomainCode
+            FROM DocumentRequestUserDistributions drd
+            WHERE drd.CompanyId = @CompanyId AND drd.DocumentRequestId = @RequestId AND drd.RoleId IS NOT NULL;",
+            new { CompanyId = companyId, RequestId = requestId })).ToList();
+
+        return new DocumentPreviewListsDto
+        {
+            DistributionList = await RoleCabinetMappingQueries.CollapseAnyRoleGroupsAsync(_common, companyId, roles),
+            UserList = await GroupUsersByRoleAsync(companyId, users)
+        };
+    }
+
     // The Document Users the way the screen's own grid shows them: one row per Role + cabinet that was picked
     // (Division, Department, Sub Department, Role), with how many employees were selected under it -- not one row
     // per employee.
@@ -6065,7 +6111,8 @@ public class DocumentComponent
             Division = Name(g.Key.Division),
             Department = Name(g.Key.Department),
             SubDepartment = Name(g.Key.SubDepartment),
-            Role = roleNames.TryGetValue(g.Key.RoleId, out var rn) ? rn : "",
+            // RoleId 0 is the Document Users grid's "All" (every role of the unit); a blank Division / Department / Sub Department above reads "All" too.
+            Role = g.Key.RoleId == 0 ? "All" : roleNames.TryGetValue(g.Key.RoleId, out var rn) ? rn : "",
             SelectedEmployees = g.Select(u => u.EmployeeCode).Distinct().Count()
         }).ToList();
     }
@@ -9522,7 +9569,7 @@ public class DocumentComponent
             // was even missing "Justification", which does.
             var headers = new List<string>
             {
-                "Document Type", "Document ID", "Document Name", "Justification", "Company",
+                "Document Type", "Document ID", "Document Name", "Rationale", "Company",
                 "Proposed Document Number", "Proposed Version Number",
             };
             if (showDivision) headers.Add("Division");

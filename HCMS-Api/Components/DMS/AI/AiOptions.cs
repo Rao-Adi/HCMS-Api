@@ -121,6 +121,17 @@ public sealed class AiOptions
     /// </summary>
     public int MaxProofreadCharacters { get; set; } = 10_000;
 
+    /// <summary>
+    /// Content longer than this is proofread in pieces of about this size (cut at paragraph / list-item / table-row boundaries),
+    /// each piece in its own call. Kept below <see cref="MaxProofreadCharacters"/> so a corrected piece fits in the output limit.
+    /// </summary>
+    public int ProofreadChunkCharacters { get; set; } = 6_000;
+
+    /// <summary>
+    /// The most that one proofread request may hold in all, images not counted. 0 (the default) = no limit.
+    /// </summary>
+    public int MaxProofreadTotalCharacters { get; set; } = 0;
+
     /// <summary>Concurrent AI requests allowed across the whole application.</summary>
     public int GlobalConcurrency { get; set; } = 4;
 

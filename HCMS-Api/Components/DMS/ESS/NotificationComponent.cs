@@ -107,9 +107,9 @@ public class NotificationComponent
             await _hubContext.Clients.Group($"user_{targetUserId}").SendAsync("ReceiveNotification", payload);
 
             // Dispatch Email
-            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, scenario, relatedEntityId, transaction);
+            await DispatchEmailNotificationAsync(companyId, targetUserId, title, message, redirectionUrl, scenario, relatedEntityId, transaction, placeholders);
 
-            
+
             return true;
         }
         catch (Exception)
@@ -747,12 +747,13 @@ public class NotificationComponent
     // What the email says around the message: the badge, the line above the button and the button itself. Every email used to
     // read "Action Required ... review and process this request ... View Request Details", including the ones that only
     // report something that already happened.
-    private static (string Badge, string Intro, string Button, string Bg, string Border, string Fg) GetEmailPresentation(NotificationScenario scenario)
+    private static (string Badge, string Intro, string Button, string Bg, string Border, string Fg, string Accent) GetEmailPresentation(NotificationScenario scenario)
     {
         var blue = ("#eff6ff", "#bfdbfe", "#1d4ed8");
         var green = ("#f0fdf4", "#bbf7d0", "#15803d");
         var red = ("#fef2f2", "#fecaca", "#b91c1c");
         var amber = ("#fffbeb", "#fde68a", "#b45309");
+        var grey = ("#f3f4f6", "#d1d5db", "#374151");
 
         (string, string, string, (string, string, string)) P(string badge, string intro, string button, (string, string, string) c) => (badge, intro, button, c);
         var (badge, intro, button, c) = scenario switch
@@ -764,11 +765,11 @@ public class NotificationComponent
             NotificationScenario.RequestApproved
                 => P("Approved", "Click the button below to view the request:", "View Request", green),
             NotificationScenario.DocumentApproved
-                => P("Approved", "Click the button below to view the document:", "View Document", green),
+                => P("Document Approved", "Click the button below to view this document:", "View Document", green),
             NotificationScenario.RequestRejected
                 => P("Rejected", "Click the button below to view the request and the reason:", "View Request", red),
             NotificationScenario.DocumentRejected
-                => P("Rejected", "Click the button below to view the document and the reason:", "View Document", red),
+                => P("Document Rejected", "Click the button below to view the document and comments:", "View Document", ("#fef2f2", "#fecaca", "#991b1b")),
             NotificationScenario.RequestRevertedForRework
                 => P("Rework Required", "Click the button below to open the request and make the changes asked for:", "Open Request", amber),
             NotificationScenario.DocumentRevertedForRework
@@ -782,7 +783,7 @@ public class NotificationComponent
             NotificationScenario.PeriodicReviewDue
                 => P("Review Due", "Click the button below to start the revision:", "Start Revision", amber),
             NotificationScenario.DocumentObsoleted
-                => P("Obsoleted", "Click the button below to view the details:", "View Details", amber),
+                => P("Document Obsoleted", "Click the button below to open the document archive:", "View Archive", grey),
             NotificationScenario.PhysicalCopyRetrievalTask
                 => P("Action Required", "Click the button below to open DMS:", "Open DMS", blue),
             NotificationScenario.NewUserAccountCreated
@@ -791,10 +792,15 @@ public class NotificationComponent
                 => P("Update", "Click the button below to view the transfer:", "View Transfer", blue),
             _ => P("Notification", "Click the button below to view the details:", "View Details", blue),
         };
-        return (badge, intro, button, c.Item1, c.Item2, c.Item3);
+        // The accent line is the status colour, except where the client's template names its own: Obsoleted a gray (#6b7280) a shade
+        // lighter than its dark badge text, Rejected a red (#dc2626) brighter than its dark red badge text (#991b1b).
+        var accent = scenario == NotificationScenario.DocumentObsoleted ? "#6b7280"
+                   : scenario == NotificationScenario.DocumentRejected ? "#dc2626"
+                   : c.Item3;
+        return (badge, intro, button, c.Item1, c.Item2, c.Item3, accent);
     }
 
-    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, NotificationScenario scenario, int relatedEntityId, IDbTransaction transaction = null)
+    private async Task DispatchEmailNotificationAsync(int companyId, string recipientUserId, string title, string message, string redirectionUrl, NotificationScenario scenario, int relatedEntityId, IDbTransaction transaction = null, Dictionary<string, string> placeholders = null)
     {
         try
         {
@@ -803,14 +809,15 @@ public class NotificationComponent
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
             {
-                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl, scenario);
-                if (await TryQueueEmailAsync(companyId, recipientUserId, recipientEmail, title, emailBody, scenario, relatedEntityId))
+                string emailBody = BuildNotificationEmailHtml(title, message, redirectionUrl, scenario, placeholders);
+                string subject = GetEmailSubject(title, scenario, placeholders);
+                if (await TryQueueEmailAsync(companyId, recipientUserId, recipientEmail, subject, emailBody, scenario, relatedEntityId))
                 {
                     _logger.LogInformation("Notification email queued: '{Title}' to employee {EmpCode}.", title, recipientUserId);
                 }
                 else
                 {
-                    await _utilities.SendEmailAsync(recipientEmail, title, emailBody);
+                    await _utilities.SendEmailAsync(recipientEmail, subject, emailBody);
                     _logger.LogInformation("Notification email sent: '{Title}' to employee {EmpCode}.", title, recipientUserId);
                 }
             }
@@ -852,14 +859,110 @@ public class NotificationComponent
         }
     }
 
-    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl, NotificationScenario scenario)
+    // The subject line. It is the notification title; an Obsoleted mail also names the document ("DMS – Document Obsoleted: <name>"),
+    // as the client's template has it. The header inside the mail keeps the title alone.
+    private static string GetEmailSubject(string title, NotificationScenario scenario, Dictionary<string, string> p)
     {
-        var (badge, intro, button, badgeBg, badgeBorder, badgeFg) = GetEmailPresentation(scenario);
+        if ((scenario == NotificationScenario.DocumentObsoleted || scenario == NotificationScenario.DocumentRejected) && p != null && p.TryGetValue("Doc Name", out var name))
+        {
+            name = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(name ?? string.Empty, "<[^>]*>", " "), @"\s+", " ").Trim();
+            if (name.Length > 0) return $"{title}: {name}";
+        }
+        return title;
+    }
+
+    // The message of an email laid out as the client's templates show it: a sentence, then the details each on its own line
+    // ("Document Name:", "Version Number:", ...). Null when the scenario has no such layout or a detail it needs is missing:
+    // the email then carries the notification message as it is.
+    private static (string Lead, List<(string Label, string Value)> Fields)? GetEmailLines(NotificationScenario scenario, Dictionary<string, string> p)
+    {
+        string Value(string key)
+        {
+            if (p == null || !p.TryGetValue(key, out var val) || string.IsNullOrWhiteSpace(val)) return null;
+            val = System.Text.RegularExpressions.Regex.Replace(val, "<[^>]*>", " ");
+            val = System.Text.RegularExpressions.Regex.Replace(val, @"\s+", " ").Trim();
+            return val.Length == 0 ? null : val;
+        }
+
+        var docName = Value("Doc Name");
+        var version = Value("V#");
+        var approver = Value("Approver");
+        var requestId = Value("ID");
+        var date = Value("Date");
+        var reason = Value("Observation");
+
+        var f = new List<(string, string)>();
+        void Add(string label, string value) { if (value != null) f.Add((label, value)); }
+        (string, List<(string, string)>)? Doc(string lead, bool needVersion = true)
+        {
+            if (docName == null || (needVersion && version == null)) return null;
+            Add("Document Name", docName); Add("Version Number", version);
+            return (lead, f);
+        }
+        (string, List<(string, string)>)? Req(string lead)
+        {
+            if (requestId == null) return null;
+            Add("Request ID", requestId);
+            return (lead, f);
+        }
+
+        return scenario switch
+        {
+            NotificationScenario.PendingDocumentApproval => Doc("A new document has been uploaded and is pending for your review:"),
+            NotificationScenario.DocumentApprovedForwarded => Doc("A document has been approved and requires your action / authorization:", needVersion: false),
+            NotificationScenario.DocumentApproved when approver != null => Doc($"Your document has been approved by {approver}. Please see the approved version:"),
+            NotificationScenario.DocumentRejected when approver != null => Doc($"Your document has been rejected by {approver}. Please review the rejection notes and submit a new revision if necessary:") is { } r ? WithReason(r, label: "Reason for Rejection") : null,
+            NotificationScenario.DocumentRevertedForRework when approver != null => Doc($"Your document has been reverted by {approver} for rework. Please modify it:") is { } r2 ? WithReason(r2, optional: true) : null,
+            NotificationScenario.TrainingProofRequired => Doc("Action needed: please upload the training proof for final authorization:"),
+            NotificationScenario.TrainingProofSubmitted => Doc("Training proof has been submitted. Final authorization is now pending:"),
+            NotificationScenario.DocumentAuthorizedEffective => Doc("The following document is now authorized and effective:") is { } r3 ? WithDate(r3, "Effective Date") : null,
+            NotificationScenario.PeriodicReviewDue => Doc("The following document is due for review. Please initiate a Revision Request:") is { } r4 ? WithDate(r4, "Review Due Date") : null,
+            NotificationScenario.DocumentObsoleted => Doc("The following document has been made obsolete and is no longer valid:"),
+            NotificationScenario.PhysicalCopyRetrievalTask => Doc("Action required: retrieve and destroy the physical copies of this obsoleted document:"),
+
+            NotificationScenario.PendingRequest => Req("A new request is pending your approval:") is { } q ? WithFrom(q, Value("Employee Name")) : null,
+            NotificationScenario.RequestApprovedForwarded => Req("A request has been approved and requires your action:"),
+            NotificationScenario.RequestApproved when approver != null => Req($"Your request has been approved by {approver}:"),
+            NotificationScenario.RequestRejected when approver != null => Req($"Your request has been rejected by {approver}:") is { } q2 ? WithReason(q2) : null,
+            NotificationScenario.RequestRevertedForRework when approver != null => Req($"Your request has been reverted by {approver} for rework:") is { } q3 ? WithReason(q3) : null,
+            NotificationScenario.OverdueRequestReminder => Req("This request is overdue. Please process it immediately:"),
+            _ => null,
+        };
+
+        (string, List<(string, string)>)? WithReason((string Lead, List<(string, string)> Fields) x, bool optional = false, string label = "Reason")
+        {
+            if (reason == null && optional) return x;
+            x.Fields.Add((label, Reason(reason)));
+            return x;
+        }
+        (string, List<(string, string)>)? WithDate((string Lead, List<(string, string)> Fields) x, string label)
+        {
+            if (date != null) x.Fields.Add((label, date));
+            return x;
+        }
+        (string, List<(string, string)>)? WithFrom((string Lead, List<(string, string)> Fields) x, string from)
+        {
+            if (from != null) x.Fields.Add(("From", from));
+            return x;
+        }
+    }
+
+    private string BuildNotificationEmailHtml(string title, string message, string redirectionUrl, NotificationScenario scenario, Dictionary<string, string> placeholders = null)
+    {
+        var (badge, intro, button, badgeBg, badgeBorder, badgeFg, accent) = GetEmailPresentation(scenario);
 
         // The title and message are plain text (a document's name can hold & or quotes); they go into HTML, so they are
         // encoded -- otherwise such a name broke the layout.
         title = System.Net.WebUtility.HtmlEncode(title ?? string.Empty);
         message = System.Net.WebUtility.HtmlEncode(message ?? string.Empty);
+
+        string messageHtml = message;
+        var lines = GetEmailLines(scenario, placeholders);
+        if (lines is { } l)
+        {
+            messageHtml = System.Net.WebUtility.HtmlEncode(l.Lead)
+                + string.Concat(l.Fields.Select(x => $"<br /><br /><strong>{System.Net.WebUtility.HtmlEncode(x.Label)}:</strong> {System.Net.WebUtility.HtmlEncode(x.Value)}"));
+        }
 
         string actionUrl = redirectionUrl ?? "";
         var baseUrl = _configuration["DmsFrontendUrl"] ?? "https://testerp.atcolab.com/DMSUI/";
@@ -934,22 +1037,22 @@ public class NotificationComponent
                                 <tr>
                                     <td style='padding: 32px;'>
 
-                                        <!-- Status badge -->
-                                        <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-bottom: 20px;'>
+                                        <!-- Status tab: a label sitting on the top edge of the message card, in the colour of the status. -->
+                                        <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
                                             <tr>
-                                                <td bgcolor='{badgeBg}' style='background-color: {badgeBg}; border: 1px solid {badgeBorder}; border-radius: 20px; padding: 6px 14px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; font-weight: 600; color: {badgeFg}; mso-line-height-rule: exactly; line-height: 15px;'>
+                                                <td bgcolor='{badgeBg}' style='background-color: {badgeBg}; border: 1px solid {badgeBorder}; border-bottom: 0; border-radius: 10px 10px 0 0; padding: 10px 18px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; font-weight: 700; color: {badgeFg}; mso-line-height-rule: exactly; line-height: 18px;'>
                                                     {badge}
                                                 </td>
                                             </tr>
                                         </table>
 
-                                        <!-- Message. The blue accent is a 4px table cell rather than a
-                                             border-left, which Word renders unreliably. -->
-                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse; margin-bottom: 24px;'>
+                                        <!-- Message card, tinted with the status colour. The accent is a 4px table cell rather
+                                             than a border-left, which Word renders unreliably. -->
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
                                             <tr>
-                                                <td width='4' bgcolor='#2563eb' style='width: 4px; background-color: #2563eb; font-size: 0; line-height: 0;'>&nbsp;</td>
-                                                <td bgcolor='#f8fafc' style='background-color: #f8fafc; padding: 18px 20px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; font-weight: 500; color: #1e293b; mso-line-height-rule: exactly; line-height: 24px;'>
-                                                    {message}
+                                                <td width='4' bgcolor='{accent}' style='width: 4px; background-color: {accent}; font-size: 0; line-height: 0;'>&nbsp;</td>
+                                                <td bgcolor='{badgeBg}' style='background-color: {badgeBg}; border: 1px solid {badgeBorder}; border-left: 0; border-radius: 0 10px 10px 10px; padding: 22px 24px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 17px; font-weight: 400; color: #111827; mso-line-height-rule: exactly; line-height: 28px;'>
+                                                    {messageHtml}
                                                 </td>
                                             </tr>
                                         </table>
@@ -966,7 +1069,7 @@ public class NotificationComponent
                                                             </td>
                                                         </tr>
                                                         <tr>
-                                                            <td align='center' bgcolor='#2563eb' style='background-color: #2563eb; border: 1px solid #1d4ed8; border-radius: 8px; mso-padding-alt: 12px 30px;'>
+                                                            <td align='center' bgcolor='#2563eb' style='background-color: #2563eb; border-radius: 8px; mso-padding-alt: 12px 30px;'>
                                                                 <a href='{actionUrl}' target='_blank' style='display: inline-block; padding: 12px 30px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; mso-line-height-rule: exactly; line-height: 18px;'>
                                                                     {button} &rarr;
                                                                 </a>
