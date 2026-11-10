@@ -152,6 +152,10 @@ public enum NotificationScenario
     NewUserAccountCreated = 16,
     TransferRequestApproval = 17,
     RequestApproved = 18,
-    DocumentApproved = 19
+    DocumentApproved = 19,
+    // Told to everyone who took part in the approval when a revision of a document becomes effective (the Revise counterpart of 14).
+    DocumentRevised = 20,
+    // Told to the other approvers and the initiator when one approver re-approves a document at its periodic review without any change.
+    DocumentReviewReapproved = 21
 }
 #endregion Notifications

@@ -1,0 +1,17 @@
+const fs=require('fs');const {execFileSync}=require('child_process');const L=require('./lib2');const F=require('./flows');
+(async()=>{await L.ensureUsers(['002006129','011001011']);
+ const r=await F.createRequest('002006129',{division:'DIV-0003',department:'DIV-0003-DPT-0002',name:'E2E Preview Lists Test'});
+ console.log('request',r.requestId,r.status);
+ const u=L.users['002006129'];
+ const resp=await fetch('http://localhost:5191/api/DMSDocumentRequest/download-draft-document/'+r.requestId,{headers:{login:u.key}});
+ const buf=Buffer.from(await resp.arrayBuffer());
+ console.log('download',resp.status,buf.length,'bytes | X-Preview-Lists-Embedded =',resp.headers.get('x-preview-lists-embedded'),'| expose =',resp.headers.get('access-control-expose-headers'));
+ const f=require('path').join(process.env.TEMP,'req_')+r.requestId+'.docx';fs.writeFileSync(f,buf);
+ const ps=`Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[IO.Compression.ZipFile]::OpenRead('${f}'); $e=$z.GetEntry('word/document.xml'); $sr=New-Object IO.StreamReader($e.Open()); $x=$sr.ReadToEnd(); $sr.Close(); $z.Dispose(); $t=[regex]::Replace([regex]::Replace($x,'</w:tc>',' | '),'</w:p>',"\`n"); ([regex]::Replace($t,'<[^>]+>','') -split "\`n") | ?{$_.Trim() -ne ''} | %{$_.Trim()}`;
+ const lines=execFileSync('powershell',['-NoProfile','-Command',ps],{encoding:'utf8',maxBuffer:1<<26}).split(/\r?\n/).filter(Boolean);
+ const idx=(re)=>lines.findIndex(x=>re.test(x));
+ const iDist=idx(/^Distribution List/), iUsers=idx(/^Document Users/), iWritten=idx(/Written By/), iNote=idx(/^Note:/);
+ console.log('line positions -> Distribution List:',iDist,' Document Users:',iUsers,' Written By (signature block):',iWritten,' Note:',iNote,' of',lines.length);
+ console.log('ORDER OK (lists before the signature block):', iDist>=0 && iUsers>=0 && iDist<iWritten && iUsers<iWritten);
+ console.log(lines.slice(Math.max(0,iDist-2),iDist+14).join('\n'));
+ process.exit(0)})().catch(e=>{console.error(e);process.exit(1)});

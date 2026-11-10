@@ -1,0 +1,24 @@
+scope | code | unit | heads
+DIVISION | DIV-0001 | Information Technology | -- none (no active holder / no matching role) --
+DIVISION | DIV-0002 | Supply Chain | Syed Javed Fatmi [011000866] as Group Head of Supply Chain
+DIVISION | DIV-0003 | Quality Operations | Muhammad Imtiaz [011000923] as Group Head of Quality Operations
+DIVISION | DIV-0004 | Human Resource | Mehreen Khan [011001280] as Group Head of Human Resources
+DEPARTMENT | DIV-0001-DPT-0001 | IT Support | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0001-DPT-0002 | IT Infrastructure | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0002-DPT-0001 | Procurement | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0002-DPT-0002 | Supply Planning | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0002-DPT-0003 | FG Warehouse | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0002-DPT-0004 | Distribution | -- none (no active holder / no matching role) --
+DEPARTMENT | DIV-0003-DPT-0001 | Quality Control | Muhammad Adil [011000229] as Head of Quality Control
+DEPARTMENT | DIV-0003-DPT-0002 | Quality Assurance | Nazim Uddin [011001245] as Head of Quality Assurance
+DEPARTMENT | DIV-0004-DPT-0001 | HR Ops | Qurat Zafar [011001031] as Head of HR Ops
+DEPARTMENT | DIV-0004-DPT-0002 | Talent Acquisition | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0002-DPT-0004-SCT-0001 | Order Processing | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0002-DPT-0004-SCT-0002 | Claim Processing | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0003-DPT-0001-SCT-0001 | Packaging and Artwork | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0003-DPT-0001-SCT-0002 | Process - Validation | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0003-DPT-0002-SCT-0001 | Quality Management System | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0003-DPT-0002-SCT-0002 | Batch Release and IPC | -- none (no active holder / no matching role) --
+SUBDEPARTMENT | DIV-0003-DPT-0002-SCT-0003 | Validation | Kamran Chandio [011001324] as Validation Manager
+SUBDEPARTMENT | DIV-0004-DPT-0001-SCT-0001 | Transport | -- none (no active holder / no matching role) --
+(22 rows)

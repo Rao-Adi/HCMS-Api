@@ -59,6 +59,10 @@ public class WorkflowPolicyReadDto : AuditableEntity
     public string? DocumentType { get; set; }
     public string? DocumentTypeCode { get; set; }
 
+    // Set when the Division / Department / Sub-Department this policy is written for was deleted: no document can be filed under it,
+    // so the policy never applies. Says which unit, e.g. Sub Department "IT Development".
+    public string? DeletedUnit { get; set; }
+
     public List<WorkflowStepCreateDto> Steps { get; set; }
 
 }

@@ -39,7 +39,7 @@ public static class RoleCabinetMappingQueries
             FROM tblEmployee e
             INNER JOIN tblempjobprofile ejp ON ejp.empid = e.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
             INNER JOIN tblsetupsdetail b ON b.sdlid = ejp.roleid AND b.smsid = 189
-            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND ejp.roleid IS NOT NULL
+            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) IN (1, 2) AND ejp.roleid IS NOT NULL
               AND (COALESCE(@Division::text, '') = '' OR e.divid::text = @Division::text)
               AND (COALESCE(@Department::text, '') = '' OR e.mdptid::text = @Department::text)
               AND (COALESCE(@SubDepartment::text, '') = '' OR e.dptid::text = @SubDepartment::text);",

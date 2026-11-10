@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <!-- Angular Routes: Is se aapki single page routing kharab nahi hogi -->
+        <rule name="Angular Routes" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="./index.html" />
+        </rule>
+      </rules>
+    </rewrite>
+    <httpProtocol>
+      <customHeaders>
+        <add name="X-Frame-Options" value="sameorigin" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+
+  <!-- 1. INDEX.HTML KA CACHE DISABLE: Yeh tabdeeli aapka 404 ka masla hal karegi -->
+  <location path="index.html">
+    <system.webServer>
+      <httpProtocol>
+        <customHeaders>
+          <add name="Cache-Control" value="no-cache, no-store, must-revalidate" />
+          <add name="Pragma" value="no-cache" />
+          <add name="Expires" value="-1" />
+        </customHeaders>
+      </httpProtocol>
+    </system.webServer>
+  </location>
+
+  <!-- 2. APP-CONFIG.JSON KA CACHE DISABLE: Isko standard headers ke sath secure kiya hai -->
+  <location path="app-config.json">
+    <system.webServer>
+      <httpProtocol>
+        <customHeaders>
+          <add name="Cache-Control" value="no-cache, no-store, must-revalidate" />
+          <add name="Pragma" value="no-cache" />
+          <add name="Expires" value="-1" />
+        </customHeaders>
+      </httpProtocol>
+    </system.webServer>
+  </location>
+</configuration>

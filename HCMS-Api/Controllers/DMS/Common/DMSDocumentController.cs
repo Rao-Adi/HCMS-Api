@@ -554,6 +554,34 @@ public class DMSDocumentController : Controller
 
     // For the approval dialog: may the caller add an ad-hoc approver on this workflow right now, and what
     // does the remaining sequence look like (so they can pick a position).
+    // The approval chain of a document (who signs, who has, when) for screens that only have the document, not its workflow run.
+    [HttpGet("get-signing-authorities/{documentId}")]
+    public async Task<IActionResult> GetSigningAuthorities(int documentId)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<AdHocOptionsDto>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetSigningAuthoritiesByDocumentAsync(documentId),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(500, response);
+        }
+    }
+
     [HttpGet("get-adhoc-options/{executionId}")]
     public async Task<IActionResult> GetAdHocOptions(int executionId)
     {
@@ -1173,6 +1201,89 @@ public class DMSDocumentController : Controller
                 Success = true,
                 Data = await _documentComponent.GetApprovedEffectiveDocumentsAsync(input),
                 Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    // Periodic review: documents due for review that the signed-in approver may re-approve without change.
+    [HttpPost("get-documents-due-for-review")]
+    public async Task<IActionResult> GetDocumentsDueForReview(GetDocumentsPendingApprovalDto input)
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<PaginationResult<dynamic>>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsDueForReviewAsync(input),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpGet("get-documents-due-for-review-count")]
+    public async Task<IActionResult> GetDocumentsDueForReviewCount()
+    {
+        try
+        {
+            return Ok(new HttpApiResponse<int>()
+            {
+                Success = true,
+                Data = await _documentComponent.GetDocumentsDueForReviewCountAsync(),
+                Message = "Success",
+                Code = 200
+            });
+        }
+        catch (CustomException ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var statusCode = HttpResponseCode.GetHttpStatusCode(ex.ErrorCode);
+            return StatusCode((int)statusCode, HttpResponseCatchReturn.ReturnException(ex, new object { }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, ex.Message);
+            var response = HttpResponseCatchReturn.ReturnException(ex, new { });
+            return StatusCode(response.Code, response);
+        }
+    }
+
+    [HttpPost("reapprove-document-review")]
+    public async Task<IActionResult> ReapproveDocumentForReview([FromBody] ReapproveDocumentReviewDto input)
+    {
+        try
+        {
+            var newDate = await _documentComponent.ReapproveDocumentForReviewAsync(input);
+            return Ok(new HttpApiResponse<string>()
+            {
+                Success = true,
+                Data = newDate,
+                Message = $"Document re-approved. Its next review date is {newDate}.",
                 Code = 200
             });
         }

@@ -21,4 +21,7 @@ public class WorkflowStepSequenceDto
     // Carried through a re-ordering: the sequence is rewritten delete-then-insert, so a field that is
     // not sent back here would be lost every time someone drags a step.
     public bool CanAddAdHocApprover { get; set; }
+
+    // Same reason: a "Head of Division / Department / Sub-Department" step has no person, only this.
+    public string? HeadScope { get; set; }
 }

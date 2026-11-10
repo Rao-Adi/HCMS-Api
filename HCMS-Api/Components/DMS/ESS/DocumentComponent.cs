@@ -990,7 +990,12 @@ public class DocumentComponent
             // 4️⃣ Promote Version (Rework Case)
             //-------------------------------------------------
 
-            await PromoteVersionAfterReworkAsync(CompanyId, input.DocumentId, empCode, transaction);
+            // Never for an Obsoletion: it runs against the document as it stands (no draft version is
+            // opened and none is produced), so there is nothing to promote. A document that had been
+            // sent back at some point made this throw "No valid document content found to promote."
+            // and the obsoletion could not be submitted.
+            if (!isObsoletionSubmission)
+                await PromoteVersionAfterReworkAsync(CompanyId, input.DocumentId, empCode, transaction);
 
             //-------------------------------------------------
             // 5️⃣ Create Workflow Execution
@@ -1023,7 +1028,7 @@ public class DocumentComponent
             //-------------------------------------------------
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder, CanAddAdHocApprover
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, CanAddAdHocApprover, HeadScope
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId
                   -- Only live steps (see the same filter on the request side): what the form previewed is what runs.
@@ -1049,12 +1054,25 @@ public class DocumentComponent
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
+
+                    // Separated (HCMS status 0): cannot approve any more -- skip this step, the document goes to the next approver.
+
+                    if (await EmployeeStatusHelper.IsSeparatedAsync(_common, CompanyId, actualUserId, transaction)) continue;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive, CanAddAdHocApprover)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, @CanAddAdHoc);",
                         new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder, CanAddAdHoc = (stepDef.canaddadhocapprover == true) }, transaction);
                     runningStepOrder++;
                     inserted++;
+                }
+                // "Head of Division / Department / Sub-Department" step: names no person, so the head of that unit of the document's
+                // cabinet is worked out now (see WorkflowHeadResolver) and added as ordinary approver steps.
+                else if (stepDef.headscope != null)
+                {
+                    int addedHeadSteps = await InsertHeadApproverStepsAsync(CompanyId, executionId, (int)stepDef.id, (string)stepDef.headscope, input.DocumentId, runningStepOrder, (stepDef.canaddadhocapprover == true), transaction);
+                    runningStepOrder += addedHeadSteps;
+                    inserted += addedHeadSteps;
                 }
                 else if (stepDef.roleid != null || stepDef.designationid != null)
                 {
@@ -1063,7 +1081,7 @@ public class DocumentComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId 
-                          AND COALESCE(e.Active, 1) = 1 
+                          AND COALESCE(e.Active, 1) IN (1, 2) 
                           AND COALESCE(ejp.Active, TRUE) = TRUE
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
@@ -1772,6 +1790,453 @@ public class DocumentComponent
     private static string? NullIfBlank(string? code) =>
         string.IsNullOrWhiteSpace(code) ? null : code.Trim();
 
+    /// <summary>
+    /// Everyone who took part in the approval of this document's latest Revision / Obsoletion: the approvers of its document workflow
+    /// and of the Request workflow behind it (every step, ad-hoc approvers included; a step handed over by a Responsibility Transfer
+    /// already names the person it was handed to). Used to tell all of them when the document is revised or obsoleted.
+    /// </summary>
+    private async Task<List<string>> GetWorkflowParticipantsAsync(int companyId, int documentId, IDbTransaction tx)
+    {
+        var codes = await _common.QueryAsync<string>(@"
+            SELECT DISTINCT TRIM(wes.AssignedUserId)
+            FROM WorkflowExecutionSteps wes
+            WHERE wes.CompanyId = @CompanyId
+              AND COALESCE(TRIM(wes.AssignedUserId), '') <> ''
+              AND wes.WorkflowExecutionId IN (
+                    (SELECT we.Id FROM WorkflowExecutions we
+                      WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
+                      ORDER BY we.Id DESC LIMIT 1),
+                    (SELECT we.Id FROM WorkflowExecutions we
+                      WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Request'
+                        AND we.EntityId = (SELECT r.Id FROM DocumentRequests r
+                                            WHERE r.CompanyId = @CompanyId AND r.ParentDocumentId = @DocumentId
+                                            ORDER BY r.Id DESC LIMIT 1)
+                      ORDER BY we.Id DESC LIMIT 1));",
+            new { CompanyId = companyId, DocumentId = documentId }, tx);
+
+        return codes.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).ToList();
+    }
+
+    /// <summary>
+    /// Who is told when an item is Rejected or Reverted for rework in a workflow: the initiator(s) and every approver who had already approved
+    /// it (the earlier steps of the same workflow), as <c>Initiators</c> and <c>PreviousApprovers</c>. The person who took the action is left
+    /// out: they know. <paramref name="entityType"/> is "Document" or "Request"; <paramref name="initiatorCodes"/> are initiators the caller
+    /// already knows (for example the creator recorded on the item).
+    /// </summary>
+    public async Task<(List<string> Initiators, List<string> PreviousApprovers)> GetRejectRevertRecipientsAsync(
+        int companyId, long executionId, string entityType, int entityId, string? actorCode,
+        IEnumerable<string?> initiatorCodes, IDbTransaction? tx)
+    {
+        var initiators = new List<string>();
+        foreach (var c in initiatorCodes) AddRecipient(initiators, c);
+
+        // Whoever submitted this workflow is its initiator...
+        AddRecipient(initiators, await _common.ExecuteScalarAsync<string>(
+            "SELECT StartedBy FROM WorkflowExecutions WHERE Id = @ExecutionId AND CompanyId = @CompanyId;",
+            new { ExecutionId = (int)executionId, CompanyId = companyId }, tx));
+
+        // ...and so is whoever raised the Request behind a document (a revision's own request, else the creation request).
+        if (string.Equals(entityType, "Document", StringComparison.OrdinalIgnoreCase))
+        {
+            AddRecipient(initiators, await _common.ExecuteScalarAsync<string>(@"
+                SELECT r.CreatedBy FROM DocumentRequests r
+                JOIN Documents d ON d.Id = @DocumentId AND d.CompanyId = r.CompanyId
+                WHERE r.CompanyId = @CompanyId AND (r.ParentDocumentId = d.Id OR r.Id = d.RequestId)
+                ORDER BY CASE WHEN r.ParentDocumentId = d.Id THEN 0 ELSE 1 END, r.Id DESC
+                LIMIT 1;",
+                new { DocumentId = entityId, CompanyId = companyId }, tx));
+        }
+
+        // Previous approvers: the steps of THIS workflow already decided "Approved" (the step being rejected / reverted is not one of them).
+        var approvers = await _common.QueryAsync<string>(@"
+            SELECT DISTINCT TRIM(wes.AssignedUserId)
+            FROM WorkflowExecutionSteps wes
+            WHERE wes.CompanyId = @CompanyId AND wes.WorkflowExecutionId = @ExecutionId
+              AND LOWER(COALESCE(wes.Decision, '')) = 'approved'
+              AND COALESCE(TRIM(wes.AssignedUserId), '') <> '';",
+            new { ExecutionId = (int)executionId, CompanyId = companyId }, tx);
+        var previous = new List<string>();
+        foreach (var a in approvers) AddRecipient(previous, a);
+
+        var actor = (actorCode ?? "").Trim().TrimStart('0');
+        bool IsActor(string c) => actor.Length > 0 && string.Equals(c.Trim().TrimStart('0'), actor, StringComparison.OrdinalIgnoreCase);
+        initiators.RemoveAll(IsActor);
+        previous.RemoveAll(c => IsActor(c) || initiators.Any(i => string.Equals(i.TrimStart('0'), c.TrimStart('0'), StringComparison.OrdinalIgnoreCase)));
+        return (initiators, previous);
+    }
+
+    /// <summary>The Rejected / Reverted notifications: the initiators get the usual wording, the previous approvers the "a document you approved" one.</summary>
+    public static List<(NotificationScenario Scenario, int DocumentId, string Recipient, Dictionary<string, string> Placeholders)> BuildRejectRevertNotifications(
+        NotificationScenario scenario, int documentId, List<string> initiators, List<string> previousApprovers,
+        string docName, string version, string approver, string observation)
+    {
+        Dictionary<string, string> Placeholders(bool forApprover)
+        {
+            var p = new Dictionary<string, string>
+            {
+                { "Doc Name", docName }, { "V#", version }, { "Approver", approver }, { "Observation", observation }
+            };
+            if (forApprover) p["Audience"] = "Approver";
+            return p;
+        }
+
+        var list = new List<(NotificationScenario, int, string, Dictionary<string, string>)>();
+        foreach (var i in initiators) list.Add((scenario, documentId, i, Placeholders(false)));
+        foreach (var a in previousApprovers) list.Add((scenario, documentId, a, Placeholders(true)));
+        return list;
+    }
+
+    // Adds a person to a recipient list once: the same person under different zero-padding (000100012 / 100012) is one person.
+    private static void AddRecipient(List<string> recipients, string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return;
+        var c = code.Trim();
+        if (!recipients.Any(r => string.Equals(r.TrimStart('0'), c.TrimStart('0'), StringComparison.OrdinalIgnoreCase)))
+            recipients.Add(c);
+    }
+
+    // ==================================================================================================================
+    // Periodic review: "Re-approve" without change
+    // ==================================================================================================================
+
+    /// <summary>A document whose Next Review Date is within this many days (or already past) is due for review.</summary>
+    public const int ReviewDueWindowDays = 60;
+
+    // The latest state of the document is EFFECTIVE (nothing -- a revision, an obsoletion, a rejection -- is in progress on it) and its
+    // Next Review Date is within the window. Alias: doc (Documents or Vw_Documents).
+    public const string ReviewDueSql = @"
+        doc.CompanyId = @CompanyId AND doc.IsDeleted = FALSE AND doc.IsActive = TRUE
+        AND doc.NextReviewDate IS NOT NULL
+        AND doc.NextReviewDate <= CURRENT_DATE + @WindowDays
+        AND (
+            SELECT ds.Code
+            FROM DocumentStateHistory dsh
+            JOIN DocumentStates ds ON ds.Id = dsh.ToStateId
+            WHERE dsh.DocumentId = doc.Id AND dsh.CompanyId = doc.CompanyId
+            ORDER BY dsh.ChangedAt DESC, dsh.Id DESC LIMIT 1
+        ) = 'EFFECTIVE'";
+
+    // Who may re-approve a document that is due for review (and so sees it in "Due for Review"):
+    //  * an approver of the document's approval workflow: a step of the latest COMPLETED document workflow is assigned to them (every step,
+    //    ad-hoc approvers included; a step handed over by a Responsibility Transfer already names the person it went to);
+    //  * for a document that has NO completed workflow at all -- one that was uploaded (bulk upload / import) straight in as Effective, so nobody
+    //    ever approved it -- the person who uploaded it. Without this such a document appeared on the Dashboard (Documents Approaching Review)
+    //    but in nobody's Due for Review list, and could not be re-approved by anyone.
+    public const string ReviewApproverSql = @"
+        (EXISTS (
+            SELECT 1 FROM WorkflowExecutionSteps wes
+            WHERE wes.CompanyId = doc.CompanyId
+              AND wes.WorkflowExecutionId = (
+                    SELECT we.Id FROM WorkflowExecutions we
+                    WHERE we.CompanyId = doc.CompanyId AND we.EntityType = 'Document' AND we.EntityId = doc.Id
+                      AND we.Status = 'Completed'
+                    ORDER BY we.Id DESC LIMIT 1)
+              AND LTRIM(RTRIM(wes.AssignedUserId::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0'))
+         OR (NOT EXISTS (
+                    SELECT 1 FROM WorkflowExecutions we0
+                    WHERE we0.CompanyId = doc.CompanyId AND we0.EntityType = 'Document' AND we0.EntityId = doc.Id
+                      AND we0.Status = 'Completed')
+             AND LTRIM(RTRIM(doc.CreatedBy::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0')))";
+
+    /// <summary>The Dashboard's "Documents Approaching Review": exactly the documents the person would find in Due for Review (same rule), nearest first.</summary>
+    public async Task<List<DashboardDocumentReviewDto>> GetDocumentsApproachingReviewForDashboardAsync(int companyId, string empCode, int limit = 10)
+    {
+        var rows = await _common.QueryAsync<DashboardDocumentReviewDto>($@"
+            SELECT doc.Id AS DocumentId, doc.DocumentNumber, doc.Title,
+                   doc.NextReviewDate::timestamp AS NextReviewDate,
+                   (doc.NextReviewDate::date - CURRENT_DATE)::int AS DaysUntilReview
+            FROM Vw_Documents doc
+            WHERE {ReviewDueSql} AND {ReviewApproverSql}
+            ORDER BY doc.NextReviewDate ASC
+            LIMIT {Math.Clamp(limit, 1, 50)};",
+            new { CompanyId = companyId, EmpCode = empCode, WindowDays = ReviewDueWindowDays });
+        return rows.ToList();
+    }
+
+    /// <summary>Documents due for review that the signed-in person may re-approve (My Approvals - Documents, "Due for Review" tab).</summary>
+    public async Task<PaginationResult<dynamic>> GetDocumentsDueForReviewAsync(GetDocumentsPendingApprovalDto input)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var empCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString());
+
+        var whereClause = $@"
+            WHERE {ReviewDueSql}
+              AND {ReviewApproverSql}
+              AND (@DocumentTypeCode IS NULL OR @DocumentTypeCode = '' OR doc.DocumentTypeCode = @DocumentTypeCode)
+              AND (@DivisionCode IS NULL OR @DivisionCode = '' OR doc.DivisionCode = @DivisionCode)
+              AND (@DepartmentCode IS NULL OR @DepartmentCode = '' OR doc.DepartmentCode = @DepartmentCode)
+              AND (@SubDepartmentCode IS NULL OR @SubDepartmentCode = '' OR doc.SubDepartmentCode = @SubDepartmentCode)
+              AND (@BusinessDomainCode IS NULL OR @BusinessDomainCode = '' OR doc.BusinessDomainCode = @BusinessDomainCode)";
+
+        if (!string.IsNullOrWhiteSpace(input.SearchText))
+        {
+            var search = input.SearchText.Replace("'", "''").ToUpper();
+            whereClause += $@" AND (UPPER(doc.Title) LIKE '%{search}%' OR UPPER(doc.DocumentNumber) LIKE '%{search}%')";
+        }
+
+        string sortColumn = input.SortColumn?.ToUpper() switch
+        {
+            "DOCUMENTNUMBER" => "doc.DocumentNumber",
+            "TITLE" or "DOCUMENTNAME" => "doc.Title",
+            "VERSION" => "dv.Version",
+            _ => "doc.NextReviewDate"
+        };
+        string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
+        int pageSize = input.PageSize > 0 ? input.PageSize : 10;
+        int offset = (Math.Max(input.PageNumber, 1) - 1) * pageSize;
+
+        string fromSql = @"
+            FROM Vw_Documents doc
+            LEFT JOIN LATERAL (
+                SELECT v.Version FROM DocumentVersions v
+                WHERE v.DocumentId = doc.Id AND v.CompanyId = doc.CompanyId
+                  AND v.VersionType = 2 AND v.IsActive = TRUE AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                ORDER BY v.Id DESC LIMIT 1
+            ) dv ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT p.ReviewPeriodYears FROM DocumentReviewPolicies p
+                WHERE p.CompanyId = doc.CompanyId AND p.DocumentTypeCode = doc.DocumentTypeCode
+                  AND p.IsActive = TRUE AND p.IsDeleted = FALSE
+                ORDER BY p.Id DESC LIMIT 1
+            ) rp ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT r.ReviewedAt, r.ReviewedBy FROM DocumentReviews r
+                WHERE r.DocumentId = doc.Id AND r.CompanyId = doc.CompanyId AND r.IsDeleted = FALSE
+                ORDER BY r.Id DESC LIMIT 1
+            ) lr ON TRUE";
+
+        string dataSql = $@"
+            SELECT doc.Id, doc.DocumentNumber, doc.Title, doc.DocumentType, doc.DocumentTypeCode,
+                   doc.Company, doc.Division, doc.Department, doc.SubDepartment, doc.BusinessDomain,
+                   dv.Version,
+                   doc.NextReviewDate::text AS NextReviewDate,
+                   (doc.NextReviewDate - CURRENT_DATE) AS DaysLeft,
+                   rp.ReviewPeriodYears,
+                   lr.ReviewedAt AS LastReviewedAt,
+                   (SELECT LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, '')))
+                      FROM public.tblEmployee e
+                     WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(lr.ReviewedBy::text), '0') AND e.CompanyId = doc.CompanyId
+                     LIMIT 1) AS LastReviewedBy
+            {fromSql}
+            {whereClause}
+            ORDER BY {sortColumn} {sortDirection}, doc.Id
+            OFFSET {offset} ROWS FETCH NEXT {pageSize} ROWS ONLY;";
+
+        string countSql = $@"SELECT COUNT(1) {fromSql} {whereClause};";
+
+        var queryParams = new
+        {
+            CompanyId,
+            EmpCode = empCode,
+            WindowDays = ReviewDueWindowDays,
+            input.DocumentTypeCode,
+            input.DivisionCode,
+            input.DepartmentCode,
+            input.SubDepartmentCode,
+            input.BusinessDomainCode
+        };
+
+        var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
+        var total = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
+        return new PaginationResult<dynamic> { Items = items, TotalCount = total };
+    }
+
+    /// <summary>How many documents are due for review that the signed-in person may re-approve (the tab badge).</summary>
+    public async Task<int> GetDocumentsDueForReviewCountAsync()
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var empCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString());
+
+        return await _common.ExecuteScalarAsync<int>($@"
+            SELECT COUNT(1) FROM Vw_Documents doc
+            WHERE {ReviewDueSql} AND {ReviewApproverSql};",
+            new { CompanyId, EmpCode = empCode, WindowDays = ReviewDueWindowDays });
+    }
+
+    // Review Years of a document type (Misc Policies > Document Review); null when none is configured.
+    private async Task<int?> ResolveReviewYearsAsync(int companyId, string? documentTypeCode, IDbTransaction tx)
+    {
+        var years = await _common.QueryFirstOrDefaultAsync<int?>(@"
+            SELECT ReviewPeriodYears FROM DocumentReviewPolicies
+            WHERE CompanyId = @CompanyId AND DocumentTypeCode = @DocumentTypeCode
+              AND IsActive = TRUE AND IsDeleted = FALSE
+            ORDER BY Id DESC LIMIT 1;",
+            new { CompanyId = companyId, DocumentTypeCode = documentTypeCode }, tx);
+        return years is > 0 ? years : null;
+    }
+
+    /// <summary>
+    /// Periodic review without change: an approver of the document's workflow re-approves it. The document stays at the version in
+    /// force (no new version, no workflow), the review is recorded, and the Next Review Date moves on by the document type's Review
+    /// Years from today. Returns the new Next Review Date (yyyy-MM-dd).
+    /// </summary>
+    public async Task<string> ReapproveDocumentForReviewAsync(ReapproveDocumentReviewDto input)
+    {
+        await using var transaction = await _common.BeginTransactionAsync();
+
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int CompanyId = int.Parse(_CompanyId);
+        var empCode = _utilities.GetEmpCodeForHCMS(_utilities.GetEmpid(_clientContextService.GetClientIP()).ToString());
+
+        // The row is locked for the rest of this transaction: two approvers re-approving at the same moment are taken one after the other, and
+        // the second finds the date already moved on (below) instead of recording a second review.
+        var doc = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT Id, DocumentNumber, DocumentTypeCode, NextReviewDate::timestamp AS NextReviewDate
+            FROM Documents
+            WHERE Id = @DocumentId AND CompanyId = @CompanyId AND IsDeleted = FALSE
+            FOR UPDATE;",
+            new { input.DocumentId, CompanyId }, transaction);
+
+        if (doc == null)
+            throw new CustomException("Document not found.", 404);
+
+        var due = await _common.ExecuteScalarAsync<bool>($@"
+            SELECT EXISTS (SELECT 1 FROM Documents doc WHERE doc.Id = @DocumentId AND {ReviewDueSql});",
+            new { input.DocumentId, CompanyId, WindowDays = ReviewDueWindowDays }, transaction);
+
+        if (!due)
+            throw new CustomException(
+                "This document is not due for review: it is not in force, a revision or obsoletion is in progress on it, or its Next Review Date is more than "
+                + $"{ReviewDueWindowDays} days away (it may already have been re-approved). Please refresh the list.", 409);
+
+        var isApprover = await _common.ExecuteScalarAsync<bool>($@"
+            SELECT EXISTS (SELECT 1 FROM Documents doc WHERE doc.Id = @DocumentId AND doc.CompanyId = @CompanyId AND {ReviewApproverSql});",
+            new { input.DocumentId, CompanyId, EmpCode = empCode }, transaction);
+
+        if (!isApprover)
+            throw new CustomException("Only an approver from this document's approval workflow (or, for a document with no workflow, the person who uploaded it) can re-approve it.", 403);
+
+        var typeCode = (string?)doc.documenttypecode;
+        var years = await ResolveReviewYearsAsync(CompanyId, typeCode, transaction);
+        if (years == null)
+            throw new CustomException(
+                "No review period (Review Years) is set for this document type, so the next review date cannot be worked out. "
+                + "Set it under Misc Policies > Document Review.", 409);
+
+        var effectiveVersion = await _common.ExecuteScalarAsync<string>(@"
+            SELECT Version FROM DocumentVersions
+            WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 2 AND IsActive = TRUE AND COALESCE(IsDeleted, FALSE) = FALSE
+            ORDER BY Id DESC LIMIT 1;",
+            new { input.DocumentId, CompanyId }, transaction);
+
+        var previousDate = (DateTime?)doc.nextreviewdate;
+        var newDate = DateTime.Today.AddYears(years.Value);
+
+        await _common.ExecuteAsync(@"
+            INSERT INTO DocumentReviews
+                (CompanyId, DocumentId, Version, ReviewedBy, ReviewedAt, Remarks, PreviousNextReviewDate, NewNextReviewDate, ReviewPeriodYears)
+            VALUES
+                (@CompanyId, @DocumentId, @Version, @ReviewedBy, NOW(), @Remarks, @PreviousDate, @NewDate, @Years);",
+            new
+            {
+                CompanyId,
+                input.DocumentId,
+                Version = effectiveVersion,
+                ReviewedBy = empCode,
+                Remarks = string.IsNullOrWhiteSpace(input.Remarks) ? null : input.Remarks.Trim(),
+                PreviousDate = previousDate,
+                NewDate = newDate,
+                Years = years
+            }, transaction);
+
+        // Deliberately only the date: LastModifiedAt/By describe a change to the document, and nothing about it changed.
+        await _common.ExecuteAsync(@"
+            UPDATE Documents SET NextReviewDate = @NewDate
+            WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+            new { NewDate = newDate, input.DocumentId, CompanyId }, transaction);
+
+        await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Re-approved at Periodic Review (no change)", "Document",
+            input.DocumentId, _clientContextService.GetRequestIpAddress(), transaction: transaction);
+
+        // Everyone who could have done this review -- the other approvers of the document's workflow -- and the initiator are told it was done
+        // (any one approver may re-approve, so the rest would otherwise not know). The person who did it is not told their own action.
+        var informed = new List<string>();
+        var workflowApprovers = await _common.QueryAsync<string>(@"
+            SELECT DISTINCT TRIM(wes.AssignedUserId)
+            FROM WorkflowExecutionSteps wes
+            WHERE wes.CompanyId = @CompanyId AND COALESCE(TRIM(wes.AssignedUserId), '') <> ''
+              AND wes.WorkflowExecutionId = (
+                    SELECT we.Id FROM WorkflowExecutions we
+                    WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId AND we.Status = 'Completed'
+                    ORDER BY we.Id DESC LIMIT 1);",
+            new { CompanyId, input.DocumentId }, transaction);
+        foreach (var approver in workflowApprovers) AddRecipient(informed, approver);
+
+        // The initiator: whoever raised the Request behind the version in force (a revision's own request, else the creation request).
+        var initiatorCode = await _common.ExecuteScalarAsync<string>(@"
+            SELECT r.CreatedBy FROM DocumentRequests r
+            JOIN Documents d ON d.Id = @DocumentId AND d.CompanyId = r.CompanyId
+            WHERE r.CompanyId = @CompanyId
+              AND (r.ParentDocumentId = d.Id OR r.Id = d.RequestId)
+            ORDER BY CASE WHEN r.ParentDocumentId = d.Id THEN 0 ELSE 1 END, r.Id DESC
+            LIMIT 1;",
+            new { input.DocumentId, CompanyId }, transaction);
+        AddRecipient(informed, initiatorCode);
+
+        var documentTitle = await _common.ExecuteScalarAsync<string>(
+            "SELECT Title FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;", new { input.DocumentId, CompanyId }, transaction);
+
+        await transaction.CommitAsync();
+
+        var reviewer = (empCode ?? "").Trim();
+        var reviewedPlaceholders = new Dictionary<string, string>
+        {
+            { "Doc Name", documentTitle ?? "Document" },
+            { "V#", effectiveVersion ?? "Latest" },
+            { "Approver", reviewer },
+            { "Date", newDate.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture) }
+        };
+        var reviewNotifications = informed
+            .Where(c => !string.Equals(c.TrimStart('0'), reviewer.TrimStart('0'), StringComparison.OrdinalIgnoreCase))
+            .Select(c => (NotificationScenario.DocumentReviewReapproved, input.DocumentId, c, reviewedPlaceholders))
+            .ToList();
+        // After the commit and off this request: the review is done whether or not a mail server answers.
+        if (reviewNotifications.Count > 0)
+            _ = DispatchAuthorizationNotificationsInBackground(reviewNotifications, CompanyId);
+
+        return newDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Snapshots a "Head of Division / Department / Sub-Department" policy step into the execution: the head(s) of that unit of
+    /// the document's cabinet become ordinary approver steps starting at <paramref name="startOrder"/>, exactly like a step that
+    /// names an employee (including a standing Responsibility Transfer). Returns how many steps were added; throws when no head
+    /// can be found, so a document is never submitted with nobody to approve it.
+    /// </summary>
+    private async Task<int> InsertHeadApproverStepsAsync(
+        int companyId, long executionId, int stepDefId, string headScope, int documentId, int startOrder,
+        bool canAddAdHoc, IDbTransaction tx)
+    {
+        var heads = await WorkflowHeadResolver.ResolveAsync(
+            _common, companyId, headScope, "Document", documentId, tx);
+
+        int order = startOrder;
+        foreach (var head in heads)
+        {
+            string actualUserId = head;
+            var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                SELECT EmployeeTo FROM ResponsibilityTransfers
+                WHERE EmployeeFrom = @EmpFrom
+                AND CompanyId = @CompanyId AND Status = 2
+                AND EffectiveDateFrom <= CURRENT_DATE
+                AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                ORDER BY Id DESC LIMIT 1;",
+                new { EmpFrom = actualUserId, CompanyId = companyId }, tx);
+
+            if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+            await _common.ExecuteAsync(@"
+                INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive, CanAddAdHocApprover)
+                VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, @CanAddAdHoc);",
+                new { CompanyId = companyId, ExecutionId = executionId, StepDefId = stepDefId, UserId = actualUserId, StepOrder = order, CanAddAdHoc = canAddAdHoc }, tx);
+            order++;
+        }
+
+        return order - startOrder;
+    }
+
     private static string ResolveNextRevisionVersion(string? parentVersion, string? chainVersion)
     {
         var candidate = IncrementMajorVersion(parentVersion);
@@ -1946,7 +2411,7 @@ public class DocumentComponent
                     TRIM(e.empcode),
                     @CreatedBy
                 FROM {roleTable} dr
-                INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
+                INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) IN (1, 2) AND e.CompanyId = @CompanyId
                 INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
                 WHERE dr.DocumentId = @DocumentId
                   AND dr.CompanyId = @CompanyId
@@ -2198,6 +2663,25 @@ public class DocumentComponent
     /// ad-hoc approver". The step is read from the running workflow's own snapshot, not the policy, so a
     /// policy edited while the document is in flight does not change what this person was given.
     /// </summary>
+    /// <summary>
+    /// The signing authorities of a DOCUMENT, for screens that only know the document (Create or Update Document, Post-Training, the reports):
+    /// the chain of the workflow run that is still going on, or -- when none is -- of the most recent one, in the same shape as
+    /// GetAdHocOptionsAsync. A document with no workflow at all (uploaded straight in as Effective) has an empty chain.
+    /// </summary>
+    public async Task<AdHocOptionsDto> GetSigningAuthoritiesByDocumentAsync(int documentId)
+    {
+        string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
+        int companyId = int.Parse(_CompanyId);
+
+        var executionId = await _common.ExecuteScalarAsync<int?>(@"
+            SELECT we.Id FROM WorkflowExecutions we
+            WHERE we.CompanyId = @CompanyId AND we.EntityType = 'Document' AND we.EntityId = @DocumentId
+            ORDER BY (we.Status = 'Running') DESC, we.Id DESC
+            LIMIT 1;", new { CompanyId = companyId, DocumentId = documentId });
+
+        return executionId.HasValue ? await GetAdHocOptionsAsync(executionId.Value) : new AdHocOptionsDto();
+    }
+
     public async Task<AdHocOptionsDto> GetAdHocOptionsAsync(int executionId)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
@@ -2209,8 +2693,17 @@ public class DocumentComponent
 
         var steps = (await _common.QueryAsync<dynamic>(@"
             SELECT wes.Id, wes.StepOrder, wes.IsActive, wes.IsAdHoc, wes.AssignedUserId, wes.CanAddAdHocApprover,
-                   wes.Decision, emp.FullName, emp.Designation
+                   wes.Decision, emp.FullName, emp.Designation,
+                   -- When the step reached its approver: the workflow start for the first step, otherwise when the step before it was decided
+                   -- (the same rule the Approval History used). A step that has not been reached yet has none.
+                   COALESCE(
+                       LAG(wes.ActionAt) OVER (PARTITION BY wes.WorkflowExecutionId ORDER BY wes.StepOrder, wes.Id),
+                       CASE WHEN ROW_NUMBER() OVER (PARTITION BY wes.WorkflowExecutionId ORDER BY wes.StepOrder, wes.Id) = 1
+                            THEN we.StartedAt END
+                   ) AS ReceivedOn,
+                   wes.ActionAt AS StatusUpdatedOn
             FROM WorkflowExecutionSteps wes
+            JOIN WorkflowExecutions we ON we.CompanyId = wes.CompanyId AND we.Id = wes.WorkflowExecutionId
             LEFT JOIN LATERAL (
                 SELECT LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.midname, '') || ' ' || COALESCE(e.lastname, ''))) AS FullName,
                        COALESCE((SELECT d.name FROM public.tblempjobprofile j
@@ -2230,14 +2723,16 @@ public class DocumentComponent
         // The whole chain is returned (decided steps included) so the approver sees where they sit in it.
         // Only the step that is currently active -- the caller's own, when they may add one -- and the
         // undecided ones after it are valid places to insert; AddAdHocApproversAsync enforces that.
+        // A workflow that has finished (approved, rejected, reverted) has no active step: the chain is still returned, as the record of who
+        // signed and when, but nobody can add to it. (This used to return nothing, so the modal was empty for a completed workflow.)
         var current = steps.FirstOrDefault(x => x.isactive == true);
-        if (current == null)
-            return result;
-
-        result.CurrentStepId = (long)Convert.ToInt64(current.id);
-        result.CanAddAdHocApprover =
-            current.canaddadhocapprover == true && ZeroTrimmed(Convert.ToString(current.assigneduserid)) == ZeroTrimmed(empCode)
-            && ZeroTrimmed(empCode).Length > 0;
+        if (current != null)
+        {
+            result.CurrentStepId = (long)Convert.ToInt64(current.id);
+            result.CanAddAdHocApprover =
+                current.canaddadhocapprover == true && ZeroTrimmed(Convert.ToString(current.assigneduserid)) == ZeroTrimmed(empCode)
+                && ZeroTrimmed(empCode).Length > 0;
+        }
 
         foreach (var st in steps)
         {
@@ -2252,6 +2747,8 @@ public class DocumentComponent
                 IsAdHoc = st.isadhoc == true,
                 Decision = (Convert.ToString(st.decision) ?? string.Empty).Trim(),
                 IsDecided = !string.IsNullOrWhiteSpace(Convert.ToString(st.decision)),
+                ReceivedOn = st.receivedon is DateTime received ? received : (DateTime?)null,
+                StatusUpdatedOn = st.statusupdatedon is DateTime updated ? updated : (DateTime?)null,
             });
         }
 
@@ -2355,7 +2852,7 @@ public class DocumentComponent
                 FROM tblEmployee e
                 INNER JOIN tblempjobprofile ejp ON e.empid = ejp.empid
                 WHERE e.CompanyId = @CompanyId AND TRIM(e.empcode) = @EmployeeCode
-                  AND COALESCE(e.Active, 1) = 1 AND COALESCE(ejp.Active, TRUE) = TRUE
+                  AND COALESCE(e.Active, 1) IN (1, 2) AND COALESCE(ejp.Active, TRUE) = TRUE
                 LIMIT 1;",
                 new { CompanyId = companyId, EmployeeCode = code }, transaction);
 
@@ -3864,9 +4361,35 @@ public class DocumentComponent
             Parties AS (
                 SELECT 'Writer' AS Role, 1 AS Position,
                        TRIM(COALESCE((SELECT rr.CreatedBy FROM RevisionRequest rr), d.CreatedBy)) AS EmpCode,
-                       COALESCE((SELECT rr.CreatedAt FROM RevisionRequest rr),
-                                (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
-                                  WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId)) AS ActedAt
+                       -- When it was written. A document that was sent back (reverted) and then modified is written again, so the time moves on:
+                       --  (1) it has been modified and sent for approval again -- the version being shown is the one made at that re-submission, because the
+                       --      version before it was archived as 'Reverted': the time is when this version was made;
+                       --  (2) it was sent back and is being worked on (still the same version, back in Draft): when it was sent back, or when its content
+                       --      was last saved, whichever is later.
+                       -- Otherwise the time it was first written: the Revision Request that started this version, or the document's first entry.
+                       COALESCE(
+                           CASE WHEN @VersionFrom::timestamp IS NOT NULL AND EXISTS (
+                                   SELECT 1 FROM DocumentVersions pv
+                                   WHERE pv.DocumentId = d.Id AND pv.CompanyId = d.CompanyId AND COALESCE(pv.IsDeleted, FALSE) = FALSE
+                                     AND pv.Id = (SELECT MAX(p2.Id) FROM DocumentVersions p2
+                                                  WHERE p2.DocumentId = d.Id AND p2.CompanyId = d.CompanyId AND COALESCE(p2.IsDeleted, FALSE) = FALSE
+                                                    AND p2.CreatedAt < @VersionFrom::timestamp)
+                                     AND pv.ArchiveReason = 'Reverted')
+                                THEN @VersionFrom::timestamp END,
+                           (SELECT GREATEST(h.ChangedAt, COALESCE((SELECT v.LastModifiedAt FROM DocumentVersions v
+                                                                    WHERE v.DocumentId = d.Id AND v.CompanyId = d.CompanyId AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                                                                      AND v.CreatedAt = @VersionFrom::timestamp
+                                                                    ORDER BY v.Id DESC LIMIT 1), h.ChangedAt))
+                            FROM DocumentStateHistory h JOIN DocumentStates ds ON ds.Id = h.ToStateId
+                            WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId AND ds.Code = 'DRAFT'
+                              AND @VersionFrom::timestamp IS NOT NULL AND h.ChangedAt >= @VersionFrom::timestamp
+                              AND EXISTS (SELECT 1 FROM DocumentStateHistory p JOIN DocumentStates ps ON ps.Id = p.ToStateId
+                                          WHERE p.DocumentId = d.Id AND p.CompanyId = d.CompanyId AND ps.Code = 'PENDING_APPROVAL'
+                                            AND p.ChangedAt >= @VersionFrom::timestamp AND p.ChangedAt < h.ChangedAt)
+                            ORDER BY h.ChangedAt DESC LIMIT 1),
+                           (SELECT rr.CreatedAt FROM RevisionRequest rr),
+                           (SELECT MIN(h.ChangedAt) FROM DocumentStateHistory h
+                             WHERE h.DocumentId = d.Id AND h.CompanyId = d.CompanyId)) AS ActedAt
                 FROM Documents d
                 WHERE d.Id = @DocumentId AND d.CompanyId = @CompanyId
 
@@ -4566,7 +5089,18 @@ public class DocumentComponent
                         WHERE CompanyId = @CompanyId
                           AND DocumentId = @DocumentId
                           AND ToStateId = 1
-                          AND WorkflowExecutionId IS NOT NULL;",
+                          AND WorkflowExecutionId IS NOT NULL
+                          -- Only a send-back in the CURRENT round counts. A document reverted once
+                          -- before it first became Effective kept that row forever, so every later
+                          -- Revision looked 'reworked' on its first submission and was bumped
+                          -- 2.0 -> 2.1 (and 2.1 -> 2.2 next time). A send-back that predates the
+                          -- latest Effective transition belongs to a round that already finished.
+                          AND Id > COALESCE((
+                              SELECT MAX(h.Id) FROM DocumentStateHistory h
+                              WHERE h.CompanyId = @CompanyId
+                                AND h.DocumentId = @DocumentId
+                                AND h.ToStateId = (SELECT Id FROM DocumentStates WHERE Code = 'EFFECTIVE')
+                          ), 0);",
             new { companyId, documentId }, transaction);
 
             if (wasReworkedCount == 0)
@@ -4770,6 +5304,9 @@ public class DocumentComponent
             //-------------------------------------------------
             // 3️⃣ Find Next Step
             //-------------------------------------------------
+
+            // A later approver who has left the company (HCMS status 0) is skipped: the document goes to the next one.
+            await EmployeeStatusHelper.RemoveSeparatedWaitingStepsAsync(_common, CompanyId, Convert.ToInt64(input.ExecutionId), Convert.ToInt32(currentStep.steporder), transaction);
 
             List<string> nextStepApprovers = new List<string>();
             var nextStep = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -5142,7 +5679,8 @@ public class DocumentComponent
         }
     }
 
-    private async Task HandlePostApprovalAsync(int companyId, int documentId, string userId, IDbTransaction tx)
+    // Public: also used by WorkflowReconcileComponent when a policy edit leaves nobody to approve a running workflow.
+    public async Task HandlePostApprovalAsync(int companyId, int documentId, string userId, IDbTransaction tx)
     {
 
         try
@@ -5544,7 +6082,15 @@ public class DocumentComponent
         if (!string.IsNullOrWhiteSpace(initiator))
             recipients.Add(initiator.Trim());
 
-        foreach (var recipient in recipients.Distinct(StringComparer.OrdinalIgnoreCase))
+        // Everyone who took part in approving this obsoletion (all the people in its workflow, not only the last approver) is told too.
+        foreach (var participant in await GetWorkflowParticipantsAsync(companyId, retiredDocumentId, tx))
+            recipients.Add(participant);
+
+        // One mail per person, even if they are on the distribution list AND in the workflow (or under different zero-padding).
+        var distinctRecipients = new List<string>();
+        foreach (var rcp in recipients) AddRecipient(distinctRecipients, rcp);
+
+        foreach (var recipient in distinctRecipients)
         {
             await _notificationComponent.TriggerNotificationAsync(
                 NotificationScenario.DocumentObsoleted, companyId, retiredDocumentId, recipient, placeholders, tx);
@@ -5573,7 +6119,7 @@ public class DocumentComponent
                 WHERE sd.smsid = 189
                   AND sd.name ILIKE 'Document Control Associate%'
                   AND e.CompanyId = @CompanyId
-                  AND COALESCE(e.Active, 1) = 1;",
+                  AND COALESCE(e.Active, 1) IN (1, 2);",
                 new { CompanyId = companyId }, tx);
 
             foreach (var dcaUser in dcaUsers.Where(u => !string.IsNullOrWhiteSpace(u)))
@@ -5707,13 +6253,16 @@ public class DocumentComponent
                 initiatorId = docInfo!.createdby;
             }
 
-            if (initiatorId != string.Empty)
+            // The initiator(s) and every approver who had already approved it are told (email + in-app).
             {
-                var notifyPlaceholders = new Dictionary<string, string> {
-                    { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", approverName ?? empCode }, { "Observation", input.Observation ?? "" }
-                };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRejected, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+                var (initiators, previousApprovers) = await GetRejectRevertRecipientsAsync(
+                    CompanyId, input.ExecutionId, "Document", input.DocumentId, empCode, new[] { initiatorId }, null);
+                var rejectedNotifications = BuildRejectRevertNotifications(
+                    NotificationScenario.DocumentRejected, input.DocumentId, initiators, previousApprovers,
+                    Convert.ToString(docInfo?.title) ?? "Unknown", Convert.ToString(docInfo?.version) ?? "1.0",
+                    approverName ?? empCode, input.Observation ?? "");
+                if (rejectedNotifications.Count > 0)
+                    _ = DispatchAuthorizationNotificationsInBackground(rejectedNotifications, CompanyId);
             }
 
             return true;
@@ -5856,13 +6405,16 @@ public class DocumentComponent
                 initiatorId = docInfo!.createdby;
             }
 
-            if (initiatorId != string.Empty)
+            // The initiator(s) and every approver who had already approved it are told (email + in-app).
             {
-                var notifyPlaceholders = new Dictionary<string, string> {
-                    { "Doc Name", Convert.ToString(docInfo.title) ?? "Unknown" }, { "V#", Convert.ToString(docInfo.version) ?? "1.0" },
-                    { "Approver", approverName ?? empCode }, { "Observation", input.Observation ?? "" }
-                };
-                await _notificationComponent.TriggerNotificationAsync(NotificationScenario.DocumentRevertedForRework, CompanyId, input.DocumentId, initiatorId, notifyPlaceholders);
+                var (initiators, previousApprovers) = await GetRejectRevertRecipientsAsync(
+                    CompanyId, input.ExecutionId, "Document", input.DocumentId, empCode, new[] { initiatorId }, null);
+                var revertedNotifications = BuildRejectRevertNotifications(
+                    NotificationScenario.DocumentRevertedForRework, input.DocumentId, initiators, previousApprovers,
+                    Convert.ToString(docInfo?.title) ?? "Unknown", Convert.ToString(docInfo?.version) ?? "1.0",
+                    approverName ?? empCode, input.Observation ?? "");
+                if (revertedNotifications.Count > 0)
+                    _ = DispatchAuthorizationNotificationsInBackground(revertedNotifications, CompanyId);
             }
 
             return true;
@@ -6858,7 +7410,7 @@ public class DocumentComponent
                         COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
                     )
                     FROM WorkflowExecutionSteps wes
-                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) IN (1, 2)
                     LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId  AND r.CompanyId = @CompanyId
                     LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId  AND des.CompanyId = @CompanyId
                     WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
@@ -6993,7 +7545,7 @@ public class DocumentComponent
     //                        COALESCE(LTRIM(RTRIM(COALESCE(e.firstname, '') || ' ' || COALESCE(e.lastname, ''))), r.Name, des.Name), ', '
     //                    )
     //                    FROM WorkflowExecutionSteps wes
-    //                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) = 1
+    //                    LEFT JOIN tblEmployee e ON e.empcode = wes.AssignedUserId AND e.CompanyId = doc.CompanyId AND COALESCE(e.Active, 1) IN (1, 2)
     //                    LEFT JOIN tblsetupsdetail r ON r.sdlid = wes.AssignedRoleId
     //                    LEFT JOIN tblsetupsdetail des ON des.sdlid = wes.AssignedDesignationId
     //                    WHERE wes.WorkflowExecutionId = we.Id AND wes.IsActive = TRUE),
@@ -7171,6 +7723,27 @@ public class DocumentComponent
                     ORDER BY Id DESC LIMIT 1;",
                     new { input.DocumentId, CompanyId }, transaction);
 
+                // The version in force before this one: when there is one, this is a Revision (a first publication has none).
+                var previousEffectiveVersion = await _common.ExecuteScalarAsync<string>(@"
+                    SELECT Version FROM DocumentVersions
+                    WHERE DocumentId = @DocumentId AND CompanyId = @CompanyId AND VersionType = 2 AND COALESCE(IsDeleted, FALSE) = FALSE
+                    ORDER BY Id DESC LIMIT 1;",
+                    new { input.DocumentId, CompanyId }, transaction);
+
+                // A revision restarts the review cycle. Next Review Date was only ever set when the document was created, so a revised
+                // document kept the old date and stayed "due for review" straight after it had been revised.
+                if (!string.IsNullOrWhiteSpace(previousEffectiveVersion))
+                {
+                    var revisedTypeCode = await _common.ExecuteScalarAsync<string>(
+                        "SELECT DocumentTypeCode FROM Documents WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                        new { input.DocumentId, CompanyId }, transaction);
+                    var reviewYears = await ResolveReviewYearsAsync(CompanyId, revisedTypeCode, transaction);
+                    if (reviewYears != null)
+                        await _common.ExecuteAsync(
+                            "UPDATE Documents SET NextReviewDate = @NewDate WHERE Id = @DocumentId AND CompanyId = @CompanyId;",
+                            new { NewDate = DateTime.Today.AddYears(reviewYears.Value), input.DocumentId, CompanyId }, transaction);
+                }
+
                 // 1. Archive previous effective versions
                 await _common.ExecuteAsync(@"
                     UPDATE DocumentVersions SET VersionType = 3, IsActive = FALSE, ArchiveReason = 'Revised'
@@ -7230,16 +7803,22 @@ public class DocumentComponent
 
                 var recipients = new List<string>();
                 foreach (var code in new[] { initiatorCode, authorizerCode })
+                    AddRecipient(recipients, code);
+
+                // A creation is told to the initiator and the authorizer only. A REVISION is told to everyone in its workflow -- the
+                // approvers of the Request and of the document -- as "Document Revised", with the version it replaces.
+                var effectiveScenario = NotificationScenario.DocumentAuthorizedEffective;
+                if (!string.IsNullOrWhiteSpace(previousEffectiveVersion))
                 {
-                    // Same person under different zero-padding (000100012 / 100012) is still one person.
-                    if (!string.IsNullOrWhiteSpace(code)
-                        && !recipients.Any(r => r.TrimStart('0') == code.TrimStart('0')))
-                        recipients.Add(code);
+                    effectiveScenario = NotificationScenario.DocumentRevised;
+                    authorizedPlaceholders["Previous V#"] = previousEffectiveVersion.Trim();
+                    foreach (var participant in await GetWorkflowParticipantsAsync(CompanyId, input.DocumentId, transaction))
+                        AddRecipient(recipients, participant);
                 }
 
                 foreach (var recipient in recipients)
                 {
-                    pendingNotifications.Add((NotificationScenario.DocumentAuthorizedEffective, input.DocumentId, recipient, authorizedPlaceholders));
+                    pendingNotifications.Add((effectiveScenario, input.DocumentId, recipient, authorizedPlaceholders));
                 }
             }
             else if (input.Action.Equals("REJECTED", StringComparison.OrdinalIgnoreCase))
@@ -7262,16 +7841,21 @@ public class DocumentComponent
                     WHERE d.Id = @DocumentId ORDER BY dv.CreatedAt DESC LIMIT 1",
                     new { input.DocumentId }, transaction);
 
-                if (docInfo != null && !string.IsNullOrEmpty(docInfo.createdby))
+                if (docInfo != null)
                 {
-                    var placeholders = new Dictionary<string, string>
-                    {
-                        { "Doc Name", (string)docInfo!.title ?? "Document" },
-                        { "V#", (string)docInfo.version ?? "Latest" },
-                        { "Approver", empCode },
-                        { "Observation", input.Observation }
-                    };
-                    pendingNotifications.Add((NotificationScenario.DocumentRejected, input.DocumentId, docInfo.createdby, placeholders));
+                    // The workflow this document went through: its latest document execution. Everyone who approved it is told with the initiator(s).
+                    var executionIdForNotify = await _common.ExecuteScalarAsync<int?>(@"
+                        SELECT Id FROM WorkflowExecutions
+                        WHERE CompanyId = @CompanyId AND EntityType = 'Document' AND EntityId = @DocumentId
+                        ORDER BY Id DESC LIMIT 1;",
+                        new { CompanyId, input.DocumentId }, transaction);
+
+                    var (initiators, previousApprovers) = await GetRejectRevertRecipientsAsync(
+                        CompanyId, executionIdForNotify ?? 0, "Document", input.DocumentId, empCode,
+                        new[] { (string?)docInfo.createdby }, transaction);
+                    pendingNotifications.AddRange(BuildRejectRevertNotifications(
+                        NotificationScenario.DocumentRejected, input.DocumentId, initiators, previousApprovers,
+                        (string?)docInfo.title ?? "Document", (string?)docInfo.version ?? "Latest", empCode, input.Observation ?? ""));
                 }
             }
             else
@@ -7334,7 +7918,7 @@ public class DocumentComponent
             //    WHERE sd.Name = 'DCA' 
             //      AND sd.smsid = 189 
             //      AND e.CompanyId = @CompanyId 
-            //      AND COALESCE(e.Active, 1) = 1 
+            //      AND COALESCE(e.Active, 1) IN (1, 2) 
             //      AND COALESCE(ejp.Active, TRUE) = TRUE", new { CompanyId }, transaction);
 
             //var docInfo = await _common.QueryFirstOrDefaultAsync<dynamic>("SELECT Title FROM Documents WHERE Id = @DocumentId", new { input.DocumentId }, transaction);
@@ -8087,7 +8671,7 @@ public class DocumentComponent
                 -- document's user list is built with; matching on the role alone listed its holders in every other
                 -- department too.
                 LEFT JOIN (TblEmpJobProfile ejp
-                           INNER JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = ejp.CompanyId AND COALESCE(e.Active, 1) = 1)
+                           INNER JOIN tblEmployee e ON e.empid = ejp.empid AND e.CompanyId = ejp.CompanyId AND COALESCE(e.Active, 1) IN (1, 2))
                        ON ejp.roleid = drd.RoleId AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = drd.CompanyId
                       AND (COALESCE(drd.DivisionCode, '') = '' OR drd.DivisionCode = e.divid::text)
                       AND (COALESCE(drd.DepartmentCode, '') = '' OR drd.DepartmentCode = e.mdptid::text)
@@ -10286,7 +10870,7 @@ public class DocumentComponent
     // the same rule InsertDocumentDistributionsAsync uses to expand a role into DocumentUserDistributions.
     private const string DistributionEntryUsersSql = @"
         FROM DocumentRoleDistributions dr
-        INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId
+        INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) IN (1, 2) AND e.CompanyId = @CompanyId
         INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
         LEFT JOIN DistributionTypes dt ON dt.Id = dr.DistributionType
         WHERE dr.DocumentId = @DocumentId
@@ -10377,6 +10961,13 @@ public class DocumentPreviewUserRoleDto
     public string SubDepartment { get; set; } = "";
     public string Role { get; set; } = "";
     public int SelectedEmployees { get; set; }
+}
+
+public class ReapproveDocumentReviewDto
+{
+    public int DocumentId { get; set; }
+    // Optional note kept with the review record.
+    public string? Remarks { get; set; }
 }
 
 public class AuthorizeDocumentDto

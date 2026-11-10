@@ -1,0 +1,3 @@
+policy | entitytype | divisioncode | departmentcode | steporder | headscope
+5 | Request | DIV-0003 | DIV-0003-DPT-0002 | 3 | DIVISION
+(1 row)

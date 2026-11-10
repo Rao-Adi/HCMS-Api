@@ -1,0 +1,299 @@
+{
+ "results": [
+  {
+   "scenario": "S0 setup",
+   "name": "UAT-like data: NO User Access Levels at all (as in UAT)",
+   "ok": true,
+   "evidence": "0"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "admin adds \"Head of division\" to policy 39",
+   "ok": true,
+   "evidence": "Workflow Step created successfully."
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "admin adds \"Head of department\" to policy 39",
+   "ok": true,
+   "evidence": "Workflow Step created successfully."
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "POLICY SCREEN: Head of Division shows the head's NAME, designation and role (not \"Head of Division\")",
+   "ok": true,
+   "evidence": "[{\"order\":1,\"name\":\"Muhammad Wajahat Shahid\",\"code\":\"011001011\",\"designation\":\"Associate Manager - Process Improvement\",\"role\":\"Process Improvement Manager\",\"headScope\":\"\"},{\"order\":2,\"name\":\"Muhammad  Imtiaz\",\"code\":\"011000923\",\"designation\":\"Sr. Director - Quality Operations\",\"role\":\"Group Head of Quality Operations\",\"headScope\":\"DIVISION\"},{\"order\":3,\"name\":\"Head of Department\",\"role\":\"Worked out when submitted, from the document's Department\",\"headScope\":\"DEPARTMENT\"}]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "POLICY SCREEN: a Division-level policy cannot know the Department -> keeps the label with a note",
+   "ok": true,
+   "evidence": "Worked out when submitted, from the document's Department"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "REQUEST / DOCUMENT FORM preview (Workflow Authorities): names of Division head AND Department head",
+   "ok": true,
+   "evidence": "[{\"order\":1,\"name\":\"Muhammad Wajahat Shahid\",\"code\":\"011001011\",\"designation\":\"Associate Manager - Process Improvement\",\"role\":\"Process Improvement Manager\",\"headScope\":\"\"},{\"order\":2,\"name\":\"Muhammad  Imtiaz\",\"code\":\"011000923\",\"designation\":\"Sr. Director - Quality Operations\",\"role\":\"Group Head of Quality Operations\",\"headScope\":\"DIVISION\"},{\"order\":3,\"name\":\"Nazim  Uddin\",\"code\":\"011001245\",\"designation\":\"General Manager - Quality Assurance\",\"role\":\"Head of Quality Assurance\",\"headScope\":\"DEPARTMENT\"}]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "request submitted",
+   "ok": true,
+   "evidence": "Document Request submitted successfully."
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "document submitted: heads resolved from the document's cabinet",
+   "ok": true,
+   "evidence": "Document Created Successfully"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "execution steps: Wajahat > Imtiaz (Head of Division) > Nazim (Head of Department)",
+   "ok": true,
+   "evidence": "[\"011001011\",\"011000923\",\"011001245\"]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "SIGNING AUTHORITIES modal: real names + designations, all Pending, first one received",
+   "ok": true,
+   "evidence": "[{\"no\":1,\"name\":\"Muhammad Wajahat Shahid\",\"designation\":\"Associate Manager - Process Improvement\",\"status\":\"Pending\",\"received\":\"yes\"},{\"no\":2,\"name\":\"Muhammad  Imtiaz\",\"designation\":\"Sr. Director - Quality Operations\",\"status\":\"Pending\",\"received\":\"-\"},{\"no\":3,\"name\":\"Nazim  Uddin\",\"designation\":\"General Manager - Quality Assurance\",\"status\":\"Pending\",\"received\":\"-\"}]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "after Wajahat approves: his row Approved (tick), the heads Pending",
+   "ok": true,
+   "evidence": "[\"Muhammad Wajahat Shahid:Approved\",\"Muhammad  Imtiaz:Pending\",\"Nazim  Uddin:Pending\"]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "APPROVAL HISTORY data (other screens still use it): real names, not \"Head of ...\"",
+   "ok": true,
+   "evidence": "[\"1:Muhammad Wajahat Shahid:Approved\",\"2:Muhammad  Imtiaz:Pending\",\"3:Nazim  Uddin:Pending\"]"
+  },
+  {
+   "scenario": "S7 Head steps show the person (name / designation / role)",
+   "name": "document authorized -> Effective",
+   "ok": true,
+   "evidence": "Document successfully authorized and made effective."
+  },
+  {
+   "scenario": "S7b Policy 5 (the screenshot policy), no access levels",
+   "name": "Head of Division added to policy 5",
+   "ok": true,
+   "evidence": "Workflow Step created successfully."
+  },
+  {
+   "scenario": "S7b Policy 5 (the screenshot policy), no access levels",
+   "name": "row 3 shows the Division head BY NAME with designation and role (not \"Head of Division\")",
+   "ok": true,
+   "evidence": "{\"name\":\"Muhammad  Imtiaz\",\"role\":\"Group Head of Quality Operations\",\"designation\":\"Sr. Director - Quality Operations\"}"
+  },
+  {
+   "scenario": "S7b Policy 5 (the screenshot policy), no access levels",
+   "name": "save / reorder keeps it a Head step (not turned into a fixed employee)",
+   "ok": true,
+   "evidence": "[\"011001011/-\",\"002006086/-\",\"-/DIVISION\"]"
+  },
+  {
+   "scenario": "S8 Document footer (signatory block)",
+   "name": "document downloaded (200, 97729 bytes)",
+   "ok": true,
+   "evidence": ""
+  },
+  {
+   "scenario": "S8 Document footer (signatory block)",
+   "name": "footer names the Division head and the Department head (by name)",
+   "ok": true,
+   "evidence": "{\"Imtiaz\":true,\"Nazim\":true}"
+  },
+  {
+   "scenario": "S8 Document footer (signatory block)",
+   "name": "footer does not say \"Head of Division / Department\" in place of a person",
+   "ok": true,
+   "evidence": ""
+  },
+  {
+   "scenario": "S9 Head cannot be found",
+   "name": "no role rule matches the Department -> submit refused with a clear message",
+   "ok": true,
+   "evidence": "The approval workflow routes this document to the Department Head of Department \"Quality Control\", but no active employee is set up as that. An employee needs a role that counts as Department Head (see the Head role rules, table WorkflowHeadRoleRules; a rule that does not name the unit also needs a User Access Level on this Department)."
+  },
+  {
+   "scenario": "S9 Head cannot be found",
+   "name": "a Head of Sub-Department step but the document has no Sub-Department -> refused, says why",
+   "ok": true,
+   "evidence": "The approval workflow has a \"Head of Sub-Department\" step, but this document is not filed under a Sub-Department, so there is no sub-department head to send it to. Choose a Sub-Department for the document, or ask the administrator to change the approval workflow policy."
+  },
+  {
+   "scenario": "S9 Head cannot be found",
+   "name": "nothing was started (still draft, no workflow execution)",
+   "ok": true,
+   "evidence": "DRAFT"
+  },
+  {
+   "scenario": "S10 Data-fix script on real UAT document IT-POL-001",
+   "name": "BEFORE: 2.0 Reverted + 2.1 Effective (false revert, as on production)",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|3|false|Revised|false\",\"2.0|3|false|Reverted|false\",\"2.1|2|true||false\"]"
+  },
+  {
+   "scenario": "S10 Data-fix script on real UAT document IT-POL-001",
+   "name": "AFTER: 2.1 renumbered 2.0 and the false Reverted row removed; genuine 1.0 Reverted kept",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|3|false|Revised|false\",\"2.0|3|false|Reverted|true\",\"2.0|2|true||false\"]"
+  },
+  {
+   "scenario": "S10 Data-fix script on real UAT document IT-POL-001",
+   "name": "Revision History after: 2.0 Effective, 1.1 Revised, 1.0 Reverted (genuine)",
+   "ok": true,
+   "evidence": "[\"2.0 | Effective\",\"1.1 | Revised\",\"1.0 | Reverted\"]"
+  }
+ ],
+ "evidence": {
+  "policyScreen": [
+   {
+    "order": 1,
+    "name": "Muhammad Wajahat Shahid",
+    "code": "011001011",
+    "designation": "Associate Manager - Process Improvement",
+    "role": "Process Improvement Manager",
+    "headScope": ""
+   },
+   {
+    "order": 2,
+    "name": "Muhammad  Imtiaz",
+    "code": "011000923",
+    "designation": "Sr. Director - Quality Operations",
+    "role": "Group Head of Quality Operations",
+    "headScope": "DIVISION"
+   },
+   {
+    "order": 3,
+    "name": "Head of Department",
+    "role": "Worked out when submitted, from the document's Department",
+    "headScope": "DEPARTMENT"
+   }
+  ],
+  "formPreview": [
+   {
+    "order": 1,
+    "name": "Muhammad Wajahat Shahid",
+    "code": "011001011",
+    "designation": "Associate Manager - Process Improvement",
+    "role": "Process Improvement Manager",
+    "headScope": ""
+   },
+   {
+    "order": 2,
+    "name": "Muhammad  Imtiaz",
+    "code": "011000923",
+    "designation": "Sr. Director - Quality Operations",
+    "role": "Group Head of Quality Operations",
+    "headScope": "DIVISION"
+   },
+   {
+    "order": 3,
+    "name": "Nazim  Uddin",
+    "code": "011001245",
+    "designation": "General Manager - Quality Assurance",
+    "role": "Head of Quality Assurance",
+    "headScope": "DEPARTMENT"
+   }
+  ],
+  "signingModalPending": [
+   {
+    "no": 1,
+    "name": "Muhammad Wajahat Shahid",
+    "designation": "Associate Manager - Process Improvement",
+    "status": "Pending",
+    "received": "yes"
+   },
+   {
+    "no": 2,
+    "name": "Muhammad  Imtiaz",
+    "designation": "Sr. Director - Quality Operations",
+    "status": "Pending",
+    "received": "-"
+   },
+   {
+    "no": 3,
+    "name": "Nazim  Uddin",
+    "designation": "General Manager - Quality Assurance",
+    "status": "Pending",
+    "received": "-"
+   }
+  ],
+  "policy5": [
+   {
+    "order": 1,
+    "name": "Muhammad Wajahat Shahid",
+    "code": "011001011",
+    "designation": "Associate Manager - Process Improvement",
+    "role": "Process Improvement Manager",
+    "headScope": ""
+   },
+   {
+    "order": 2,
+    "name": "Aafaq Ahmad",
+    "code": "002006086",
+    "designation": "Sales Promotion Officer",
+    "role": "Territory Sales Manager (TSM)",
+    "headScope": ""
+   },
+   {
+    "order": 3,
+    "name": "Muhammad  Imtiaz",
+    "code": "011000923",
+    "designation": "Sr. Director - Quality Operations",
+    "role": "Group Head of Quality Operations",
+    "headScope": "DIVISION"
+   }
+  ],
+  "footerLines": [
+   "Written By",
+   "Asif  Baig",
+   "District Sales Manager (DSM)",
+   "Reviewed By",
+   "Muhammad Wajahat Shahid",
+   "Process Improvement Manager",
+   "Reviewed By",
+   "Muhammad  Imtiaz",
+   "Group Head of Quality Operations",
+   "Approved By",
+   "Nazim  Uddin",
+   "Head of Quality Assurance",
+   "Authorized By",
+   "Muhammad Wajahat Shahid",
+   "Process Improvement Manager"
+  ],
+  "noHeadMessage": "The approval workflow routes this document to the Department Head of Department \"Quality Control\", but no active employee is set up as that. An employee needs a role that counts as Department Head (see the Head role rules, table WorkflowHeadRoleRules; a rule that does not name the unit also needs a User Access Level on this Department).",
+  "noUnitMessage": "The approval workflow has a \"Head of Sub-Department\" step, but this document is not filed under a Sub-Department, so there is no sub-department head to send it to. Choose a Sub-Department for the document, or ask the administrator to change the approval workflow policy.",
+  "fix27": {
+   "before": [
+    "2.1 | Effective",
+    "2.0 | Reverted",
+    "1.1 | Revised",
+    "1.0 | Reverted"
+   ],
+   "after": [
+    "2.0 | Effective",
+    "1.1 | Revised",
+    "1.0 | Reverted"
+   ],
+   "beforeVersions": [
+    "1.0|3|false|Reverted|false",
+    "1.1|3|false|Revised|false",
+    "2.0|3|false|Reverted|false",
+    "2.1|2|true||false"
+   ],
+   "afterVersions": [
+    "1.0|3|false|Reverted|false",
+    "1.1|3|false|Revised|false",
+    "2.0|3|false|Reverted|true",
+    "2.0|2|true||false"
+   ]
+  }
+ }
+}

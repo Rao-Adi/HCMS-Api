@@ -520,6 +520,8 @@ public class DMSDocumentRequestController : Controller
             byte[] fileBytes;
             string contentType;
             string fileName;
+            // True when the merged Word file already carries the Distribution List and Document Users (the Preview then does not repeat them).
+            bool listsEmbedded = false;
 
             // Mirrors DMSDocumentController.DownloadDraftDocument: merges the content into the
             // DocumentType's Word template (DocumentRequestComponent.MergeDocumentRequestTemplateAsync)
@@ -539,7 +541,7 @@ public class DMSDocumentRequestController : Controller
                         : null;
                     await using (contentFileStream)
                     {
-                        fileBytes = await _documentRequestComponent.MergeDocumentRequestTemplateAsync(id, contentFileStream);
+                        (fileBytes, listsEmbedded) = await _documentRequestComponent.MergeDocumentRequestTemplateAsync(id, contentFileStream);
                     }
                     contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
                     // A request drafted purely via the rich text editor (no file ever uploaded)
@@ -591,8 +593,9 @@ public class DMSDocumentRequestController : Controller
                 });
             }
 
-            // Important for frontend reading of the File Name
-            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition");
+            // Important for frontend reading of the File Name (and of whether the lists are inside the file)
+            Response.Headers.Append("Access-Control-Expose-Headers", "Content-Disposition, X-Preview-Lists-Embedded");
+            if (listsEmbedded) Response.Headers.Append("X-Preview-Lists-Embedded", "true");
             // This same URL (requestId never changes) can legitimately return different bytes
             // and a different filename on a later call -- e.g. after a merge-vs-raw-file
             // fallback path changes, or the draft's content is edited -- so the browser must

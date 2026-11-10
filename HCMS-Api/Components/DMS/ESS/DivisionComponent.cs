@@ -196,6 +196,9 @@ public class DivisionComponent
             if (exists == 0)
                 throw new CustomException("Division not found", 404);
 
+            // Approval policies written for it would keep pointing at a unit nobody can pick any more.
+            await WorkflowPolicyUnitUsage.EnsureUnitNotUsedAsync(_common, CompanyId, WorkflowPolicyUnitUsage.DivisionColumn, code, "Division");
+
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Divisions

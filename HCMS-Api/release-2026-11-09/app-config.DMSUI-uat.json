@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "https://testerp.atcolab.com/DMSCOREAPI/api",
+  "apiBaseUrl2": "http://localhost:5190/api",
+  "loginUrl": "https://testerp.atcolab.com/Softronic/",
+  "sessionTimeoutURL": "https://testerp.atcolab.com/Softronic/"
+}

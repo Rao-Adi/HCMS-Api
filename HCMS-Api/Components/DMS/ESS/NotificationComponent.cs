@@ -185,6 +185,10 @@ public class NotificationComponent
             return System.Text.RegularExpressions.Regex.Replace(val, @"\s+", " ").Trim();
         }
 
+        // A rejection / revert is also sent to the approvers who had already approved the item (it is not their own document, so the
+        // wording differs): the sender marks them with Audience = Approver.
+        bool ForApprover() => p != null && p.TryGetValue("Audience", out var aud) && string.Equals(aud, "Approver", StringComparison.OrdinalIgnoreCase);
+
         return scenario switch
         {
             // "?tab=" matches the Pending/Approved/Rejected tab keys both my-approval-request.ts
@@ -213,15 +217,19 @@ public class NotificationComponent
             ),
             NotificationScenario.RequestRejected => (
                 "DMS – Request Rejected",
-                $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
+                ForApprover()
+                    ? $"A request you approved (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}."
+                    : $"Your request (Request ID: {Get("ID")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
                 "Request",
-                "/documents/my-approvals-request?tab=Rejected"
+                ForApprover() ? "/documents/my-approvals-request?tab=Approved" : "/documents/my-approvals-request?tab=Rejected"
             ),
             NotificationScenario.RequestRevertedForRework => (
                 "DMS – Request Rework Required",
-                $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Reason(Get("Observation"))}.",
+                ForApprover()
+                    ? $"A request you approved (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Reason(Get("Observation"))}."
+                    : $"Your request (Request ID: {Get("ID")}) has been reverted by {Get("Approver")} for rework. Reason: {Reason(Get("Observation"))}.",
                 "Request",
-                $"/documents/my-approvals-request?tab=Rejected"
+                ForApprover() ? "/documents/my-approvals-request?tab=Approved" : "/documents/my-approvals-request?tab=Rejected"
             ),
             NotificationScenario.OverdueRequestReminder => (
                 "DMS – Overdue Action Required",
@@ -251,18 +259,22 @@ public class NotificationComponent
             ),
             NotificationScenario.DocumentRejected => (
                 "DMS – Document Rejected",
-                $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
+                ForApprover()
+                    ? $"A document you approved ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}."
+                    : $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been rejected by {Get("Approver")}. Reason: {Reason(Get("Observation"))}.",
                 "Document",
                 // Was pointed at my-approvals-request -- wrong page entirely for a Document-type
                 // notification, and inconsistent with its three siblings below which all
                 // correctly point at my-approvals-documents.
-                "/documents/my-approvals-documents?tab=Rejected"
+                ForApprover() ? "/documents/my-approvals-documents?tab=Approved" : "/documents/my-approvals-documents?tab=Rejected"
             ),
             NotificationScenario.DocumentRevertedForRework => (
                 "DMS – Document Rework Required",
-                $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
+                ForApprover()
+                    ? $"A document you approved ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")} for rework."
+                    : $"Your document ({Get("Doc Name")}, Version: {Get("V#")}) has been reverted by {Get("Approver")}. Please modify.",
                 "Document",
-                $"/documents/my-approvals-documents?tab=Rejected"
+                ForApprover() ? "/documents/my-approvals-documents?tab=Approved" : "/documents/my-approvals-documents?tab=Rejected"
             ),
             NotificationScenario.TrainingProofRequired => (
                 "DMS – Training Proof Required",
@@ -295,6 +307,23 @@ public class NotificationComponent
                 "Authorization",
                 // The person told is the initiator (and whoever authorized): the approved / effective documents list is
                 // where the document now is. The Training Authorization page is the authorizer's work queue.
+                "/reports/viewapproved"
+            ),
+            NotificationScenario.DocumentRevised => (
+                "DMS – Document Revised",
+                // The previous version is only known where the revision is made effective; leave it out rather than print a placeholder.
+                (p != null && p.ContainsKey("Previous V#")
+                    ? $"Document \"{Get("Doc Name")}\" has been revised from version {Get("Previous V#")} to version {Get("V#")}, effective {Get("Date")}."
+                    : $"Document \"{Get("Doc Name")}\" has been revised to version {Get("V#")}, effective {Get("Date")}."),
+                "Revision",
+                // The revised document is now the one in force: the approved / effective documents list is where it is.
+                "/reports/viewapproved"
+            ),
+            NotificationScenario.DocumentReviewReapproved => (
+                "DMS – Document Re-approved at Review",
+                $"Document \"{Get("Doc Name")}\" (V:{Get("V#")}) was reviewed and re-approved by {Get("Approver")} without any change. Its next review date is {Get("Date")}.",
+                "Review",
+                // The document is unchanged and still in force: the approved / effective documents list is where it is.
                 "/reports/viewapproved"
             ),
             NotificationScenario.PeriodicReviewDue => (
@@ -782,6 +811,10 @@ public class NotificationComponent
                 => P("Authorized", "Click the button below to view the document:", "View Document", green),
             NotificationScenario.PeriodicReviewDue
                 => P("Review Due", "Click the button below to start the revision:", "Start Revision", amber),
+            NotificationScenario.DocumentRevised
+                => P("Document Revised", "Click the button below to view the revised document:", "View Document", amber),
+            NotificationScenario.DocumentReviewReapproved
+                => P("Review Completed", "Click the button below to view the document:", "View Document", green),
             NotificationScenario.DocumentObsoleted
                 => P("Document Obsoleted", "Click the button below to open the document archive:", "View Archive", grey),
             NotificationScenario.PhysicalCopyRetrievalTask
@@ -804,7 +837,7 @@ public class NotificationComponent
     {
         try
         {
-            string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) = 1 LIMIT 1;";
+            string emailQuery = "SELECT Email FROM tblEmployee WHERE LTRIM(RTRIM(empCode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0') AND CompanyId = @CompanyId AND COALESCE(Active, 1) IN (1, 2) LIMIT 1;";
             var recipientEmail = await _common.QueryFirstOrDefaultAsync<string>(emailQuery, new { EmpCode = recipientUserId, CompanyId = companyId }, transaction);
 
             if (!string.IsNullOrWhiteSpace(recipientEmail))
@@ -863,7 +896,7 @@ public class NotificationComponent
     // as the client's template has it. The header inside the mail keeps the title alone.
     private static string GetEmailSubject(string title, NotificationScenario scenario, Dictionary<string, string> p)
     {
-        if ((scenario == NotificationScenario.DocumentObsoleted || scenario == NotificationScenario.DocumentRejected) && p != null && p.TryGetValue("Doc Name", out var name))
+        if ((scenario == NotificationScenario.DocumentObsoleted || scenario == NotificationScenario.DocumentRevised || scenario == NotificationScenario.DocumentReviewReapproved || scenario == NotificationScenario.DocumentRejected) && p != null && p.TryGetValue("Doc Name", out var name))
         {
             name = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(name ?? string.Empty, "<[^>]*>", " "), @"\s+", " ").Trim();
             if (name.Length > 0) return $"{title}: {name}";
@@ -891,6 +924,9 @@ public class NotificationComponent
         var date = Value("Date");
         var reason = Value("Observation");
 
+        var forApprover = p != null && p.TryGetValue("Audience", out var audience)
+                          && string.Equals(audience, "Approver", StringComparison.OrdinalIgnoreCase);
+
         var f = new List<(string, string)>();
         void Add(string label, string value) { if (value != null) f.Add((label, value)); }
         (string, List<(string, string)>)? Doc(string lead, bool needVersion = true)
@@ -911,20 +947,22 @@ public class NotificationComponent
             NotificationScenario.PendingDocumentApproval => Doc("A new document has been uploaded and is pending for your review:"),
             NotificationScenario.DocumentApprovedForwarded => Doc("A document has been approved and requires your action / authorization:", needVersion: false),
             NotificationScenario.DocumentApproved when approver != null => Doc($"Your document has been approved by {approver}. Please see the approved version:"),
-            NotificationScenario.DocumentRejected when approver != null => Doc($"Your document has been rejected by {approver}. Please review the rejection notes and submit a new revision if necessary:") is { } r ? WithReason(r, label: "Reason for Rejection") : null,
-            NotificationScenario.DocumentRevertedForRework when approver != null => Doc($"Your document has been reverted by {approver} for rework. Please modify it:") is { } r2 ? WithReason(r2, optional: true) : null,
+            NotificationScenario.DocumentRejected when approver != null => Doc(forApprover ? $"A document you approved has been rejected by {approver}:" : $"Your document has been rejected by {approver}. Please review the rejection notes and submit a new revision if necessary:") is { } r ? WithReason(r, label: "Reason for Rejection") : null,
+            NotificationScenario.DocumentRevertedForRework when approver != null => Doc(forApprover ? $"A document you approved has been reverted by {approver} for rework:" : $"Your document has been reverted by {approver} for rework. Please modify it:") is { } r2 ? WithReason(r2, optional: true) : null,
             NotificationScenario.TrainingProofRequired => Doc("Action needed: please upload the training proof for final authorization:"),
             NotificationScenario.TrainingProofSubmitted => Doc("Training proof has been submitted. Final authorization is now pending:"),
             NotificationScenario.DocumentAuthorizedEffective => Doc("The following document is now authorized and effective:") is { } r3 ? WithDate(r3, "Effective Date") : null,
             NotificationScenario.PeriodicReviewDue => Doc("The following document is due for review. Please initiate a Revision Request:") is { } r4 ? WithDate(r4, "Review Due Date") : null,
+            NotificationScenario.DocumentReviewReapproved when approver != null => Doc("The following document has been reviewed and re-approved without any change:") is { } rr ? WithDate(WithApprover(rr, approver), "Next Review Date") : null,
+            NotificationScenario.DocumentRevised => Doc("The following document has been revised. The new version is now effective:") is { } rv ? WithDate(WithPrevious(rv), "Effective Date") : null,
             NotificationScenario.DocumentObsoleted => Doc("The following document has been made obsolete and is no longer valid:"),
             NotificationScenario.PhysicalCopyRetrievalTask => Doc("Action required: retrieve and destroy the physical copies of this obsoleted document:"),
 
             NotificationScenario.PendingRequest => Req("A new request is pending your approval:") is { } q ? WithFrom(q, Value("Employee Name")) : null,
             NotificationScenario.RequestApprovedForwarded => Req("A request has been approved and requires your action:"),
             NotificationScenario.RequestApproved when approver != null => Req($"Your request has been approved by {approver}:"),
-            NotificationScenario.RequestRejected when approver != null => Req($"Your request has been rejected by {approver}:") is { } q2 ? WithReason(q2) : null,
-            NotificationScenario.RequestRevertedForRework when approver != null => Req($"Your request has been reverted by {approver} for rework:") is { } q3 ? WithReason(q3) : null,
+            NotificationScenario.RequestRejected when approver != null => Req(forApprover ? $"A request you approved has been rejected by {approver}:" : $"Your request has been rejected by {approver}:") is { } q2 ? WithReason(q2) : null,
+            NotificationScenario.RequestRevertedForRework when approver != null => Req(forApprover ? $"A request you approved has been reverted by {approver} for rework:" : $"Your request has been reverted by {approver} for rework:") is { } q3 ? WithReason(q3) : null,
             NotificationScenario.OverdueRequestReminder => Req("This request is overdue. Please process it immediately:"),
             _ => null,
         };
@@ -933,6 +971,17 @@ public class NotificationComponent
         {
             if (reason == null && optional) return x;
             x.Fields.Add((label, Reason(reason)));
+            return x;
+        }
+        (string Lead, List<(string, string)> Fields) WithApprover((string Lead, List<(string, string)> Fields) x, string by)
+        {
+            x.Fields.Add(("Re-approved By", by));
+            return x;
+        }
+        (string Lead, List<(string, string)> Fields) WithPrevious((string Lead, List<(string, string)> Fields) x)
+        {
+            var previous = Value("Previous V#");
+            if (previous != null) x.Fields.Add(("Previous Version Number", previous));
             return x;
         }
         (string, List<(string, string)>)? WithDate((string Lead, List<(string, string)> Fields) x, string label)

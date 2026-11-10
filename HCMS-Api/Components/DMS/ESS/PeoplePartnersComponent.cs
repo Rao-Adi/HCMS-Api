@@ -224,7 +224,7 @@ public class PeoplePartnersComponent
                             ejp.roleid AS role_id
                         FROM tblEmployee e
                         {joinClause}
-                        WHERE e.CompanyId = @CompanyId AND e.Active = 1 {searchCondition}
+                        WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) IN (1, 2) {searchCondition}
                         ORDER BY {innerSortColumn} {sortDirection}
                         LIMIT @PageSize OFFSET @Offset
                     )
@@ -255,7 +255,7 @@ public class PeoplePartnersComponent
                 SELECT COUNT(1) 
                 FROM tblEmployee e 
                 {joinClause}
-                WHERE e.CompanyId = @CompanyId AND e.Active = 1 {searchCondition};";
+                WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) IN (1, 2) {searchCondition};";
 
             var items = (await _common.QueryAsync<dynamic>(dataSql, queryParams)).ToList();
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
@@ -279,7 +279,7 @@ public class PeoplePartnersComponent
     //    var offset = (input.PageNumber - 1) * input.PageSize;
     //    var search = input.SearchText?.Replace("'", "''").ToUpper();
 
-    //    var whereClause = "WHERE e.CompanyId = @CompanyId AND e.Active = 1";
+    //    var whereClause = "WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) IN (1, 2)";
     //    if (!string.IsNullOrWhiteSpace(search))
     //    {
     //        whereClause += $" AND (UPPER(e.firstname) LIKE '%{search}%' OR UPPER(e.lastname) LIKE '%{search}%' OR UPPER(e.empcode) LIKE '%{search}%' OR UPPER(e.email) LIKE '%{search}%' OR UPPER(COALESCE(des.name, des_fallback.name)) LIKE '%{search}%' OR UPPER(r.name) LIKE '%{search}%')";
@@ -360,7 +360,7 @@ public class PeoplePartnersComponent
         int companyId = int.Parse(companyIdStr);
         var search = input.SearchText?.Replace("'", "''").ToUpper();
 
-        var whereClause = "WHERE e.CompanyId = @CompanyId AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1";
+        var whereClause = "WHERE e.CompanyId = @CompanyId AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) IN (1, 2)";
 
         // The grid row's Division / Department / Sub-Department are People Partners ids; blank means all of them.
         if (!string.IsNullOrWhiteSpace(input.DivisionCode)) whereClause += " AND e.divid::text = @DivisionCode";
@@ -589,7 +589,7 @@ public class PeoplePartnersComponent
             FROM tblEmployee e
             INNER JOIN tblempjobprofile ejp ON ejp.empid = e.empid AND COALESCE(ejp.Active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
             INNER JOIN tblsetupsdetail r ON r.sdlid = ejp.roleid AND r.smsid = 189
-            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) = 1 AND ejp.roleid IS NOT NULL
+            WHERE e.CompanyId = @CompanyId AND COALESCE(e.Active, 1) IN (1, 2) AND ejp.roleid IS NOT NULL
             ORDER BY r.name;", p)).ToList();
 
         return result;
@@ -602,9 +602,10 @@ public class PeoplePartnersComponent
             string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
             int CompanyId = int.Parse(_CompanyId);
 
-            // Active employees only: this feeds the "pick a person" dropdowns (approvers, authorizers,
+            // Current employees only: this feeds the "pick a person" dropdowns (approvers, authorizers,
             // transfer targets ...), and most of this company's records are leavers who cannot act on anything.
-            string query = $@"select empcode, firstname, midname, lastname from tblEmployee where CompanyId = {CompanyId} and COALESCE(Active, 1) = 1;";
+            // Active 1 = Active (Not Resigned), 2 = Active (Resigned but not Separated: still working their notice); 0 = Separated.
+            string query = $@"select empcode, firstname, midname, lastname from tblEmployee where CompanyId = {CompanyId} and COALESCE(Active, 1) IN (1, 2);";
 
             DataTable dt = await _common.ExecuteSqlQuery(query);
 

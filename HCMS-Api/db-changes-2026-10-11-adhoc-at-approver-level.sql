@@ -55,7 +55,7 @@ SELECT ws.id,
     wp.name AS workflowpolicyname,
     e.empcode AS employeecode,
     e.firstname,
-    e.midname,Ri
+    e.midname,
     e.lastname,
     dt.name AS documenttype,
     wp.documenttypecode,

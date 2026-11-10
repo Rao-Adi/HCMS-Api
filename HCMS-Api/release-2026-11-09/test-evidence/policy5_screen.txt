@@ -1,0 +1,9 @@
+add Head of Division to policy 5: 200 Workflow Step created successfully.
+
+Approval Sequence of the policy in your screenshot, as the screen now shows it:
+  1  Muhammad Wajahat Shahid    Role: Process Improvement Manager          Designation: Associate Manager - Process Improvement
+  2  Aafaq Ahmad                Role: Territory Sales Manager (TSM)        Designation: Sales Promotion Officer
+  3  Muhammad  Imtiaz           Role: Group Head of Quality Operations     Designation: Sr. Director - Quality Operations   <- Head of DIVISION
+
+reorder/save: 200
+stored in DB after save: [["1","011001011","-"],["2","002006086","-"],["3","-","DIVISION"]]

@@ -153,6 +153,10 @@ public class WorkFlowStepsFilterDto
     // Steps created by this call may add an ad-hoc approver while approving (see
     // DocumentComponent.ApproveDocumentAsync).
     public bool CanAddAdHocApprover { get; set; }
+
+    // "Head of Division" / "Head of Department" / "Head of Sub-Department" authority: DIVISION, DEPARTMENT or SUBDEPARTMENT.
+    // When set, the step names no person -- the head of that unit of the submitted document's cabinet approves.
+    public string? HeadScope { get; set; }
 }
 
 
@@ -214,4 +218,8 @@ public class WorkflowStepDefiniationReadDto : AuditableEntity
 
     // This step's approver may add an ad-hoc approver to the remaining sequence when approving.
     public bool CanAddAdHocApprover { get; set; }
+
+    // Set for a "Head of Division / Department / Sub-Department" step (DIVISION, DEPARTMENT, SUBDEPARTMENT): no person is named,
+    // the head is worked out from the document's cabinet when it is submitted.
+    public string? HeadScope { get; set; }
 }

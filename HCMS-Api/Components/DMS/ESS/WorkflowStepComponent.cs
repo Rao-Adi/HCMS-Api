@@ -227,6 +227,7 @@ public class WorkflowStepComponent
                         wsd.RequiresAllApprovals AS requiresallapprovals,
                         wsd.RequiresAllApprovals AS isparallelapproval,
                         wsd.CanAddAdHocApprover AS canaddadhocapprover,
+                        wsd.HeadScope AS headscope,
                         FALSE AS canedit,
                         FALSE AS requirecrossfunctionalhead,
                         e.empcode AS employeecode, 
@@ -363,13 +364,13 @@ public class WorkflowStepComponent
 
                     RoleId = GetValue<int>(rowDict, "roleid"),
                     DesignationId = GetValue<int>(rowDict, "designationid"),
-                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserRole = HeadStepNote(rowDict, GetValue<string>(rowDict, "role")),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
                     RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
 
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = employeeName,
+                    EmployeeName = HeadStepName(rowDict, employeeName),
 
                     Designation = GetValue<string>(rowDict, "designation"),
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
@@ -381,6 +382,7 @@ public class WorkflowStepComponent
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
                     CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
+                    HeadScope = GetValue<string>(rowDict, "headscope"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -393,6 +395,9 @@ public class WorkflowStepComponent
                 });
             }
 
+            // Head of Division / Department / Sub-Department steps name no person in the policy; show the person who holds it (their name,
+            // designation and role), as for any employee. A form preview uses the document's own cabinet, the policy screen the policy's.
+            await EnrichHeadStepsAsync(dtos, CompanyId, input.WorkflowPolicyId == 0 ? (Normalize(input.DivisionCode), Normalize(input.DepartmentCode), Normalize(input.SubDepartmentCode)) : null);
             return dtos;
         }
         catch (Exception ex)
@@ -472,13 +477,13 @@ public class WorkflowStepComponent
 
                     RoleId = GetValue<int>(rowDict, "roleid"),
                     DesignationId = GetValue<int>(rowDict, "designationid"),
-                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserRole = HeadStepNote(rowDict, GetValue<string>(rowDict, "role")),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
                     RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
 
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = employeeName,
+                    EmployeeName = HeadStepName(rowDict, employeeName),
 
                     Designation = GetValue<string>(rowDict, "designation"),
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
@@ -490,6 +495,7 @@ public class WorkflowStepComponent
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
                     CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
+                    HeadScope = GetValue<string>(rowDict, "headscope"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -502,6 +508,9 @@ public class WorkflowStepComponent
                 });
             }
 
+            // Head of Division / Department / Sub-Department steps name no person in the policy; show the person who holds it (their name,
+            // designation and role), as for any employee. A form preview uses the document's own cabinet, the policy screen the policy's.
+            await EnrichHeadStepsAsync(dtos, CompanyId, null);
             return dtos;
         }
         catch (Exception ex)
@@ -511,6 +520,76 @@ public class WorkflowStepComponent
     }
 
     // Helper method to safely get values from the dynamic row
+    /// <summary>
+    /// For each "Head of Division / Department / Sub-Department" step, shows the person who is that head -- name, designation, role and code,
+    /// exactly as an employee step shows them -- instead of the bare label. The unit is the one of <paramref name="cabinet"/> when given (a form
+    /// previewing the workflow its own document will take), otherwise of the step's policy. Where the unit is not known (a Division-level policy's
+    /// "Head of Department") or nobody is set up as head, the label stays with a note saying why.
+    /// </summary>
+    private async Task EnrichHeadStepsAsync(
+        List<WorkflowStepDefiniationReadDto> dtos, int companyId, (string? Division, string? Department, string? SubDepartment)? cabinet)
+    {
+        var headSteps = dtos.Where(d => WorkflowHeadResolver.NormalizeScope(d.HeadScope) != null).ToList();
+        if (headSteps.Count == 0) return;
+
+        var policyCabinets = new Dictionary<int, (string? Division, string? Department, string? SubDepartment)>();
+        foreach (var dto in headSteps)
+        {
+            var scope = WorkflowHeadResolver.NormalizeScope(dto.HeadScope)!;
+
+            (string? Division, string? Department, string? SubDepartment) unitCabinet;
+            if (cabinet != null)
+                unitCabinet = cabinet.Value;
+            else if (!policyCabinets.TryGetValue(dto.WorkflowPolicyId, out unitCabinet))
+            {
+                var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT NULLIF(TRIM(DivisionCode), '') AS divisioncode, NULLIF(TRIM(DepartmentCode), '') AS departmentcode,
+                           NULLIF(TRIM(SubDepartmentCode), '') AS subdepartmentcode
+                    FROM WorkflowPolicies WHERE Id = @Id AND CompanyId = @CompanyId;",
+                    new { Id = dto.WorkflowPolicyId, CompanyId = companyId });
+                unitCabinet = ((string?)row?.divisioncode, (string?)row?.departmentcode, (string?)row?.subdepartmentcode);
+                policyCabinets[dto.WorkflowPolicyId] = unitCabinet;
+            }
+
+            var unitCode = scope switch
+            {
+                WorkflowHeadResolver.Division => unitCabinet.Division,
+                WorkflowHeadResolver.Department => unitCabinet.Department,
+                _ => unitCabinet.SubDepartment
+            };
+            if (string.IsNullOrWhiteSpace(unitCode) || unitCode == "0")
+                continue; // unit not known here: the label and the "worked out when submitted" note already say it
+
+            var unit = scope == WorkflowHeadResolver.Division ? "Division" : scope == WorkflowHeadResolver.Department ? "Department" : "Sub-Department";
+            var (heads, unitName) = await WorkflowHeadResolver.FindHeadsAsync(_common, companyId, scope, unitCode, null);
+            if (heads.Count == 0)
+            {
+                dto.UserRole = $"No one is set up as the {unit} Head of \"{(string.IsNullOrWhiteSpace(unitName) ? unitCode : unitName)}\" yet";
+                continue;
+            }
+
+            dto.EmployeeName = string.Join(", ", heads.Select(h => h.Name).Where(n => n.Length > 0));
+            dto.EmployeeCode = string.Join(", ", heads.Select(h => h.EmpCode));
+            dto.Designation = string.Join(", ", heads.Select(h => h.Designation).Where(n => n.Length > 0).Distinct());
+            dto.UserRole = string.Join(", ", heads.Select(h => h.Role).Where(n => n.Length > 0).Distinct());
+        }
+    }
+
+    // A "Head of Division / Department / Sub-Department" step has no person: show what it stands for instead of a blank name.
+    private static string HeadStepName(IDictionary<string, object> row, string employeeName)
+    {
+        var label = WorkflowHeadResolver.Label(GetValue<string>(row, "headscope"));
+        return string.IsNullOrEmpty(label) ? employeeName : label;
+    }
+
+    private static string? HeadStepNote(IDictionary<string, object> row, string? role)
+    {
+        var scope = WorkflowHeadResolver.NormalizeScope(GetValue<string>(row, "headscope"));
+        if (scope == null) return role;
+        var unit = scope == WorkflowHeadResolver.Division ? "Division" : scope == WorkflowHeadResolver.Department ? "Department" : "Sub-Department";
+        return "Worked out when submitted, from the document's " + unit;
+    }
+
     private static T GetValue<T>(IDictionary<string, object> row, string columnName)
     {
         if (row.ContainsKey(columnName) && row[columnName] != null && row[columnName] != DBNull.Value)
@@ -558,7 +637,7 @@ public class WorkflowStepComponent
                 LEFT JOIN public.tblEmployee e 
                     ON e.empid = ejp.empid 
                     AND e.CompanyId = @CompanyId 
-                    AND COALESCE(e.Active, 1) = 1
+                    AND COALESCE(e.Active, 1) IN (1, 2)
                 WHERE wes.WorkflowExecutionId = @ExecutionId 
                   AND wes.StepOrder = @StepOrder
                   AND wes.CompanyId = @CompanyId
@@ -965,7 +1044,36 @@ public class WorkflowStepComponent
             bool hasRoleOrDesignation = (filters.Roles != null && filters.Roles.Any(r => r > 0)) ||
                                         (filters.DesignationCodes != null && filters.DesignationCodes.Any());
 
-            if (hasRoleOrDesignation)
+            // "Head of Division / Department / Sub-Department": a step with no person, only the scope. The head is worked out at
+            // submit time from the document's cabinet (WorkflowHeadResolver).
+            string? headScope = WorkflowHeadResolver.NormalizeScope(filters.HeadScope);
+            if (!string.IsNullOrWhiteSpace(filters.HeadScope) && headScope == null)
+                throw new CustomException("Unknown Head authority. Choose Head of Division, Department or Sub-Department.", 400);
+
+            if (headScope != null)
+            {
+                var existingHeadStepCount = await _dapperService.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(1)
+                    FROM WorkflowStepDefinitions
+                    WHERE WorkflowPolicyVersionId = @VersionId
+                      AND HeadScope = @HeadScope
+                      AND CompanyId = @CompanyId
+                      AND IsActive = TRUE
+                      AND IsDeleted = FALSE;",
+                    new { VersionId = versionId, HeadScope = headScope, CompanyId });
+
+                if (existingHeadStepCount > 0)
+                    throw new CustomException($"{WorkflowHeadResolver.Label(headScope)} is already in the approval sequence of this policy.", 409);
+
+                await _dapperService.ExecuteAsync(@"
+                    INSERT INTO WorkflowStepDefinitions
+                    (CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, HeadScope, RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy)
+                    VALUES
+                    (@CompanyId, @VersionId, @StepOrder, 1, @StepType, NULL, NULL, NULL, @HeadScope, @RequiresAllApprovals, FALSE, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy);",
+                    new { CompanyId, VersionId = versionId, StepOrder = nextOrder, filters.StepType, HeadScope = headScope, RequiresAllApprovals = filters.IsParallelApproval, CreatedBy = empCode });
+                nextOrder++;
+            }
+            else if (hasRoleOrDesignation)
             {
                 if (filters.Roles != null && filters.Roles.Any(r => r > 0))
                 {
@@ -1093,6 +1201,7 @@ public class WorkflowStepComponent
                             wsd.RequiresAllApprovals AS requiresallapprovals,
                             wsd.RequiresAllApprovals AS isparallelapproval,
                             wsd.CanAddAdHocApprover AS canaddadhocapprover,
+                        wsd.HeadScope AS headscope,
                             FALSE AS canedit,
                             FALSE AS requirecrossfunctionalhead,
                             e.empcode AS employeecode, 
@@ -1185,13 +1294,13 @@ public class WorkflowStepComponent
 
                     RoleId = GetValue<int>(rowDict, "roleid"),
                     DesignationId = GetValue<int>(rowDict, "designationid"),
-                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserRole = HeadStepNote(rowDict, GetValue<string>(rowDict, "role")),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
                     RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
 
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = employeeName,
+                    EmployeeName = HeadStepName(rowDict, employeeName),
 
                     Designation = GetValue<string>(rowDict, "designation"),
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
@@ -1203,6 +1312,7 @@ public class WorkflowStepComponent
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
                     CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
+                    HeadScope = GetValue<string>(rowDict, "headscope"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
 
                     IsActive = GetValue<bool>(rowDict, "isactive"),
@@ -1215,6 +1325,9 @@ public class WorkflowStepComponent
                 });
             }
 
+            // Head of Division / Department / Sub-Department steps name no person in the policy; show the person who holds it (their name,
+            // designation and role), as for any employee. A form preview uses the document's own cabinet, the policy screen the policy's.
+            await EnrichHeadStepsAsync(dtos, CompanyId, null);
             return dtos;
         }
         catch (Exception ex)
@@ -1718,12 +1831,12 @@ public class WorkflowStepComponent
                     await _dapperService.ExecuteAsync(@"
                         INSERT INTO WorkflowStepDefinitions
                         (
-                            CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, 
+                            CompanyId, WorkflowPolicyVersionId, StepOrder, StepGroup, StepType, RoleId, DesignationId, UserId, HeadScope,
                             RequiresAllApprovals, CanAddAdHocApprover, IsActive, IsDeleted, CreatedAt, CreatedBy, LastModifiedAt, LastModifiedBy
                         )
                         VALUES
                         (
-                            @CompanyId, @VersionId, @StepOrder, @StepGroup, @StepType, @RoleId, @DesignationId, @UserId, 
+                            @CompanyId, @VersionId, @StepOrder, @StepGroup, @StepType, @RoleId, @DesignationId, @UserId, @HeadScope,
                             @RequiresAllApprovals, @CanAddAdHocApprover, TRUE, FALSE, NOW(), @CreatedBy, NOW(), @CreatedBy
                         );",
                     new
@@ -1736,6 +1849,9 @@ public class WorkflowStepComponent
                         RoleId = step.RoleId > 0 ? step.RoleId : (int?)null,
                         DesignationId = step.DesignationId > 0 ? step.DesignationId : (int?)null,
                         UserId = !string.IsNullOrWhiteSpace(step.UserId) ? step.UserId : null,
+                        // Only a step that really is a Head step keeps its scope; anything else is stored without one.
+                        HeadScope = string.IsNullOrWhiteSpace(step.UserId) && step.RoleId is not > 0 && step.DesignationId is not > 0
+                            ? WorkflowHeadResolver.NormalizeScope(step.HeadScope) : null,
                         step.RequiresAllApprovals,
                         step.CanAddAdHocApprover,
                         CreatedBy = empCode
@@ -1794,6 +1910,7 @@ public class WorkflowStepComponent
                     wsd.RequiresAllApprovals AS requiresallapprovals,
                     wsd.RequiresAllApprovals AS isparallelapproval,
                     wsd.CanAddAdHocApprover AS canaddadhocapprover,
+                        wsd.HeadScope AS headscope,
                     FALSE AS canedit,
                     FALSE AS requirecrossfunctionalhead,
                     e.empcode AS employeecode, 
@@ -1816,7 +1933,7 @@ public class WorkflowStepComponent
                 JOIN WorkflowPolicies wp ON wp.Id = wpv.WorkflowPolicyId
                 LEFT JOIN Companies c ON c.Id = wsd.CompanyId
                 LEFT JOIN DocumentTypes dt ON dt.Code = wp.DocumentTypeCode
-                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) = 1
+                LEFT JOIN tblEmployee e ON wsd.UserId IS NOT NULL AND LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(wsd.UserId::text), '0') AND e.CompanyId = wsd.CompanyId AND COALESCE(e.Active, 1) IN (1, 2)
                 LEFT JOIN tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE AND ejp.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r_step ON wsd.RoleId IS NOT NULL AND r_step.sdlid = wsd.RoleId  AND r_step.CompanyId = @CompanyId
                 LEFT JOIN tblsetupsdetail r_emp ON ejp.roleid IS NOT NULL AND r_emp.sdlid = ejp.roleid AND r_emp.CompanyId = @CompanyId
@@ -1859,12 +1976,12 @@ public class WorkflowStepComponent
                     StepType = GetValue<string>(rowDict, "steptype"),
                     RoleId = GetValue<int>(rowDict, "roleid"),
                     DesignationId = GetValue<int>(rowDict, "designationid"),
-                    UserRole = GetValue<string>(rowDict, "role"),
+                    UserRole = HeadStepNote(rowDict, GetValue<string>(rowDict, "role")),
                     UserId = GetValue<int>(rowDict, "userid"),
                     ApprovalLevel = GetValue<int>(rowDict, "approvallevel"),
                     RequiresAllApprovals = GetValue<bool>(rowDict, "requiresallapprovals"),
                     EmployeeCode = GetValue<string>(rowDict, "employeecode"),
-                    EmployeeName = employeeName,
+                    EmployeeName = HeadStepName(rowDict, employeeName),
                     Designation = GetValue<string>(rowDict, "designation"),
                     DesignationCode = GetValue<string>(rowDict, "designationcode"),
                     DocumentType = GetValue<string>(rowDict, "documenttype"),
@@ -1872,6 +1989,7 @@ public class WorkflowStepComponent
                     CanEdit = GetValue<bool>(rowDict, "canedit"),
                     IsParallelApproval = GetValue<bool>(rowDict, "isparallelapproval"),
                     CanAddAdHocApprover = GetValue<bool>(rowDict, "canaddadhocapprover"),
+                    HeadScope = GetValue<string>(rowDict, "headscope"),
                     RequireCrossFunctionalHead = GetValue<bool>(rowDict, "requirecrossfunctionalhead"),
                     IsActive = GetValue<bool>(rowDict, "isactive"),
                     IsDeleted = GetValue<bool>(rowDict, "isdeleted"),
@@ -1882,6 +2000,9 @@ public class WorkflowStepComponent
                 });
             }
 
+            // Head of Division / Department / Sub-Department steps name no person in the policy; show the person who holds it (their name,
+            // designation and role), as for any employee. A form preview uses the document's own cabinet, the policy screen the policy's.
+            await EnrichHeadStepsAsync(dtos, CompanyId, null);
             return dtos;
         }
         catch (Exception)

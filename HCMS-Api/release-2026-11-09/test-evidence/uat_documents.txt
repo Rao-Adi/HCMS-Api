@@ -1,0 +1,22 @@
+id | documentnumber | title | t | state | versions | nextreviewdate
+27 | IT-POL-001 | Testing 14/10 | DT-0006 | EFFECTIVE | 1.0(Reverted) 1.1(Revised) 2.0(Reverted) 2.1 | 2028-10-14
+28 | HR-HO-TRA-POL-001 | Testing Hr Policy | DT-0006 | PENDING_APPROVAL | 1.0 | 2028-10-14
+29 | IT-POL-002 | Testing  | DT-0006 | APPROVED | 1.0 | 2028-10-14
+30 | HR-HO-TRA-POL-002 | Testing - Revision Workflow | DT-0006 | OBSOLETE | 1.0(Revised) 2.0(Obsoleted) | 2028-10-15
+31 | IT-II-POL-001 | Testing - IT policy  | DT-0006 | DRAFT | 1.0 | 2028-10-15
+32 | IT-POL-003 | test  | DT-0006 | PENDING_APPROVAL | 1.0 | 2028-10-15
+33 | IT-POL-004 | Testing AD-hoc approver | DT-0006 | PENDING_APPROVAL | 1.0 | 2028-10-16
+34 | IT-II-POL-002 | Testing - Revision | DT-0006 | OBSOLETE | 1.0(Revised) 2.0(Obsoleted) | 2028-10-20
+35 | IT-II-POL-003 | Testing Doc 23/10 | DT-0006 | EFFECTIVE | 1.0(Revised) 2.0 | 2028-10-23
+36 | IT-POL-005 | testing 26/10 | DT-0006 | EFFECTIVE | 1.0(Reverted) 1.1 | 2028-10-26
+37 | 23 | 23 | DT-0006 | EFFECTIVE | 3 | 2026-10-21
+38 | IT-II-SOP-001 | Doc-color-test-1 | DT-0001 | PENDING_APPROVAL | 1.0 | 2028-10-27
+39 | IT-II-SOP-002 | Doc-color-test-2 | DT-0001 | PENDING_APPROVAL | 1.0 | 2028-10-27
+40 | SC-DIS-OP-POL-001 | Testing | DT-0006 | APPROVED | 1.0 | 2028-10-28
+41 | QC/STM/RM/013 | ANHYDROUS SODIUM SULPHITE | DT-0006 | EFFECTIVE | 1 | 2027-06-29
+42 | IT-II-SOP-003 | Distributionlist all test 1 | DT-0001 | PENDING_APPROVAL | 1.0 | 2028-10-28
+43 | IT-II-SOP-004 | Doc-17/10/2026-test 1 | DT-0001 | EFFECTIVE | 1.0 | 2028-10-28
+44 | IT-II-POL-004 | Testing 29/10 | DT-0006 | EFFECTIVE | 1.0 | 2028-10-29
+45 | IT-II-POL-005 | testung | DT-0006 | PENDING_APPROVAL | 1.0 | 2028-11-04
+46 | IT-II-SOP-005 | Doc-Adhock-test-1 | DT-0001 | PENDING_APPROVAL | 1.0 | 2028-11-04
+(20 rows)

@@ -153,7 +153,7 @@ public class ResponsibilityTransferComponent
                     FROM public.tblEmployee e
                     INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE 
                     INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) = 1 AND e.CompanyId = @CompanyId LIMIT 1",
+                    WHERE ual.DivisionCode = @DivCode AND ejp.roleid = @RoleId AND COALESCE(e.Active, 1) IN (1, 2) AND e.CompanyId = @CompanyId LIMIT 1",
                     new { DivCode = empFromDetails.divisionid, RoleId = approvalRoleId, CompanyId = CompanyId });
             }
 
@@ -166,7 +166,7 @@ public class ResponsibilityTransferComponent
                 //    INNER JOIN public.tblempjobprofile ejp ON e.empid = ejp.empid AND COALESCE(ejp.active, TRUE) = TRUE
                 //    INNER JOIN public.tblsetupsdetail r ON ejp.roleid = r.sdlid
                 //    INNER JOIN public.UserAccessLevels ual ON LTRIM(RTRIM(ual.EmployeeCode::text), '0') = LTRIM(RTRIM(e.empcode::text), '0') AND ual.IsActive = TRUE
-                //    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) = 1 LIMIT 1", 
+                //    WHERE ual.DivisionCode = @DivCode AND r.name = 'Division Head' AND COALESCE(e.Active, 1) IN (1, 2) LIMIT 1", 
                 //    new { DivCode = empFromDetails.divisioncode });
                 var defaultDivHead = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
                     SELECT 
@@ -394,8 +394,8 @@ public class ResponsibilityTransferComponent
                          SELECT rt.*, c.Id AS CompanyId, c.Name AS Company, uf.EmployeeName AS EmployeeFromName, ut.EmployeeName AS EmployeeToName
                             FROM ResponsibilityTransfers rt
                             LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                            LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empcode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) IN (1, 2)
+                            LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empcode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) IN (1, 2)
                         {whereClause}
                         ORDER BY {sortColumn} {sortDirection}
                         OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;
@@ -681,8 +681,8 @@ public class ResponsibilityTransferComponent
                 LTRIM(RTRIM(COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.firstname, '') || ' ' || COALESCE(ut.lastname, ''))) AS EmployeeToName
                 FROM ResponsibilityTransfers rt
                 LEFT JOIN Companies c ON rt.CompanyId = c.Id
-                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) = 1
-                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) = 1
+                LEFT JOIN tblEmployee uf ON rt.EmployeeFrom = uf.empCode AND uf.CompanyId = rt.CompanyId AND COALESCE(uf.Active, 1) IN (1, 2)
+                LEFT JOIN tblEmployee ut ON rt.EmployeeTo = ut.empCode AND ut.CompanyId = rt.CompanyId AND COALESCE(ut.Active, 1) IN (1, 2)
                 {whereClause}
                 ORDER BY {sortColumn} {sortDirection}
                 OFFSET {offset} ROWS FETCH NEXT {input.PageSize} ROWS ONLY;";

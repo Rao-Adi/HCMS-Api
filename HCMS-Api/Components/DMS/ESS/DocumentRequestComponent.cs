@@ -552,7 +552,7 @@ public class DocumentRequestComponent
                 }, transaction);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, HeadScope
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
                   -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
@@ -579,6 +579,11 @@ public class DocumentRequestComponent
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
+
+                    // Separated (HCMS status 0): cannot approve any more -- skip this step, the document goes to the next approver.
+
+                    if (await EmployeeStatusHelper.IsSeparatedAsync(_common, CompanyId, actualUserId, transaction)) continue;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
@@ -587,6 +592,14 @@ public class DocumentRequestComponent
                     runningStepOrder++;
                     insertedSteps++;
                 }
+                // "Head of Division / Department / Sub-Department" step: names no person, so the head of that unit of the request's
+                // cabinet is worked out now (see WorkflowHeadResolver) and added as ordinary approver steps.
+                else if (stepDef.headscope != null)
+                {
+                    int addedHeadSteps = await InsertHeadApproverStepsAsync(CompanyId, executionId, (int)stepDef.id, (string)stepDef.headscope, requestId, runningStepOrder, transaction);
+                    runningStepOrder += addedHeadSteps;
+                    insertedSteps += addedHeadSteps;
+                }
                 else if (stepDef.roleid != null || stepDef.designationid != null)
                 {
                     var employees = await _common.QueryAsync<string>(@"
@@ -594,7 +607,7 @@ public class DocumentRequestComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId 
-                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(e.Active, 1) IN (1, 2)           -- Must be an active employee
                           AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
@@ -865,7 +878,7 @@ public class DocumentRequestComponent
                 }, transaction);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, HeadScope
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
                   -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
@@ -892,6 +905,11 @@ public class DocumentRequestComponent
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
+
+                    // Separated (HCMS status 0): cannot approve any more -- skip this step, the document goes to the next approver.
+
+                    if (await EmployeeStatusHelper.IsSeparatedAsync(_common, CompanyId, actualUserId, transaction)) continue;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
@@ -900,6 +918,14 @@ public class DocumentRequestComponent
                     runningStepOrder++;
                     insertedSteps++;
                 }
+                // "Head of Division / Department / Sub-Department" step: names no person, so the head of that unit of the request's
+                // cabinet is worked out now (see WorkflowHeadResolver) and added as ordinary approver steps.
+                else if (stepDef.headscope != null)
+                {
+                    int addedHeadSteps = await InsertHeadApproverStepsAsync(CompanyId, executionId, (int)stepDef.id, (string)stepDef.headscope, requestId, runningStepOrder, transaction);
+                    runningStepOrder += addedHeadSteps;
+                    insertedSteps += addedHeadSteps;
+                }
                 else if (stepDef.roleid != null || stepDef.designationid != null)
                 {
                     var employees = await _common.QueryAsync<string>(@"
@@ -907,7 +933,7 @@ public class DocumentRequestComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId
-                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(e.Active, 1) IN (1, 2)           -- Must be an active employee
                           AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
@@ -1379,7 +1405,7 @@ public class DocumentRequestComponent
                 }, tx);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, HeadScope
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
                   -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
@@ -1406,12 +1432,25 @@ public class DocumentRequestComponent
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
+
+                    // Separated (HCMS status 0): cannot approve any more -- skip this step, the document goes to the next approver.
+
+                    if (await EmployeeStatusHelper.IsSeparatedAsync(_common, CompanyId, actualUserId, tx)) continue;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
                         new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
                     runningStepOrder++;
                     inserted++;
+                }
+                // "Head of Division / Department / Sub-Department" step: names no person, so the head of that unit of the request's
+                // cabinet is worked out now (see WorkflowHeadResolver) and added as ordinary approver steps.
+                else if (stepDef.headscope != null)
+                {
+                    int addedHeadSteps = await InsertHeadApproverStepsAsync(CompanyId, executionId, (int)stepDef.id, (string)stepDef.headscope, submittedRequestId, runningStepOrder, tx);
+                    runningStepOrder += addedHeadSteps;
+                    inserted += addedHeadSteps;
                 }
                 else if (stepDef.roleid != null || stepDef.designationid != null)
                 {
@@ -1420,7 +1459,7 @@ public class DocumentRequestComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId 
-                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(e.Active, 1) IN (1, 2)           -- Must be an active employee
                           AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
@@ -1760,7 +1799,7 @@ public class DocumentRequestComponent
                 }, tx);
 
             var stepDefs = await _common.QueryAsync<dynamic>(@"
-                SELECT Id, UserId, RoleId, DesignationId, StepOrder
+                SELECT Id, UserId, RoleId, DesignationId, StepOrder, HeadScope
                 FROM WorkflowStepDefinitions
                 WHERE WorkflowPolicyVersionId = @VersionId AND CompanyId = @CompanyId
                   -- Only live steps: the preview shown on the form and the policy screen ignore switched-off / deleted ones, so
@@ -1787,12 +1826,25 @@ public class DocumentRequestComponent
 
                     if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
 
+
+                    // Separated (HCMS status 0): cannot approve any more -- skip this step, the document goes to the next approver.
+
+                    if (await EmployeeStatusHelper.IsSeparatedAsync(_common, CompanyId, actualUserId, tx)) continue;
+
                     await _common.ExecuteAsync(@"
                         INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
                         VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
                         new { CompanyId, ExecutionId = executionId, StepDefId = stepDef.id, UserId = actualUserId, StepOrder = runningStepOrder }, tx);
                     runningStepOrder++;
                     inserted++;
+                }
+                // "Head of Division / Department / Sub-Department" step: names no person, so the head of that unit of the request's
+                // cabinet is worked out now (see WorkflowHeadResolver) and added as ordinary approver steps.
+                else if (stepDef.headscope != null)
+                {
+                    int addedHeadSteps = await InsertHeadApproverStepsAsync(CompanyId, executionId, (int)stepDef.id, (string)stepDef.headscope, submittedRequestId, runningStepOrder, tx);
+                    runningStepOrder += addedHeadSteps;
+                    inserted += addedHeadSteps;
                 }
                 else if (stepDef.roleid != null || stepDef.designationid != null)
                 {
@@ -1801,7 +1853,7 @@ public class DocumentRequestComponent
                         FROM public.tblempjobprofile ejp
                         INNER JOIN public.tblEmployee e ON e.empid = ejp.empid
                         WHERE e.CompanyId = @CompanyId
-                          AND COALESCE(e.Active, 1) = 1           -- Must be an active employee
+                          AND COALESCE(e.Active, 1) IN (1, 2)           -- Must be an active employee
                           AND COALESCE(ejp.Active, TRUE) = TRUE   -- Must currently hold this role
                           AND ((@RoleId::int IS NOT NULL AND ejp.roleid = @RoleId::int) OR (@DesignationId::int IS NOT NULL AND ejp.dsgid = @DesignationId::int))
                         ORDER BY e.empid ASC;",
@@ -2016,7 +2068,7 @@ public class DocumentRequestComponent
                         @CreatedBy,
                         @LastModifiedBy
                     FROM DocumentRequestRoleDistributions dr
-                    INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) = 1  AND e.CompanyId = @CompanyId
+                    INNER JOIN tblEmployee e ON e.CompanyId = dr.CompanyId AND COALESCE(e.Active, 1) IN (1, 2)  AND e.CompanyId = @CompanyId
                     INNER JOIN TblEmpJobProfile ejp ON e.empid = ejp.empid AND COALESCE(ejp.Active, TRUE) = TRUE  AND ejp.CompanyId = @CompanyId
                     WHERE dr.DocumentRequestId = @RequestId
                       AND dr.CompanyId = @CompanyId
@@ -3235,10 +3287,8 @@ public class DocumentRequestComponent
                 );",
                     new { ExecutionId = executionId, CompanyId, RejectedStatus = DocumentRequestStatus.Rejected, EmpCode = empCode }, tx); // Or whatever your enum uses for Rejected
 
-                if (initiatorId != string.Empty)
-                {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRejected, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
-                }
+                // The initiator and every approver who had already approved the request are told (email + in-app).
+                await NotifyRejectRevertAsync(NotificationScenario.RequestRejected, CompanyId, executionId, (int)requestInfo!.id, empCode, initiatorId, notifyPlaceholders, tx);
 
                 var rejectSnapshotJson = await BuildRequestSnapshotJson(CompanyId, (long)requestInfo!.id, tx);
                 await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Rejected", "DocumentRequest",
@@ -3283,10 +3333,8 @@ public class DocumentRequestComponent
                         : "Reverted for rework: " + input.Observation,
                     tx);
 
-                if (initiatorId != string.Empty)
-                {
-                    await _notificationComponent.TriggerNotificationAsync(NotificationScenario.RequestRevertedForRework, CompanyId, (int)requestInfo!.id, initiatorId, notifyPlaceholders, tx);
-                }
+                // The initiator and every approver who had already approved the request are told (email + in-app).
+                await NotifyRejectRevertAsync(NotificationScenario.RequestRevertedForRework, CompanyId, executionId, (int)requestInfo!.id, empCode, initiatorId, notifyPlaceholders, tx);
 
                 var reworkSnapshotJson = await BuildRequestSnapshotJson(CompanyId, (long)requestInfo!.id, tx);
                 await _auditLogComponent.LogActionAsync(CompanyId, empCode, "Document Request Reverted for Rework", "DocumentRequest",
@@ -3305,6 +3353,9 @@ public class DocumentRequestComponent
             bool workflowCompleted = false;
             if (pending == 1) // YOU were the final approver
             {
+                // A later approver who has left the company (HCMS status 0) is skipped: the request goes to the next one.
+                await EmployeeStatusHelper.RemoveSeparatedWaitingStepsAsync(_common, CompanyId, Convert.ToInt64(executionId), Convert.ToInt32(stepOrder), tx);
+
                 //-------------------------------------------------
                 // Find next step (NO JOIN — execution only)
                 //-------------------------------------------------
@@ -4526,7 +4577,47 @@ public class DocumentRequestComponent
                          THEN split_part(dv.Version, '.', 2)::int ELSE -1 END DESC,
                     dv.Id DESC;";
 
-            return await _common.QueryAsync<RevisionHistoryItemDto>(sql, new { DocumentId = documentId, CompanyId });
+            var versions = (await _common.QueryAsync<RevisionHistoryItemDto>(sql, new { DocumentId = documentId, CompanyId })).ToList();
+
+            // Periodic reviews re-approved without change (DocumentReviews) are part of the history of the version they were made on: each is a
+            // "Re-approved - no change" row, newest first, just above the version it belongs to.
+            var reviews = (await _common.QueryAsync<dynamic>(@"
+                SELECT r.DocumentId, r.Version, r.ReviewedAt, r.Remarks,
+                       COALESCE((SELECT ven.employeename FROM Vw_employeeNames ven
+                                 WHERE ven.cleanempcode = LTRIM(RTRIM(r.ReviewedBy::text), '0')
+                                 ORDER BY (ven.companyid = @CompanyId) DESC LIMIT 1), r.ReviewedBy) AS ReviewedByName
+                FROM DocumentReviews r
+                WHERE r.CompanyId = @CompanyId AND r.IsDeleted = FALSE
+                  AND r.DocumentId = @DocumentId
+                ORDER BY r.ReviewedAt DESC, r.Id DESC;",
+                new { DocumentId = documentId, CompanyId })).ToList();
+
+            if (reviews.Count == 0)
+                return versions;
+
+            var merged = new List<RevisionHistoryItemDto>();
+            foreach (var version in versions)
+            {
+                foreach (var review in reviews.Where(x => string.Equals((string?)x.version, version.Version, StringComparison.OrdinalIgnoreCase)
+                                                          && (int)x.documentid == version.DocumentId))
+                {
+                    merged.Add(new RevisionHistoryItemDto
+                    {
+                        DocumentId = version.DocumentId,
+                        DocumentNumber = version.DocumentNumber,
+                        DocumentName = version.DocumentName,
+                        ParentDocumentId = version.ParentDocumentId,
+                        Version = version.Version,
+                        Justification = (string?)review.remarks,
+                        ApprovedOn = (DateTime?)review.reviewedat,
+                        ApprovedBy = (string?)review.reviewedbyname,
+                        CurrentStatus = "Re-approved - no change",
+                        IsCurrentVersion = false
+                    });
+                }
+                merged.Add(version);
+            }
+            return merged;
         }
         catch (Exception ex)
         {
@@ -4582,9 +4673,65 @@ public class DocumentRequestComponent
          PROMOTE Audience ✅
              ↓
          Document Draft 1.0 Ready */
+    /// <summary>
+    /// Tells the initiator(s) and every approver who had already approved the request (the earlier steps of the same workflow) that it was
+    /// Rejected / Reverted for rework. The previous approvers get "a request you approved" wording (Audience = Approver).
+    /// </summary>
+    private async Task NotifyRejectRevertAsync(
+        NotificationScenario scenario, int companyId, int executionId, int requestId, string? actorCode, string? initiatorCode,
+        Dictionary<string, string> placeholders, IDbTransaction tx)
+    {
+        var (initiators, previousApprovers) = await _documentComponent.GetRejectRevertRecipientsAsync(
+            companyId, executionId, "Request", requestId, actorCode, new[] { initiatorCode }, tx);
+
+        foreach (var initiator in initiators)
+            await _notificationComponent.TriggerNotificationAsync(scenario, companyId, requestId, initiator, placeholders, tx);
+
+        var approverPlaceholders = new Dictionary<string, string>(placeholders) { ["Audience"] = "Approver" };
+        foreach (var approver in previousApprovers)
+            await _notificationComponent.TriggerNotificationAsync(scenario, companyId, requestId, approver, approverPlaceholders, tx);
+    }
+
     /// <summary>A cabinet code the user left unset, as NULL rather than an empty string.</summary>
     private static string? BlankToNull(string? code) =>
         string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+
+    /// <summary>
+    /// Snapshots a "Head of Division / Department / Sub-Department" policy step into the execution: the head(s) of that unit of
+    /// the request's cabinet become ordinary approver steps starting at <paramref name="startOrder"/>, exactly like a step that
+    /// names an employee (including a standing Responsibility Transfer). Returns how many steps were added; throws when no head
+    /// can be found, so a request is never submitted with nobody to approve it.
+    /// </summary>
+    private async Task<int> InsertHeadApproverStepsAsync(
+        int companyId, long executionId, int stepDefId, string headScope, long requestId, int startOrder, IDbTransaction tx)
+    {
+        var heads = await WorkflowHeadResolver.ResolveAsync(
+            _common, companyId, headScope, "Request", requestId, tx);
+
+        int order = startOrder;
+        foreach (var head in heads)
+        {
+            string actualUserId = head;
+            var transferTo = await _common.ExecuteScalarAsync<string>(@"
+                SELECT EmployeeTo FROM ResponsibilityTransfers
+                WHERE EmployeeFrom = @EmpFrom
+                AND CompanyId = @CompanyId AND Status = 2
+                AND EffectiveDateFrom <= CURRENT_DATE
+                AND (EffectiveDateTo IS NULL OR EffectiveDateTo >= CURRENT_DATE)
+                ORDER BY Id DESC LIMIT 1;",
+                new { EmpFrom = actualUserId, CompanyId = companyId }, tx);
+
+            if (!string.IsNullOrEmpty(transferTo)) actualUserId = transferTo;
+
+            await _common.ExecuteAsync(@"
+                INSERT INTO WorkflowExecutionSteps (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId, StepOrder, Observation, IsActive)
+                VALUES (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE);",
+                new { CompanyId = companyId, ExecutionId = executionId, StepDefId = stepDefId, UserId = actualUserId, StepOrder = order }, tx);
+            order++;
+        }
+
+        return order - startOrder;
+    }
 
     public async Task<int> CreateDocumentFromApprovedRequestAsync(int companyId, int requestId, string empCode, NpgsqlTransaction transaction)
     {
@@ -5264,7 +5411,10 @@ public class DocumentRequestComponent
     // for the shared core), but for a request that hasn't been promoted to a Document yet -- an
     // approver reviewing a pending request should see/download it exactly as it will look once
     // approved, including whichever approvers have actioned their step on this workflow so far.
-    public async Task<byte[]> MergeDocumentRequestTemplateAsync(int requestId, Stream? contentStream)
+    // Returns the Word file and whether the Distribution List / Document Users are printed inside it. They sit after the content and
+    // before the signature block, exactly as in a Document's download -- so the Preview (and Download) show them there instead of
+    // as separate tables under the footer. Embedded = false when they could not be read; the caller then lets the screen show them.
+    public async Task<(byte[] Bytes, bool ListsEmbedded)> MergeDocumentRequestTemplateAsync(int requestId, Stream? contentStream)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int companyId = int.Parse(_CompanyId);
@@ -5317,11 +5467,23 @@ public class DocumentRequestComponent
         // {{WritersName}} placeholders on every Request template an approver downloaded.
         var signatories = await _documentComponent.ResolveRequestSignatoriesAsync(companyId, requestId);
 
-        return await _documentComponent.MergeContentIntoTemplateAsync(
+        // The request's own Document Users and Distribution List. Never allowed to stop the document itself from being produced.
+        DocumentPreviewListsDto? distributionLists = null;
+        try
+        {
+            distributionLists = await _documentComponent.GetRequestPreviewListsAsync(requestId);
+        }
+        catch (Exception listEx)
+        {
+            Console.WriteLine($"[Preview] Distribution List / Document Users could not be read for Request {requestId}; downloading without them: {listEx.Message}");
+        }
+
+        var bytes = await _documentComponent.MergeContentIntoTemplateAsync(
             request.DocumentTypeCode,
             request.DivisionCode, request.DepartmentCode, request.SubDepartmentCode, request.BusinessDomainCode,
             placeholders, request.ProposedContent, contentStream, approvers,
-            watermarkText: null, signatories: signatories);
+            watermarkText: null, signatories: signatories, distributionLists: distributionLists);
+        return (bytes, distributionLists != null);
     }
 
 

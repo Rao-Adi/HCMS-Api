@@ -296,6 +296,7 @@ builder.Services.AddScoped<UserComponent>();
 builder.Services.AddScoped<UserRoleComponent>();
 builder.Services.AddScoped<WorkflowPolicyComponent>();
 builder.Services.AddScoped<WorkflowStepComponent>(); 
+builder.Services.AddScoped<WorkflowReconcileComponent>();
 builder.Services.AddScoped<DesignationComponent>(); 
 builder.Services.AddScoped<DistributionTypeComponent>();  
 builder.Services.AddScoped<CompanyComponent>();  

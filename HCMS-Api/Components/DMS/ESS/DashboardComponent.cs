@@ -250,25 +250,10 @@ public class DashboardComponent
             var activities = await _common.QueryAsync<RecentActivityDto>(auditQuery, new { CompanyId = CompanyId, EmpId = empCode });
             dashboardData.RecentActivities = activities.ToList();
 
-            // 5. Get Documents Approaching Review Date (Next 60 days)
-            string reviewQuery = @"
-                SELECT 
-                    d.Id AS DocumentId,
-                    d.DocumentNumber,
-                    d.Title,
-                    d.NextReviewDate ::text,
-                    EXTRACT(DAY FROM d.NextReviewDate - NOW()) AS DaysUntilReview
-                FROM Documents d
-                WHERE d.CompanyId = @CompanyId
-                  AND d.IsDeleted = FALSE
-                  AND d.IsActive = TRUE
-                  AND d.NextReviewDate IS NOT NULL
-                  AND d.NextReviewDate BETWEEN NOW() AND NOW() + INTERVAL '60 days'
-                ORDER BY d.NextReviewDate ASC
-                LIMIT 10;";
-
-            var approachingReview = await _common.QueryAsync<DashboardDocumentReviewDto>(reviewQuery, new { CompanyId = CompanyId });
-            dashboardData.DocumentsApproachingReview = approachingReview.ToList();
+            // 5. Documents approaching (or past) their Next Review Date: the ones this person can re-approve from "Due for Review"
+            //    (Effective, review date within 60 days, and they approved it -- or uploaded it, when it has no workflow). The same rule as that list,
+            //    so a document shown here is always found there.
+            dashboardData.DocumentsApproachingReview = await _documentComponent.GetDocumentsApproachingReviewForDashboardAsync(CompanyId, empCode);
 
             return dashboardData;
         }

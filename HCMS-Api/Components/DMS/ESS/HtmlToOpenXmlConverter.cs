@@ -442,12 +442,12 @@ public static class HtmlToOpenXmlConverter
             new TableWidth { Type = TableWidthUnitValues.Auto },
             new TableIndentation { Width = DefaultCellMarginTwips, Type = TableWidthUnitValues.Dxa },
             new TableBorders(
-                new TopBorder { Val = BorderValues.Single, Size = 4 },
-                new BottomBorder { Val = BorderValues.Single, Size = 4 },
-                new LeftBorder { Val = BorderValues.Single, Size = 4 },
-                new RightBorder { Val = BorderValues.Single, Size = 4 },
-                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4 },
-                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4 }
+                new TopBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new BottomBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new LeftBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new RightBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
+                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" }
             ),
             new TableCellMarginDefault(
                 new TopMargin { Width = "0", Type = TableWidthUnitValues.Dxa },
@@ -457,33 +457,121 @@ public static class HtmlToOpenXmlConverter
             )
         ));
 
-        var rows = tableNode.Descendants("tr");
+        // Rows of THIS table only (a table nested in a cell has its own). colspan -> GridSpan, rowspan -> vertical merge: without them
+        // a merged cell shifted every cell after it one column to the left, so the values sat under the wrong headings.
+        var rows = tableNode.Descendants("tr").Where(tr => ReferenceEquals(tr.Ancestors("table").FirstOrDefault(), tableNode)).ToList();
+        var pendingRowSpan = new List<int>();   // per grid column: rows still to be covered by a cell above that spans down
+
         foreach (var rowNode in rows)
         {
             var row = new TableRow();
+            var col = 0;
+
+            // A cell above that spans down already occupies this column: write its continuation cell and move on.
+            void FillSpannedColumns()
+            {
+                while (col < pendingRowSpan.Count && pendingRowSpan[col] > 0)
+                {
+                    var continuation = new TableCell(new TableCellProperties(
+                        new TableCellWidth { Type = TableWidthUnitValues.Auto },
+                        new VerticalMerge()));
+                    continuation.AppendChild(new Paragraph());
+                    row.AppendChild(continuation);
+                    pendingRowSpan[col]--;
+                    col++;
+                }
+            }
+
             var cells = rowNode.ChildNodes.Where(n =>
                 n.Name.Equals("td", StringComparison.OrdinalIgnoreCase) ||
                 n.Name.Equals("th", StringComparison.OrdinalIgnoreCase));
 
             foreach (var cellNode in cells)
             {
+                FillSpannedColumns();
+
+                var colSpan = Math.Clamp(ParseSpan(cellNode, "colspan"), 1, 50);
+                var rowSpan = Math.Clamp(ParseSpan(cellNode, "rowspan"), 1, 200);
+
+                var cellProps = new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Auto });
+                if (colSpan > 1) cellProps.AppendChild(new GridSpan { Val = colSpan });
+                if (rowSpan > 1) cellProps.AppendChild(new VerticalMerge { Val = MergedCellValues.Restart });
+
                 var cell = new TableCell();
-                cell.AppendChild(new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Auto }));
+                cell.AppendChild(cellProps);
+                foreach (var block in ConvertCellContent(cellNode))
+                    cell.AppendChild(block);
 
-                var cellParagraph = new Paragraph();
-                foreach (var run in ConvertInline(cellNode))
-                    cellParagraph.AppendChild(run);
-                if (!cellParagraph.HasChildren)
-                    cellParagraph.AppendChild(new Run(new Text("")));
-
-                cell.AppendChild(cellParagraph);
                 row.AppendChild(cell);
+
+                while (pendingRowSpan.Count < col + colSpan) pendingRowSpan.Add(0);
+                for (var i = 0; i < colSpan; i++) pendingRowSpan[col + i] = rowSpan > 1 ? rowSpan - 1 : 0;
+                col += colSpan;
             }
+
+            FillSpannedColumns();   // spanned columns at the end of the row
 
             if (row.HasChildren)
                 table.AppendChild(row);
         }
 
         return table;
+    }
+
+    private static int ParseSpan(HtmlNode cell, string name) =>
+        int.TryParse(cell.GetAttributeValue(name, "1").Trim(), out var n) && n > 0 ? n : 1;
+
+    private static readonly HashSet<string> CellBlockNames = new(StringComparer.OrdinalIgnoreCase)
+        { "p", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table" };
+
+    // What goes inside one table cell. A cell holding paragraphs, bullet/numbered lists or headings (as a pasted or uploaded Word table
+    // does) keeps each of them as its own paragraph; before, everything in the cell was run together into ONE paragraph, so a
+    // "Key Changes" cell with three bullets became one line with no bullets. A cell with only inline content is one paragraph, as before.
+    private static List<OpenXmlElement> ConvertCellContent(HtmlNode cellNode)
+    {
+        var result = new List<OpenXmlElement>();
+        if (!cellNode.ChildNodes.Any(n => CellBlockNames.Contains(n.Name)))
+        {
+            var single = new Paragraph();
+            foreach (var run in ConvertInline(cellNode))
+                single.AppendChild(run);
+            if (!single.HasChildren)
+                single.AppendChild(new Run(new Text("")));
+            result.Add(single);
+            return result;
+        }
+
+        // Inline pieces between the blocks (loose text, <br>) are gathered into a paragraph of their own.
+        var loose = new HtmlNode(HtmlNodeType.Element, cellNode.OwnerDocument, -1) { Name = "span" };
+        void FlushLoose()
+        {
+            if (loose.ChildNodes.Count == 0) return;
+            if (!string.IsNullOrWhiteSpace(loose.InnerText) || loose.Descendants("img").Any())
+            {
+                var para = new Paragraph();
+                foreach (var run in ConvertInline(loose)) para.AppendChild(run);
+                result.Add(para);
+            }
+            loose = new HtmlNode(HtmlNodeType.Element, cellNode.OwnerDocument, -1) { Name = "span" };
+        }
+
+        foreach (var child in cellNode.ChildNodes)
+        {
+            if (CellBlockNames.Contains(child.Name))
+            {
+                FlushLoose();
+                result.AddRange(ConvertBlock(child));
+            }
+            else
+            {
+                loose.AppendChild(child.CloneNode(true));
+            }
+        }
+        FlushLoose();
+
+        // A cell must end with a paragraph (also after a nested table), and must not be empty.
+        if (result.Count == 0 || result[^1] is not Paragraph)
+            result.Add(new Paragraph());
+        return result;
     }
 }

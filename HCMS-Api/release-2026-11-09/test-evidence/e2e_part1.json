@@ -1,0 +1,354 @@
+{
+ "results": [
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "request submitted",
+   "ok": true,
+   "evidence": "{\"id\":48,\"msg\":\"Document Request submitted successfully.\"}"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "request approved by its approver",
+   "ok": true,
+   "evidence": "[\"011001011:200\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "document created, draft version 1.0",
+   "ok": true,
+   "evidence": "[\"1.0|1|true||false\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "document submitted",
+   "ok": true,
+   "evidence": "Document Created Successfully"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "document workflow has 3 steps: Ghayas > Wajahat > Abdur",
+   "ok": true,
+   "evidence": "[\"011001116\",\"011001011\",\"011001277\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "1st approver sends it back (rework)",
+   "ok": true,
+   "evidence": "Document Reverted Successfully"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "revert notification to the initiator only (nobody had approved yet)",
+   "ok": true,
+   "evidence": "[\"9:002006129\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "resubmitted -> creation phase bumps to 1.1, 1.0 archived Reverted (by design)",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|1|true||false\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "all 3 approvers approve",
+   "ok": true,
+   "evidence": "[\"011001116:200\",\"011001011:200\",\"011001277:200\"]"
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "authorized -> Effective",
+   "ok": true,
+   "evidence": "Document successfully authorized and made effective."
+  },
+  {
+   "scenario": "S1 Creation (3 approvers, one rework)",
+   "name": "only initiator + authorizer get \"Authorized\" (creation unchanged)",
+   "ok": true,
+   "evidence": "[\"12:002006129\",\"12:011001011\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "revision request submitted",
+   "ok": true,
+   "evidence": "Revision Request submitted successfully."
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "request proposes version 2.0",
+   "ok": true,
+   "evidence": "2.0"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "draft opened at 2.0 after request approval (Create/Update screen)",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|2|true||false\",\"2.0|1|true||false\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "document submitted from Create/Update",
+   "ok": true,
+   "evidence": "Document Created Successfully"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "version STILL 2.0 after submit (this was 2.1 on production)",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|2|true||false\",\"2.0|1|true||false\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "Revision History while pending: 2.0 Pending Approval, no Reverted on 2.0",
+   "ok": true,
+   "evidence": "[\"2.0 Pending Approval\",\"1.1 Effective\",\"1.0 Reverted\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "Revision History after approval (screenshot screen): 2.0 Approved",
+   "ok": true,
+   "evidence": "[\"2.0 Approved\",\"1.1 Effective\",\"1.0 Reverted\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "authorized -> 2.0 Effective, 1.1 Revised",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|3|false|Revised|false\",\"2.0|2|true||false\"]"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "Next Review Date restarted by the revision (today + 2 years)",
+   "ok": true,
+   "evidence": "{\"before\":\"2026-10-29\",\"after\":\"2028-11-09\"}"
+  },
+  {
+   "scenario": "S2 Revision (version 2.0 / history)",
+   "name": "\"Document Revised\" notification to everyone in the workflow",
+   "ok": true,
+   "evidence": "[\"20:002006129\",\"20:011001011\",\"20:011001101\"]"
+  },
+  {
+   "scenario": "S3 One modal: Signing Authorities + Approval History",
+   "name": "the reworked round shows who sent it back: Reworked / Pending / Pending",
+   "ok": true,
+   "evidence": "[\"Muhammad Ghayas Uddin Siddiqui:Reworked\",\"Muhammad Wajahat Shahid:Pending\",\"Abdur Rehman  Qureshi:Pending\"]"
+  },
+  {
+   "scenario": "S3 One modal: Signing Authorities + Approval History",
+   "name": "finished workflow still returns its full chain (was empty)",
+   "ok": true,
+   "evidence": "[\"Muhammad Ghayas Uddin Siddiqui:Approved\",\"Muhammad Wajahat Shahid:Approved\",\"Abdur Rehman  Qureshi:Approved\"]"
+  },
+  {
+   "scenario": "S3 One modal: Signing Authorities + Approval History",
+   "name": "every approved step has Decision Approved + both dates",
+   "ok": true,
+   "evidence": ""
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "document B Effective with 3 approvers",
+   "ok": true,
+   "evidence": "[\"1.0|2|true||false\"]"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "not due yet (review date 2 years away) -> not listed",
+   "ok": true,
+   "evidence": ""
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "due in 30 days -> listed for approver Ghayas",
+   "ok": true,
+   "evidence": "{}"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "tab badge count > 0",
+   "ok": true,
+   "evidence": "1"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "initiator who is NOT an approver cannot re-approve (403)",
+   "ok": true,
+   "evidence": "Only an approver from this document's approval workflow can re-approve it."
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "approver re-approves",
+   "ok": true,
+   "evidence": "Document re-approved. Its next review date is 2028-11-09."
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "version unchanged",
+   "ok": true,
+   "evidence": "[\"1.0|2|true||false\"]"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "Next Review Date = today + Review Years (2)",
+   "ok": true,
+   "evidence": "2028-11-09"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "second approver trying again is refused (already re-approved)",
+   "ok": true,
+   "evidence": "This document is not due for review: it is not in force, a revision or obsoletio"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "other approvers + initiator informed, reviewer not",
+   "ok": true,
+   "evidence": "[\"21:002006129\",\"21:011001011\",\"21:011001277\"]"
+  },
+  {
+   "scenario": "S4 Periodic review: re-approve without change",
+   "name": "Revision History shows \"Re-approved - no change\"",
+   "ok": true,
+   "evidence": "[\"1.0 Re-approved - no change\",\"1.0 Effective\"]"
+  },
+  {
+   "scenario": "S5 Reject / Revert -> initiator + previous approvers",
+   "name": "REVERT by 2nd approver -> initiator + 1st approver (not the one who reverted)",
+   "ok": true,
+   "evidence": "[\"9:002006129\",\"9:011001116\"]"
+  },
+  {
+   "scenario": "S5 Reject / Revert -> initiator + previous approvers",
+   "name": "REJECT by 2nd approver -> initiator + 1st approver",
+   "ok": true,
+   "evidence": "[\"8:002006129\",\"8:011001116\"]"
+  },
+  {
+   "scenario": "S5 Reject / Revert -> initiator + previous approvers",
+   "name": "wording differs: \"Your document\" vs \"A document you approved\"",
+   "ok": true,
+   "evidence": "[[\"002006129\",\"Your document (E2E Reject Revert Policy, Version: 1.1) has been rejected by Muhammad Wajah\"],[\"011001116\",\"A document you approved (E2E Reject Revert Policy, Version: 1.1) has been rejected by Muha\"]]"
+  },
+  {
+   "scenario": "S6 Obsoletion (reworked + revised document)",
+   "name": "obsoletion request submitted",
+   "ok": true,
+   "evidence": "Revision Request submitted successfully."
+  },
+  {
+   "scenario": "S6 Obsoletion (reworked + revised document)",
+   "name": "Obsoletion submit works (was \"No valid document content found to promote.\")",
+   "ok": true,
+   "evidence": "Document Created Successfully"
+  },
+  {
+   "scenario": "S6 Obsoletion (reworked + revised document)",
+   "name": "document OBSOLETE",
+   "ok": true,
+   "evidence": "OBSOLETE"
+  },
+  {
+   "scenario": "S6 Obsoletion (reworked + revised document)",
+   "name": "version row marked Obsoleted, no false Reverted",
+   "ok": true,
+   "evidence": "[\"1.0|3|false|Reverted|false\",\"1.1|3|false|Revised|false\",\"2.0|3|false|Obsoleted|false\"]"
+  },
+  {
+   "scenario": "S6 Obsoletion (reworked + revised document)",
+   "name": "\"Document Obsoleted\" goes to initiator + everyone in the workflow",
+   "ok": true,
+   "evidence": "[\"14:002006129\",\"14:011001101\"]"
+  }
+ ],
+ "evidence": {
+  "docA": {
+   "id": 47,
+   "number": "IT-POL-006",
+   "versions": [
+    "1.0|3|false|Reverted|false",
+    "1.1|2|true||false"
+   ]
+  },
+  "revisionRecipients": [
+   "20:002006129",
+   "20:011001011",
+   "20:011001101"
+  ],
+  "revisionHistory": [
+   "2.0 | Effective",
+   "1.1 | Revised",
+   "1.0 | Reverted"
+  ],
+  "signingModal": [
+   {
+    "no": 1,
+    "name": "Muhammad Ghayas Uddin Siddiqui",
+    "designation": "Sr. Manager - IT Infrastructure",
+    "status": "Approved",
+    "receivedOn": "2026-11-08T13:14:11.949681",
+    "updatedOn": "2026-11-08T13:14:12.812089"
+   },
+   {
+    "no": 2,
+    "name": "Muhammad Wajahat Shahid",
+    "designation": "Associate Manager - Process Improvement",
+    "status": "Approved",
+    "receivedOn": "2026-11-08T13:14:12.812089",
+    "updatedOn": "2026-11-08T13:14:13.393487"
+   },
+   {
+    "no": 3,
+    "name": "Abdur Rehman  Qureshi",
+    "designation": "Sr. Associate - Process Improvement",
+    "status": "Approved",
+    "receivedOn": "2026-11-08T13:14:13.393487",
+    "updatedOn": "2026-11-08T13:14:13.971318"
+   }
+  ],
+  "reviewRow": {
+   "id": 48,
+   "documentnumber": "IT-POL-007",
+   "title": "E2E Periodic Review Policy",
+   "documenttype": "Policy",
+   "documenttypecode": "DT-0006",
+   "company": "ATCO",
+   "division": "Information Technology",
+   "department": null,
+   "subdepartment": null,
+   "businessdomain": null,
+   "version": "1.0",
+   "nextreviewdate": "2026-12-08",
+   "daysleft": 30,
+   "reviewperiodyears": 2,
+   "lastreviewedat": null,
+   "lastreviewedby": null
+  },
+  "reviewHistory": [
+   "1.0 | Re-approved - no change | Muhammad Ghayas Uddin Siddiqui | Reviewed, still current",
+   "1.0 | Effective | Abdur Rehman  Qureshi | e2e"
+  ],
+  "reviewRecord": [
+   [
+    "1.0",
+    "011001116",
+    "Reviewed, still current",
+    "2026-12-08",
+    "2028-11-09",
+    "2"
+   ]
+  ],
+  "rejectMessages": [
+   [
+    "002006129",
+    "Your document (E2E Reject Revert Policy, Version: 1.1) has been rejected by Muhammad Wajah"
+   ],
+   [
+    "011001116",
+    "A document you approved (E2E Reject Revert Policy, Version: 1.1) has been rejected by Muha"
+   ]
+  ],
+  "obsoleteRecipients": [
+   "14:002006129",
+   "14:011001101"
+  ]
+ }
+}

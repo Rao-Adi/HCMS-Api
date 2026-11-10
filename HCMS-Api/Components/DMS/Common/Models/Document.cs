@@ -306,6 +306,9 @@ public class AdHocSequenceStepDto
     // approval chain, so steps already decided are listed too -- read-only, and never a place to insert.
     public string Decision { get; set; } = string.Empty;
     public bool IsDecided { get; set; }
+    // When the step reached this approver, and when they acted (null while it is still to come / undecided).
+    public DateTime? ReceivedOn { get; set; }
+    public DateTime? StatusUpdatedOn { get; set; }
 }
 
 // One ad-hoc approver and where to put them.

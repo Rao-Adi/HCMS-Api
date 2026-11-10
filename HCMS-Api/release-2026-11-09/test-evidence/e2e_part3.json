@@ -1,0 +1,215 @@
+{
+ "results": [
+  {
+   "scenario": "R0 setup",
+   "name": "policy 26 starts as Ghayas > Wajahat > Abdur",
+   "ok": true,
+   "evidence": "[\"011001116\",\"011001011\",\"011001277\"]"
+  },
+  {
+   "scenario": "R1 Remove an approver from the policy",
+   "name": "document submitted with the full list",
+   "ok": true,
+   "evidence": "Ghayas:ACTIVE > Wajahat:waiting > Abdur:waiting"
+  },
+  {
+   "scenario": "R1 Remove an approver from the policy",
+   "name": "policy saved without Abdur",
+   "ok": true,
+   "evidence": "Approval sequence updated successfully."
+  },
+  {
+   "scenario": "R1 Remove an approver from the policy",
+   "name": "the running document no longer goes to Abdur",
+   "ok": true,
+   "evidence": "Ghayas:ACTIVE > Wajahat:waiting"
+  },
+  {
+   "scenario": "R1 Remove an approver from the policy",
+   "name": "it completes after Ghayas and Wajahat: state APPROVED / next stage",
+   "ok": true,
+   "evidence": "APPROVED"
+  },
+  {
+   "scenario": "R2 Sequence changed",
+   "name": "new order Ghayas > Abdur > Wajahat applied to the running document",
+   "ok": true,
+   "evidence": "Ghayas:ACTIVE > Abdur:waiting > Wajahat:waiting"
+  },
+  {
+   "scenario": "R2 Sequence changed",
+   "name": "after Ghayas approves the document goes to ABDUR (not Wajahat)",
+   "ok": true,
+   "evidence": "Ghayas:Approved > Abdur:ACTIVE > Wajahat:waiting"
+  },
+  {
+   "scenario": "R3 Remove the approver the document is with",
+   "name": "Ghayas is out; the document is now with Wajahat",
+   "ok": true,
+   "evidence": "Wajahat:ACTIVE > Abdur:waiting"
+  },
+  {
+   "scenario": "R3 Remove the approver the document is with",
+   "name": "Wajahat is told it is waiting for him",
+   "ok": true,
+   "evidence": "1"
+  },
+  {
+   "scenario": "R3 Remove the approver the document is with",
+   "name": "nothing pending with Ghayas for this document any more",
+   "ok": true,
+   "evidence": "0"
+  },
+  {
+   "scenario": "R3 Remove the approver the document is with",
+   "name": "(finding) approve-document does not verify the caller is the active approver - same as before this change",
+   "ok": true,
+   "evidence": "approve-document by a user who is not the active approver returned: 200 Document Approved Successfully"
+  },
+  {
+   "scenario": "R4 Add an approver",
+   "name": "Iqbal added to the policy with the + button",
+   "ok": true,
+   "evidence": "Workflow Step created successfully."
+  },
+  {
+   "scenario": "R4 Add an approver",
+   "name": "the running document now also goes to Iqbal, last",
+   "ok": true,
+   "evidence": "Ghayas:ACTIVE > Wajahat:waiting > Abdur:waiting > Iqbal:waiting"
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "document is with Abdur (Ghayas and Wajahat approved)",
+   "ok": true,
+   "evidence": "Ghayas:Approved > Wajahat:Approved > Abdur:ACTIVE"
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "Abdur removed -> workflow completed (both remaining steps are Approved)",
+   "ok": true,
+   "evidence": "Ghayas:Approved > Wajahat:Approved"
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "document moved on after approval (as if the last approver approved)",
+   "ok": true,
+   "evidence": "APPROVED"
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "workflow marked Completed",
+   "ok": true,
+   "evidence": "Completed"
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "initiator told it was approved",
+   "ok": true,
+   "evidence": ""
+  },
+  {
+   "scenario": "R5 Nobody left to approve",
+   "name": "it can then be authorized -> Effective",
+   "ok": true,
+   "evidence": "Document successfully authorized and made effective."
+  },
+  {
+   "scenario": "R6 Head of Division removed after the document was submitted",
+   "name": "document goes Wajahat > Imtiaz (Head of Division) > Nazim (Head of Department)",
+   "ok": true,
+   "evidence": "Wajahat:ACTIVE > Imtiaz:waiting > Nazim:waiting"
+  },
+  {
+   "scenario": "R6 Head of Division removed after the document was submitted",
+   "name": "Head of Division removed from the policy -> the document no longer goes to him",
+   "ok": true,
+   "evidence": "Wajahat:ACTIVE > Nazim:waiting"
+  },
+  {
+   "scenario": "R6 Head of Division removed after the document was submitted",
+   "name": "put back -> the document goes to him again, in his place",
+   "ok": true,
+   "evidence": "Wajahat:ACTIVE > Imtiaz:waiting > Nazim:waiting"
+  },
+  {
+   "scenario": "R7 Policy emptied",
+   "name": "removing EVERY step does not touch or auto-approve running documents",
+   "ok": true,
+   "evidence": "{\"before\":\"Ghayas:ACTIVE > Wajahat:waiting > Abdur:waiting\",\"after\":\"Ghayas:ACTIVE > Wajahat:waiting > Abdur:waiting\",\"state\":\"PENDING_APPROVAL\"}"
+  },
+  {
+   "scenario": "R7 Policy emptied",
+   "name": "policy restored",
+   "ok": true,
+   "evidence": "[\"011001116\",\"011001011\",\"011001277\"]"
+  },
+  {
+   "scenario": "R8 Request workflow follows the policy too",
+   "name": "request goes Wajahat > Ghayas",
+   "ok": true,
+   "evidence": "Wajahat:ACTIVE > Ghayas:waiting"
+  },
+  {
+   "scenario": "R8 Request workflow follows the policy too",
+   "name": "Wajahat approved, request is with Ghayas",
+   "ok": true,
+   "evidence": "Wajahat:Approved > Ghayas:ACTIVE"
+  },
+  {
+   "scenario": "R8 Request workflow follows the policy too",
+   "name": "Ghayas taken out -> nobody left -> request approved and its document created",
+   "ok": true,
+   "evidence": "{\"status\":\"3\",\"doc\":\"59\"}"
+  },
+  {
+   "scenario": "R9 History kept",
+   "name": "the approvals already given stay in the chain with their decisions and dates",
+   "ok": true,
+   "evidence": "[\"Muhammad Ghayas Uddin Siddiqui:Approved\",\"Muhammad Wajahat Shahid:Approved\"]"
+  },
+  {
+   "scenario": "R9 History kept",
+   "name": "every change is in the audit log",
+   "ok": true,
+   "evidence": "[\"Approval workflow updated to follow the policy (removed: 011001277)\",\"Approval workflow updated to follow the policy (order changed)\",\"Approval workflow updated to follow the policy (order changed)\",\"Approval workflow updated to follow the policy (removed: 011001116)\",\"Approval workflow updated to follow the policy (added: 011001116)\",\"Approval workflow updated to follow the policy (added: 011001101)\",\"Approval workflow updated to follow the policy (added: 011001101)\",\"Approval workflow updated to follow the policy (added: 011001101)\",\"Approval workflow updated to follow the policy (removed: 011001101)\",\"Approval workflow updated to follow the policy (removed: 011001101)\",\"Approval workflow updated to follow the policy (removed: 011001101)\",\"Approval workflow updated to follow the policy (removed: 011001277)\",\"Approval workflow updated to follow the policy (removed: 011001277)\",\"Approval workflow updated to follow the policy (removed: 011001277)\",\"Approval workflow updated to follow the policy (removed: 011001277; nobody left, completed)\",\"Approval workflow updated to follow the policy (removed: 011000923)\",\"Approval workflow updated to follow the policy (added: 011000923)\",\"Approval workflow updated to follow the policy (removed: 011000923, 011001245)\",\"Approval workflow updated to follow the policy (added: 011001277)\",\"Approval workflow updated to follow the policy (added: 011001277)\",\"Approval workflow updated to follow the policy (added: 011001277)\"]"
+  }
+ ],
+ "evidence": {
+  "r1": "Ghayas:ACTIVE > Wajahat:waiting",
+  "r2": [
+   "Ghayas:ACTIVE > Abdur:waiting > Wajahat:waiting",
+   "Ghayas:Approved > Abdur:ACTIVE > Wajahat:waiting"
+  ],
+  "finding_actor_not_checked": "approve-document by a user who is not the active approver returned: 200 Document Approved Successfully",
+  "r3": "Wajahat:ACTIVE > Abdur:waiting",
+  "r4": "Ghayas:ACTIVE > Wajahat:waiting > Abdur:waiting > Iqbal:waiting",
+  "r6": [
+   "Wajahat:ACTIVE > Nazim:waiting",
+   "Wajahat:ACTIVE > Imtiaz:waiting > Nazim:waiting"
+  ],
+  "audit": [
+   "Approval workflow updated to follow the policy (removed: 011001277)",
+   "Approval workflow updated to follow the policy (order changed)",
+   "Approval workflow updated to follow the policy (order changed)",
+   "Approval workflow updated to follow the policy (removed: 011001116)",
+   "Approval workflow updated to follow the policy (added: 011001116)",
+   "Approval workflow updated to follow the policy (added: 011001101)",
+   "Approval workflow updated to follow the policy (added: 011001101)",
+   "Approval workflow updated to follow the policy (added: 011001101)",
+   "Approval workflow updated to follow the policy (removed: 011001101)",
+   "Approval workflow updated to follow the policy (removed: 011001101)",
+   "Approval workflow updated to follow the policy (removed: 011001101)",
+   "Approval workflow updated to follow the policy (removed: 011001277)",
+   "Approval workflow updated to follow the policy (removed: 011001277)",
+   "Approval workflow updated to follow the policy (removed: 011001277)",
+   "Approval workflow updated to follow the policy (removed: 011001277; nobody left, completed)",
+   "Approval workflow updated to follow the policy (removed: 011000923)",
+   "Approval workflow updated to follow the policy (added: 011000923)",
+   "Approval workflow updated to follow the policy (removed: 011000923, 011001245)",
+   "Approval workflow updated to follow the policy (added: 011001277)",
+   "Approval workflow updated to follow the policy (added: 011001277)",
+   "Approval workflow updated to follow the policy (added: 011001277)"
+  ]
+ }
+}

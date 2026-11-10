@@ -19,14 +19,17 @@ public class DMSWorkflowStepController : Controller
     private readonly ILogger<UtilitiesController> _logger;
     private readonly ClientContextService _clientContextService;
     private readonly WorkflowStepComponent _workflowStepComponent;
+    private readonly WorkflowReconcileComponent _workflowReconcileComponent;
 
     public DMSWorkflowStepController(
      Utilities utilities
    , IConfiguration configuration
    , ILogger<UtilitiesController> logger
    , ClientContextService clientContextService,
-     WorkflowStepComponent workflowStepComponent)
+     WorkflowStepComponent workflowStepComponent,
+     WorkflowReconcileComponent workflowReconcileComponent)
     {
+        _workflowReconcileComponent = workflowReconcileComponent;
         _logger = logger;
         _utilities = utilities;
         _configuration = configuration;
@@ -155,10 +158,13 @@ public class DMSWorkflowStepController : Controller
 
         try
         {
+            var created = await _workflowStepComponent.CreateWorkflowStepsByFilterAsync(filters);
+            // Workflows already running on this policy follow its new list.
+            await _workflowReconcileComponent.ReconcilePolicyAsync(created?.FirstOrDefault()?.WorkflowPolicyId ?? filters.WorkflowPolicyId);
             return Ok(new HttpApiResponse<List<WorkflowStepDefiniationReadDto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.CreateWorkflowStepsByFilterAsync(filters),
+                Data = created,
                 Message = "Workflow Step created successfully.",
                 Code = 200
             });
@@ -182,10 +188,13 @@ public class DMSWorkflowStepController : Controller
     {
         try
         {
+            var policyOfStep = await _workflowReconcileComponent.GetPolicyIdOfStepAsync(Convert.ToString(input.Id) ?? "");
+            var updated = await _workflowStepComponent.UpdateAsync(input);
+            await _workflowReconcileComponent.ReconcilePolicyAsync(policyOfStep);
             return Ok(new HttpApiResponse<WorkflowStepReadDto>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.UpdateAsync(input),
+                Data = updated,
                 Message = "Workflow Step updated successfully.",
                 Code = 200
             });
@@ -209,10 +218,13 @@ public class DMSWorkflowStepController : Controller
     {
         try
         { 
+            var policyOfStep = await _workflowReconcileComponent.GetPolicyIdOfStepAsync(code);
+            var deleted = await _workflowStepComponent.DeleteAsync(code);
+            await _workflowReconcileComponent.ReconcilePolicyAsync(policyOfStep);
             return Ok(new HttpApiResponse<bool>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.DeleteAsync(code),
+                Data = deleted,
                 Message = "Workflow Step deleted successfully.",
                 Code = 200
             });
@@ -241,10 +253,13 @@ public class DMSWorkflowStepController : Controller
 
         try
         {
+            var sequence = await _workflowStepComponent.UpdateApprovalSequenceAsync(input);
+            // Workflows already running on this policy follow its new list / order.
+            await _workflowReconcileComponent.ReconcilePolicyAsync(input.WorkflowPolicyId);
             return Ok(new HttpApiResponse<List<WorkflowStepDefiniationReadDto>>()
             {
                 Success = true,
-                Data = await _workflowStepComponent.UpdateApprovalSequenceAsync(input),
+                Data = sequence,
                 Message = "Approval sequence updated successfully.",
                 Code = 200
             });

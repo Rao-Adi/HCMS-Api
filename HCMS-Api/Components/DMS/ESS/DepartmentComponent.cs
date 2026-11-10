@@ -224,6 +224,9 @@ public class DepartmentComponent
             if (exists == 0)
                 throw new CustomException("Department not found", 404);
 
+            // Approval policies written for it would keep pointing at a unit nobody can pick any more.
+            await WorkflowPolicyUnitUsage.EnsureUnitNotUsedAsync(_common, CompanyId, WorkflowPolicyUnitUsage.DepartmentColumn, code, "Department");
+
             // Soft delete
             string deleteQuery = $@"
                 UPDATE Departments

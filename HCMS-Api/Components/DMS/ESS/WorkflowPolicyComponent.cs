@@ -330,6 +330,23 @@ public class WorkflowPolicyComponent
                 })
                 .ToList();
 
+            // A policy written for a unit that was deleted afterwards never applies (no document can be filed under it). The unit has no
+            // name any more, so the list showed its bare code and the policy screen showed it as "any": say what it is.
+            var deletedUnits = await WorkflowPolicyUnitUsage.DeletedUnitNamesAsync(_common, CompanyId,
+                divisions.Select(p => p.DivisionCode), divisions.Select(p => p.DepartmentCode), divisions.Select(p => p.SubDepartmentCode));
+            if (deletedUnits.Count > 0)
+            {
+                foreach (var p in divisions)
+                {
+                    if (!string.IsNullOrWhiteSpace(p.DivisionCode) && deletedUnits.TryGetValue(p.DivisionCode.Trim(), out var dn))
+                    { p.Division = dn + " (deleted)"; p.DeletedUnit = $"Division \"{dn}\""; }
+                    else if (!string.IsNullOrWhiteSpace(p.DepartmentCode) && deletedUnits.TryGetValue(p.DepartmentCode.Trim(), out var dp))
+                    { p.Department = dp + " (deleted)"; p.DeletedUnit = $"Department \"{dp}\""; }
+                    else if (!string.IsNullOrWhiteSpace(p.SubDepartmentCode) && deletedUnits.TryGetValue(p.SubDepartmentCode.Trim(), out var subName))
+                    { p.SubDepartment = subName + " (deleted)"; p.DeletedUnit = $"Sub Department \"{subName}\""; }
+                }
+            }
+
             int totalCount = 0;
             if (countTable != null && countTable.Rows.Count > 0)
             {

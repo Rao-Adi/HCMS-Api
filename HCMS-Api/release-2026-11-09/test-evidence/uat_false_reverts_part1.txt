@@ -1,0 +1,3 @@
+documentnumber | reverted_row_id | shown_as_reverted | live_row_id | live_version_now | live_version_after_fix | live_row_state
+IT-POL-001 | 39 | 2.0 | 40 | 2.1 | 2.0 | Effective
+(1 row)
