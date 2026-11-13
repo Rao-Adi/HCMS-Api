@@ -1776,8 +1776,8 @@ namespace HCMS_Api.Components.DMS.Common
                         // attached, and mail clients render that as a broken-image placeholder:
                         // an empty bordered box at the top of every notification, which is what
                         // recipients report as 'logo not visible / empty box in the email'. The
-                        // header still carries its Document Management System badge underneath,
-                        // so dropping the image degrades cleanly instead of showing damage.
+                        // header still carries the title underneath, so dropping the image
+                        // degrades cleanly instead of showing damage.
                         body = System.Text.RegularExpressions.Regex.Replace(
                             body,
                             @"<img[^>]*cid:" + System.Text.RegularExpressions.Regex.Escape(DmsLogoContentId) + @"[^>]*>",
@@ -2178,9 +2178,19 @@ namespace HCMS_Api.Components.DMS.Common
                 // A single role is never folded into "Any": when the unit has only that one role, the row is just as
                 // likely a role that was picked by name (e.g. the only role in IT Infrastructure), and the name is
                 // the more useful thing to show.
-                if (!alreadyAny && groupRoleIds.Count > 1 && activeSet.SetEquals(groupRoleIds))
+                // The roles "All" expanded into were the roles of that moment. People move and roles come and go, so a few weeks later the
+                // set differs by a role or two and an exact match no longer holds -- which left a document whose list was
+                // "All" showing all 233 roles one by one (and each of them in the retrieval list). A large group that covers
+                // nearly every mapped role (90%+) is still "All"; a small one has to match exactly, so a deliberate pick of a few
+                // roles is never folded.
+                var overlap = groupRoleIds.Count(activeSet.Contains);
+                var nearlyAll = groupRoleIds.Count >= 20 && overlap >= 0.9 * Math.Max(groupRoleIds.Count, activeSet.Count);
+
+                if (!alreadyAny && groupRoleIds.Count > 1 && (activeSet.SetEquals(groupRoleIds) || nearlyAll))
                 {
                     var first = groupList[0];
+                    var retrievedRows = groupList.Where(g => g.IsRetrieved).ToList();
+                    var lastRetrieved = retrievedRows.OrderByDescending(g => g.RetrievedAt).FirstOrDefault();
                     result.Add(new DistributionListReadDto
                     {
                         Id = first.Id,
@@ -2199,6 +2209,11 @@ namespace HCMS_Api.Components.DMS.Common
                         SubDepartmentCode = first.SubDepartmentCode,
                         BusinessDomain = first.BusinessDomain,
                         BusinessDomainCode = first.BusinessDomainCode,
+                        // Obsoletion retrieval: "All" counts as retrieved once every role under it is, and one click on it reaches them all.
+                        IsRetrieved = retrievedRows.Count == groupList.Count,
+                        RetrievedAt = retrievedRows.Count == groupList.Count ? lastRetrieved?.RetrievedAt : null,
+                        RetrievedBy = retrievedRows.Count == groupList.Count ? lastRetrieved?.RetrievedBy : null,
+                        MemberIds = groupList.Select(g => g.Id).ToList(),
                     });
                 }
                 else

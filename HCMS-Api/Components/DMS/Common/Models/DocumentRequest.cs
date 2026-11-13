@@ -73,6 +73,10 @@ public class DocumentRequestReadDto : AuditableEntity
     // number even for a plain Creation request. Blank for Creation (no ParentDocumentId).
     public string? TargetDocumentNumber { get; set; }
 
+    // Id of that same target document (the request's ParentDocumentId). Lets My Approvals open the document's Revision
+    // History from a Revision request row. Null for a Creation request.
+    public int? TargetDocumentId { get; set; }
+
     [MaxLength(500)]
     public string DocumentName { get; set; } = null!;
 

@@ -207,7 +207,7 @@ public class DocumentComponent
             {
                 CompanyId,
                 DocumentId = newId,
-                Version = string.IsNullOrWhiteSpace(input.Version) ? "1.0" : input.Version,
+                Version = NormalizeLegacyVersion(input.Version),
                 UserId = empCode
             }, tx);
 
@@ -1116,6 +1116,10 @@ public class DocumentComponent
 
             if (inserted < 1)
                 throw new CustomException("Workflow misconfigured — no steps copied.", 404);
+
+            // A document that was sent back for rework keeps the ad-hoc approver(s) an approver had added to it: they go back into
+            // this new run, in the same place in the sequence.
+            await CarryOverAdHocApproversAsync(CompanyId, empCode, input.DocumentId, executionId, transaction);
 
             //-------------------------------------------------
             // Ad-hoc approvers are NOT chosen here any more.
@@ -2939,6 +2943,134 @@ public class DocumentComponent
             transaction: transaction);
     }
 
+    /// <summary>
+    /// Puts back the ad-hoc approver(s) of the run this document was last sent back from.
+    ///
+    /// Ad-hoc approvers are steps of one workflow run. A revert ends that run and resubmitting starts a new one built from the
+    /// policy alone, so the ad-hoc approver silently dropped out -- whoever sent the document back (the ad-hoc approver included).
+    /// Only a run that ended as Reworked carries over: after an approval or a rejection the next submission is a fresh round
+    /// and must not inherit anyone.
+    ///
+    /// Each one goes right after the policy step it followed before (matched on the step definition and approver, then on the
+    /// definition alone, then on the approver); if that step is no longer in the workflow it goes at the end. Someone who is now
+    /// a policy approver anyway, or who has left the company, is skipped. The steps after it move down by one, as in
+    /// AddAdHocApproversAsync, so StepOrder stays a plain 1..N sequence.
+    /// </summary>
+    private async Task CarryOverAdHocApproversAsync(int companyId, string empCode, int documentId, long executionId, IDbTransaction transaction)
+    {
+        var previous = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
+            SELECT Id, Status FROM WorkflowExecutions
+            WHERE CompanyId = @CompanyId AND EntityType = 'Document' AND EntityId = @DocumentId AND Id < @ExecutionId
+            ORDER BY Id DESC LIMIT 1;",
+            new { CompanyId = companyId, DocumentId = documentId, ExecutionId = executionId }, transaction);
+
+        if (previous == null || !string.Equals(Convert.ToString(previous.status), "Reworked", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var oldSteps = (await _common.QueryAsync<dynamic>(@"
+            SELECT StepOrder, StepDefinitionId, AssignedUserId, IsAdHoc, AddedBy
+            FROM WorkflowExecutionSteps
+            WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @PreviousId
+            ORDER BY StepOrder;",
+            new { CompanyId = companyId, PreviousId = (long)previous.id }, transaction)).ToList();
+
+        if (!oldSteps.Any(s => s.isadhoc == true))
+            return;
+
+        long? anchorDef = null;
+        string? anchorUser = null;
+        var placedAfter = new Dictionary<string, int>();   // which policy step they follow -> how many are already there
+
+        foreach (var step in oldSteps)
+        {
+            if (step.isadhoc != true)
+            {
+                anchorDef = Convert.ToInt64(step.stepdefinitionid);
+                anchorUser = Convert.ToString(step.assigneduserid);
+                continue;
+            }
+
+            string code = (Convert.ToString(step.assigneduserid) ?? string.Empty).Trim();
+            if (code.Length == 0) continue;
+
+            if (await EmployeeStatusHelper.IsSeparatedAsync(_common, companyId, code, transaction)) continue;
+
+            var alreadyIn = await _common.ExecuteScalarAsync<int>(@"
+                SELECT COUNT(1) FROM WorkflowExecutionSteps
+                WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId
+                  AND LTRIM(RTRIM(AssignedUserId), '0') = LTRIM(RTRIM(@Code), '0');",
+                new { CompanyId = companyId, ExecutionId = executionId, Code = code }, transaction);
+            if (alreadyIn > 0) continue;
+
+            // The policy step this one followed, found again in the new run.
+            int? anchorOrder = null;
+            if (anchorDef != null)
+            {
+                anchorOrder = await _common.ExecuteScalarAsync<int?>(@"
+                    SELECT StepOrder FROM WorkflowExecutionSteps
+                    WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId AND COALESCE(IsAdHoc, FALSE) = FALSE
+                      AND StepDefinitionId = @DefId AND LTRIM(RTRIM(AssignedUserId), '0') = LTRIM(RTRIM(@User), '0')
+                    ORDER BY StepOrder LIMIT 1;",
+                    new { CompanyId = companyId, ExecutionId = executionId, DefId = anchorDef, User = anchorUser ?? string.Empty }, transaction);
+
+                anchorOrder ??= await _common.ExecuteScalarAsync<int?>(@"
+                    SELECT StepOrder FROM WorkflowExecutionSteps
+                    WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId AND COALESCE(IsAdHoc, FALSE) = FALSE
+                      AND StepDefinitionId = @DefId
+                    ORDER BY StepOrder LIMIT 1;",
+                    new { CompanyId = companyId, ExecutionId = executionId, DefId = anchorDef }, transaction);
+
+                anchorOrder ??= await _common.ExecuteScalarAsync<int?>(@"
+                    SELECT StepOrder FROM WorkflowExecutionSteps
+                    WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId AND COALESCE(IsAdHoc, FALSE) = FALSE
+                      AND LTRIM(RTRIM(AssignedUserId), '0') = LTRIM(RTRIM(@User), '0')
+                    ORDER BY StepOrder LIMIT 1;",
+                    new { CompanyId = companyId, ExecutionId = executionId, User = anchorUser ?? string.Empty }, transaction);
+            }
+
+            int newOrder;
+            string key = anchorOrder?.ToString() ?? "end";
+            placedAfter.TryGetValue(key, out int alreadyThere);
+            if (anchorOrder == null)
+            {
+                int max = await _common.ExecuteScalarAsync<int>(@"
+                    SELECT COALESCE(MAX(StepOrder), 0) FROM WorkflowExecutionSteps
+                    WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId;",
+                    new { CompanyId = companyId, ExecutionId = executionId }, transaction);
+                newOrder = max + 1;
+            }
+            else
+            {
+                // Earlier carried-over ones already moved the policy step's followers down, so the anchor itself may have shifted;
+                // counting how many are already placed after it keeps them in their original order.
+                newOrder = anchorOrder.Value + alreadyThere + 1;
+            }
+            placedAfter[key] = alreadyThere + 1;
+
+            await _common.ExecuteAsync(@"
+                UPDATE WorkflowExecutionSteps SET StepOrder = StepOrder + 1
+                WHERE CompanyId = @CompanyId AND WorkflowExecutionId = @ExecutionId AND StepOrder >= @NewOrder;",
+                new { CompanyId = companyId, ExecutionId = executionId, NewOrder = newOrder }, transaction);
+
+            var stepDefId = await EnsureAdHocApproverStepDefinitionAsync(companyId, empCode, code, transaction);
+            string addedBy = Convert.ToString(step.addedby) ?? empCode;
+
+            await _common.ExecuteAsync(@"
+                INSERT INTO WorkflowExecutionSteps
+                    (CompanyId, WorkflowExecutionId, StepDefinitionId, AssignedUserId, AssignedRoleId, AssignedDesignationId,
+                     StepOrder, Observation, IsActive, IsAdHoc, AddedBy, CanAddAdHocApprover)
+                VALUES
+                    (@CompanyId, @ExecutionId, @StepDefId, @UserId, NULL, NULL, @StepOrder, '', FALSE, TRUE, @AddedBy, FALSE);",
+                new { CompanyId = companyId, ExecutionId = executionId, StepDefId = stepDefId, UserId = code, StepOrder = newOrder, AddedBy = addedBy },
+                transaction);
+        }
+
+        await _auditLogComponent.LogActionAsync(companyId, empCode, "Ad-hoc Approver Carried Over", "Document",
+            documentId, _clientContextService.GetRequestIpAddress(),
+            newValues: System.Text.Json.JsonSerializer.Serialize(new { ExecutionId = executionId, PreviousExecutionId = (long)previous.id }),
+            transaction: transaction);
+    }
+
     private async Task<int> EnsureAdHocApproverStepDefinitionAsync(int companyId, string empCode, string employeeCode, IDbTransaction transaction)
     {
         const string sentinelPolicyName = "System Generated - Ad-hoc Approvers";
@@ -3424,8 +3556,27 @@ public class DocumentComponent
                     new { DocumentId = documentId, CompanyId = companyId, From = versionFrom.Value, To = versionTo }, transaction);
             }
 
+            // Supersede: the version this one replaces. A revision runs on the SAME document (a new version row), so there is no
+            // parent document -- the previous version is the one in force before it: the highest version below this one,
+            // skipping attempts that were sent back (they never took effect). Same rule as the grids' "previous version" columns.
+            // Blank for a first version.
             string supersede = "";
-            if (doc.parentdocumentid != null)
+            var versionParts = (version ?? string.Empty).Split('.');
+            if (versionParts.Length == 2 && int.TryParse(versionParts[0], out int curMajor) && int.TryParse(versionParts[1], out int curMinor))
+            {
+                supersede = await _common.ExecuteScalarAsync<string>(@"
+                SELECT v.Version FROM DocumentVersions v
+                WHERE v.DocumentId = @DocumentId AND v.CompanyId = @CompanyId
+                  AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                  AND COALESCE(v.ArchiveReason, '') <> 'Reverted'
+                  AND v.Version ~ '^[0-9]+\.[0-9]+$'
+                  AND (split_part(v.Version, '.', 1)::int, split_part(v.Version, '.', 2)::int) < (@Major, @Minor)
+                ORDER BY split_part(v.Version, '.', 1)::int DESC, split_part(v.Version, '.', 2)::int DESC, v.Id DESC
+                LIMIT 1;",
+                    new { DocumentId = documentId, CompanyId = companyId, Major = curMajor, Minor = curMinor }, transaction) ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(supersede) && doc.parentdocumentid != null)
             {
                 supersede = await _common.ExecuteScalarAsync<string>(@"
                 SELECT DocumentNumber FROM Documents WHERE Id = @ParentId AND CompanyId = @CompanyId;",
@@ -3925,11 +4076,17 @@ public class DocumentComponent
             tableProps.Append(borders);
             var table = new Table(tableProps);
 
-            // The schema wants a grid; the columns share the width evenly (the pct table width does the sizing).
-            var grid = new TableGrid();
-            for (int i = 0; i < headers.Length; i++)
-                grid.Append(new GridColumn { Width = ((width > 0 ? width : 9000) / headers.Length).ToString() });
-            table.Append(grid);
+            // The columns share the width evenly. With a width given (lined up with the template's header box) the grid says so.
+            // Without one the table is "100%" and carries NO grid, exactly like the document's own content tables (see
+            // HtmlToOpenXmlConverter.ConvertTable): Word fills the width from the 100%, and Google Docs, which reads a grid
+            // literally, then fills the room too instead of stopping at a fixed 9000-twip grid that is narrower than the content box.
+            if (width > 0)
+            {
+                var grid = new TableGrid();
+                for (int i = 0; i < headers.Length; i++)
+                    grid.Append(new GridColumn { Width = (width / headers.Length).ToString() });
+                table.Append(grid);
+            }
 
             var headerRow = new TableRow(new TableRowProperties(new TableHeader()));
             // The header row and the first row stay with what follows them, so a table never starts with only its
@@ -3956,11 +4113,12 @@ public class DocumentComponent
         if (lists.DistributionList.Count > 0)
         {
             elements.Add(MakeTable(
-                new[] { "Division", "Department", "Sub Department", "Role", "Distribution Type" },
+                // Role first (client request), as on the Distribution List screens.
+                new[] { "Role", "Division", "Department", "Sub Department", "Distribution Type" },
                 lists.DistributionList.Select(d => new[]
                 {
-                    Or(d.Division, "All"), Or(d.Department, "All"), Or(d.SubDepartment, "All"),
-                    Or(d.Role, "All"), Or(d.DistributionType, "")
+                    Or(d.Role, "All"), Or(d.Division, "All"), Or(d.Department, "All"), Or(d.SubDepartment, "All"),
+                    Or(d.DistributionType, "")
                 }).ToList()));
         }
         else
@@ -6802,7 +6960,30 @@ public class DocumentComponent
                 "CREATEDBY" => "CreatedBy",
                 "LASTMODIFIEDAT" => "LastModifiedAt",
                 "LASTMODIFIEDBY" => "LastModifiedBy",
-                _ => "CreatedAt"
+                // The My Approvals - Documents grid sorts by its own column ids, none of which used to be recognised here -- every
+                // header click fell through to the default and the order never changed. Each maps to the function's column that
+                // the grid column shows. Request Type is computed in the grid from ActivityTypeCode (DRT-0002 Revision,
+                // DRT-0003 Obsoletion, anything else a New Document), so it sorts by that same wording.
+                "REQUESTTYPE" => "CASE ActivityTypeCode WHEN 'DRT-0002' THEN 'Revision' WHEN 'DRT-0003' THEN 'Obsoletion' ELSE 'New Document' END",
+                "DOCUMENTTYPE" => "DocumentType",
+                "DOCUMENTID" => "Id",
+                "DOCUMENTNAME" => "Title",
+                "COMPANY" => "Company",
+                "PROPOSEDDOCUMENTNUMBER" => "DocumentNumber",
+                "PROPOSEDVERSIONNUMBER" => "ProposedVersionNumber",
+                "DIVISION" => "Division",
+                "DEPARTMENT" => "Department",
+                "SUBDEPARTMENT" => "SubDepartment",
+                "BUSINESSDOMAIN" => "BusinessDomain",
+                "DATEOFCREATION" => "CreatedAt",
+                "REQUESTCREATEDBY" => "RequestCreatedBy",
+                "REQUESTCREATEDON" => "RequestCreatedAt",
+                "PREVIOUSVERSIONCREATEDBY" => "PreviousVersionCreatedBy",
+                "PREVIOUSVERSIONCREATEDON" => "PreviousVersionCreatedOn",
+                // No column asked for: newest approval first, by when the approval started -- not by the document's own creation
+                // date. A Revision / Obsoletion runs on an OLD document, so ordering by its CreatedAt left a request sent today
+                // at the bottom of the list.
+                _ => "StartedAt"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -8736,6 +8917,18 @@ public class DocumentComponent
         return value.Substring(start, end - start);
     }
 
+    /// <summary>
+    /// The version of a document brought in as already in force (Active Archival upload, Bulk Import). A person types it, so a whole number
+    /// ("4", "3", "1") used to be stored as it was and showed up next to the system's own "1.0", "1.1" ... Whole numbers get ".0"; blank is
+    /// "1.0"; anything else (already "2.1", or a format of the company's own) is kept as typed.
+    /// </summary>
+    private static string NormalizeLegacyVersion(string? version)
+    {
+        var v = (version ?? string.Empty).Trim();
+        if (v.Length == 0) return "1.0";
+        return System.Text.RegularExpressions.Regex.IsMatch(v, @"^\d+$") ? v + ".0" : v;
+    }
+
     public async Task<List<string>> BulkImportDocumentMetadataAsync(IFormFile excelFile)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
@@ -8886,7 +9079,7 @@ public class DocumentComponent
                 var docNum = cols[1].Trim();
                 var title = cols[2].Trim();
                 var initiatorName = cols[3].Trim();
-                var version = string.IsNullOrWhiteSpace(cols[4]) ? "1.0" : cols[4].Trim();
+                var version = NormalizeLegacyVersion(cols[4]);
                 var docTypeName = cols[5].Trim();
                 var divName = cols[6].Trim();
                 var deptName = cols[7].Trim();
@@ -10825,7 +11018,7 @@ public class DocumentComponent
     // boolean to go on, so it could flip the row's own "Retrieved" button green but had nothing
     // to put in the "Retrieved By" column -- it stayed blank until the whole grid was reloaded
     // from scratch (e.g. by reopening the document), which read as "nothing happened" on click.
-    public async Task<(string? RetrievedByName, DateTime? RetrievedAt)> MarkDistributionRetrievedAsync(int distributionId, bool retrieved)
+    public async Task<(string? RetrievedByName, DateTime? RetrievedAt)> MarkDistributionRetrievedAsync(int distributionId, bool retrieved, IEnumerable<int>? alsoDistributionIds = null)
     {
         string _CompanyId = _utilities.GetCompanyId(_clientContextService.GetClientIP());
         int CompanyId = int.Parse(_CompanyId);
@@ -10835,6 +11028,9 @@ public class DocumentComponent
 
         // Physical: "retrieved" = the copy was collected. Digital: "retrieved" = the document was disabled for
         // the people the entry reaches, so their access is withdrawn -- and given back if it is undone.
+        // One entry, or -- for the single "All" row that stands for a group of per-role rows -- every row of that group in one go.
+        var ids = (alsoDistributionIds ?? Enumerable.Empty<int>()).Append(distributionId).Distinct().ToArray();
+
         var entry = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT d.DocumentId, (UPPER(COALESCE(dt.Name, '')) = 'DIGITAL') AS IsDigital
             FROM DocumentRoleDistributions d
@@ -10844,12 +11040,13 @@ public class DocumentComponent
         if (entry == null)
             throw new CustomException("Distribution entry not found.", 404);
 
+        // Only rows of the same document as the entry clicked (the ids come from the browser).
         var row = await _common.QueryFirstOrDefaultAsync<dynamic>(@"
             UPDATE DocumentRoleDistributions
             SET IsRetrieved = @Retrieved,
                 RetrievedAt = CASE WHEN @Retrieved THEN NOW() ELSE NULL END,
                 RetrievedBy = CASE WHEN @Retrieved THEN @EmpCode ELSE NULL END
-            WHERE Id = @DistributionId AND CompanyId = @CompanyId
+            WHERE Id = ANY(@DistributionIds) AND CompanyId = @CompanyId AND DocumentId = @DocumentId
             RETURNING
                 (CASE WHEN @Retrieved THEN
                     (SELECT COALESCE(
@@ -10858,10 +11055,10 @@ public class DocumentComponent
                      FROM tblEmployee e WHERE LTRIM(RTRIM(e.empcode::text), '0') = LTRIM(RTRIM(@EmpCode::text), '0'))
                  ELSE NULL END) AS RetrievedByName,
                 RetrievedAt;",
-            new { DistributionId = distributionId, Retrieved = retrieved, EmpCode = empCode, CompanyId });
+            new { DistributionIds = ids, DocumentId = (int)entry.documentid, Retrieved = retrieved, EmpCode = empCode, CompanyId });
 
         if (entry.isdigital == true)
-            await ApplyDigitalDisableAsync((int)entry.documentid, distributionId, CompanyId, retrieved, empCode);
+            await ApplyDigitalDisableAsync((int)entry.documentid, ids, CompanyId, retrieved, empCode);
 
         return (row?.retrievedbyname, row?.retrievedat);
     }
@@ -10885,30 +11082,30 @@ public class DocumentComponent
     // that is still in force (a Physical one, or a Digital one not disabled) reaches them too. Undoing it puts
     // them back. Only the users that came from expanding the Distribution List (RoleId NULL) are touched; anyone
     // picked by hand in Document Users keeps their row.
-    private async Task ApplyDigitalDisableAsync(int documentId, int distributionId, int companyId, bool disabled, string? empCode)
+    private async Task ApplyDigitalDisableAsync(int documentId, int[] distributionIds, int companyId, bool disabled, string? empCode)
     {
         if (disabled)
         {
             await _common.ExecuteAsync(@"
                 DELETE FROM DocumentUserDistributions u
                 WHERE u.CompanyId = @CompanyId AND u.DocumentId = @DocumentId AND u.RoleId IS NULL
-                  AND TRIM(u.EmployeeCode) IN (SELECT TRIM(e.empcode) " + DistributionEntryUsersSql + @" AND dr.Id = @DistributionId)
+                  AND TRIM(u.EmployeeCode) IN (SELECT TRIM(e.empcode) " + DistributionEntryUsersSql + @" AND dr.Id = ANY(@DistributionIds))
                   AND TRIM(u.EmployeeCode) NOT IN (
                         SELECT TRIM(e.empcode) " + DistributionEntryUsersSql + @"
-                           AND dr.Id <> @DistributionId
+                           AND dr.Id <> ALL(@DistributionIds)
                            AND NOT (dr.IsRetrieved = TRUE AND UPPER(COALESCE(dt.Name, '')) = 'DIGITAL'));",
-                new { CompanyId = companyId, DocumentId = documentId, DistributionId = distributionId });
+                new { CompanyId = companyId, DocumentId = documentId, DistributionIds = distributionIds });
         }
         else
         {
             await _common.ExecuteAsync(@"
                 INSERT INTO DocumentUserDistributions (CompanyId, DocumentId, EmployeeCode, CreatedBy)
                 SELECT DISTINCT dr.CompanyId, dr.DocumentId, TRIM(e.empcode), @CreatedBy " + DistributionEntryUsersSql + @"
-                  AND dr.Id = @DistributionId
+                  AND dr.Id = ANY(@DistributionIds)
                   AND NOT EXISTS (
                       SELECT 1 FROM DocumentUserDistributions x
                       WHERE x.DocumentId = dr.DocumentId AND TRIM(x.EmployeeCode) = TRIM(e.empcode));",
-                new { CompanyId = companyId, DocumentId = documentId, DistributionId = distributionId, CreatedBy = empCode });
+                new { CompanyId = companyId, DocumentId = documentId, DistributionIds = distributionIds, CreatedBy = empCode });
         }
     }
 

@@ -2286,6 +2286,12 @@ public class DocumentRequestComponent
         return string.IsNullOrWhiteSpace(name) ? empCode : name;
     }
 
+    private class RequestTargetRow
+    {
+        public int Id { get; set; }
+        public int? ParentDocumentId { get; set; }
+    }
+
     public async Task<PaginationResult<DocumentRequestReadDto>> GetMyInboxRequestsAsync(GetPendingRequestDto input)
     {
         try
@@ -2329,7 +2335,20 @@ public class DocumentRequestComponent
                 "CREATEDBY" => "CreatedBy",
                 "LASTMODIFIEDAT" => "LastModifiedAt",
                 "LASTMODIFIEDBY" => "LastModifiedBy",
-                _ => "CreatedAt"
+                // The grid's own column ids (same gap as My Approvals - Documents: none were recognised, so a header click
+                // never changed the order). Each maps to the function column that grid column shows.
+                "DOCUMENTTYPE" => "DocumentType",
+                "DOCUMENTREQUESTID" => "RequestNumber",
+                "DOCUMENTNUMBER" => "TargetDocumentNumber",
+                "PROPOSEDVERSIONNUMBER" => "RowVersion",
+                "EXECUTIONSTATUS" => "ExecutionStatus",
+                "REQUESTCREATEDBY" => "CreatedBy",
+                "REQUESTCREATEDON" => "CreatedAt",
+                "PREVIOUSVERSIONCREATEDBY" => "PreviousVersionCreatedBy",
+                "PREVIOUSVERSIONCREATEDON" => "PreviousVersionCreatedOn",
+                // No column asked for: newest approval first, by when the approval started (a request sent back and
+                // resubmitted keeps its old CreatedAt, so that date left it down the list).
+                _ => "StartedAt"
             };
 
             string sortDirection = input.SortBy?.ToUpper() == "DESC" ? "DESC" : "ASC";
@@ -2416,6 +2435,21 @@ public class DocumentRequestComponent
             var totalCount = await _common.ExecuteScalarAsync<int>(countSql, queryParams);
 
             await ApplyProposedDocumentNumbersAsync(CompanyId, requests);
+
+            // The target document of each Revision/Obsoletion request, so the grid can open its Revision History. Read
+            // straight from the request rows (not from fn_get_my_inbox_requests, which only returns the number).
+            if (requests.Count > 0)
+            {
+                var targets = (await _common.QueryAsync<RequestTargetRow>(@"
+                    SELECT Id, ParentDocumentId
+                    FROM DocumentRequests
+                    WHERE CompanyId = @CompanyId AND Id = ANY(@Ids) AND ParentDocumentId IS NOT NULL;",
+                    new { CompanyId, Ids = requests.Select(r => r.Id).ToArray() }))
+                    .ToDictionary(t => t.Id, t => t.ParentDocumentId);
+                foreach (var request in requests)
+                    if (targets.TryGetValue(request.Id, out var targetId))
+                        request.TargetDocumentId = targetId;
+            }
 
             return new PaginationResult<DocumentRequestReadDto>
             {
@@ -5429,6 +5463,22 @@ public class DocumentRequestComponent
         // creation time (the same value the "Proposed Version Number" grid column already shows
         // an approver, e.g. "1.0") -- it just wasn't being read into the merge here, leaving the
         // template's "Version No:" blank even though the request genuinely has one.
+        // Supersede: for a Revision request, the version of the target document that is in force now -- the one this request
+        // replaces. "N/A" for a Creation (nothing to replace) and for an Obsoletion (nothing replaces it).
+        string supersede = "N/A";
+        if (string.Equals(request.DocumentRequestTypeCode, "DRT-0002", StringComparison.OrdinalIgnoreCase))
+        {
+            var inForce = await _common.ExecuteScalarAsync<string>(@"
+                SELECT v.Version FROM DocumentVersions v
+                JOIN DocumentRequests r ON r.ParentDocumentId = v.DocumentId AND r.CompanyId = v.CompanyId
+                WHERE r.Id = @RequestId AND r.CompanyId = @CompanyId
+                  AND v.VersionType = 2 AND v.IsActive = TRUE AND COALESCE(v.IsDeleted, FALSE) = FALSE
+                ORDER BY v.Id DESC
+                LIMIT 1;",
+                new { RequestId = requestId, CompanyId = companyId });
+            if (!string.IsNullOrWhiteSpace(inForce)) supersede = inForce;
+        }
+
         var placeholders = new Dictionary<string, string>
         {
             { "DocumentTitle", request.DocumentName ?? "" },
@@ -5436,7 +5486,7 @@ public class DocumentRequestComponent
             { "Version", request.RowVersion ?? "" },
             { "EffectiveDate", "N/A" },
             { "ReviewDate", "" },
-            { "Supersede", "N/A" },
+            { "Supersede", supersede },
         };
 
         // Same shape as DocumentComponent.MergeDocumentTemplateAsync's approvers query, scoped to

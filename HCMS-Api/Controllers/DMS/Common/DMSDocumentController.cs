@@ -1572,11 +1572,12 @@ public class DMSDocumentController : Controller
 
     // Obsoletion distribution retrieval tracking -- see DocumentComponent.MarkDistributionRetrievedAsync.
     [HttpPost("mark-distribution-retrieved/{distributionId}")]
-    public async Task<IActionResult> MarkDistributionRetrieved(int distributionId, [FromQuery] bool retrieved = true)
+    public async Task<IActionResult> MarkDistributionRetrieved(int distributionId, [FromQuery] bool retrieved = true, [FromBody] MarkDistributionRetrievedBody? body = null)
     {
         try
         {
-            var (retrievedByName, retrievedAt) = await _documentComponent.MarkDistributionRetrievedAsync(distributionId, retrieved);
+            // body.Ids: the other rows an "All" entry stands for (see DistributionListReadDto.MemberIds); none for an ordinary entry.
+            var (retrievedByName, retrievedAt) = await _documentComponent.MarkDistributionRetrievedAsync(distributionId, retrieved, body?.Ids);
             return Ok(new HttpApiResponse<object>()
             {
                 Success = true,

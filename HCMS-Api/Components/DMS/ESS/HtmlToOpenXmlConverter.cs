@@ -421,6 +421,35 @@ public static class HtmlToOpenXmlConverter
     // margin and the table indent so the two always cancel -- see ConvertTable.
     private const short DefaultCellMarginTwips = 108;
 
+    // The border look of a table from an uploaded Word file travels in the data-row of its cells ("dxh-3-0": h = horizontal lines only,
+    // v = vertical only, n = none). Anything else is the full grid, as before.
+    private static TableBorders BuildTableBorders(HtmlNode tableNode)
+    {
+        var id = tableNode.Descendants().FirstOrDefault(n =>
+            n.Name.Equals("td", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("th", StringComparison.OrdinalIgnoreCase))
+            ?.GetAttributeValue("data-row", "") ?? "";
+        var look = Regex.Match(id, @"^dx([hvn])-\d+-\d+$");
+        var mode = look.Success ? look.Groups[1].Value : "";
+
+        BorderType Line<T>(bool on) where T : BorderType, new() => new T
+        {
+            Val = on ? BorderValues.Single : BorderValues.Nil,
+            Size = on ? 4u : 0u,
+            Space = 0,
+            Color = "auto",
+        };
+
+        var horizontal = mode == "" || mode == "h";
+        var vertical = mode == "" || mode == "v";
+        return new TableBorders(
+            Line<TopBorder>(mode == ""),
+            Line<LeftBorder>(vertical),
+            Line<BottomBorder>(horizontal),
+            Line<RightBorder>(vertical),
+            Line<InsideHorizontalBorder>(horizontal),
+            Line<InsideVerticalBorder>(vertical));
+    }
+
     private static Table ConvertTable(HtmlNode tableNode)
     {
         var table = new Table();
@@ -441,14 +470,7 @@ public static class HtmlToOpenXmlConverter
         table.AppendChild(new TableProperties(
             new TableWidth { Type = TableWidthUnitValues.Auto },
             new TableIndentation { Width = DefaultCellMarginTwips, Type = TableWidthUnitValues.Dxa },
-            new TableBorders(
-                new TopBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
-                new BottomBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
-                new LeftBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
-                new RightBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
-                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" },
-                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4, Space = 0, Color = "auto" }
-            ),
+            BuildTableBorders(tableNode),
             new TableCellMarginDefault(
                 new TopMargin { Width = "0", Type = TableWidthUnitValues.Dxa },
                 new TableCellLeftMargin { Width = DefaultCellMarginTwips, Type = TableWidthValues.Dxa },

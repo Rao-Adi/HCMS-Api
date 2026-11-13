@@ -72,6 +72,10 @@ public class DistributionListReadDto : AuditableEntity
     public string? RetrievedAt { get; set; }
     public string? RetrievedBy { get; set; }
 
+    // Set only on the single "All" row that stands for a whole group of per-role rows (see DMSUtilities.CollapseAnyRoleGroups):
+    // the Ids of every row it stands for, so one retrieval click can reach all of them. Null on an ordinary row.
+    public List<int>? MemberIds { get; set; }
+
 }
 
 
@@ -117,3 +121,9 @@ public class DistributionListUpdateDto
 
 }
 
+
+/// <summary>Body of mark-distribution-retrieved: the rows an "All" entry stands for (empty for an ordinary entry).</summary>
+public class MarkDistributionRetrievedBody
+{
+    public List<int>? Ids { get; set; }
+}

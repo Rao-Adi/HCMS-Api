@@ -1063,18 +1063,7 @@ public class NotificationComponent
                                                 </td>
                                             </tr>
                                             <tr>
-                                                <td>
-                                                    <table role='presentation' cellspacing='0' cellpadding='0' border='0' style='border-collapse: collapse;'>
-                                                        <tr>
-                                                            <td bgcolor='#1e40af' style='background-color: #1e40af; border-radius: 6px; padding: 6px 12px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #ffffff; mso-line-height-rule: exactly; line-height: 14px;'>
-                                                                Document Management System
-                                                            </td>
-                                                        </tr>
-                                                    </table>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td style='padding-top: 12px; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; mso-line-height-rule: exactly; line-height: 29px;'>
+                                                <td style='padding-top: 0; font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; mso-line-height-rule: exactly; line-height: 29px;'>
                                                     {title}
                                                 </td>
                                             </tr>
